@@ -1,0 +1,188 @@
+设置root password
+mysqladmin -u root password 'wxztt'
+远程登录所有权限(all,select,insert,update,delete)， 本地登录@localhost
+grant all on *.* to root@"%" identified by "wxztt";
+
+创建wxztt用户 付权限
+grant all on *.* to wxztt@"%" identified by "wxztt";
+mysql -h 192.168.31.65 -u wxztt -pwxztt < my.sql
+a.
+select database();
+select user();
+
+b. db
+create database dbname;
+drop datatbase dbname;
+show databases;
+use dbname;
+
+c. table
+create table tbname(name1 type,
+		    name2 type,
+		    .....
+		   );
+drop table tbname;
+show tables;
+
+
+d. ops
+insert into tbname value(v1, v2..);
+insert into tbname(con1, conx..) value(v1, v2..);
+
+update tbname set conx=value [where ...];
+
+select con1,conx from tbname [where/order by...];
+
+delete from tbname [where...];
+
+
+e. other 
+where [not] con1 op value [or/and .....];
+op: like, is [not] null, in, between...and..., < <= !=
+or/and can be grouped by ()
+
+con like '%hah'
+con is null
+con in ('a', 'b')
+con between 1 and 10
+
+f. order by con1[,con2]
+order by con1 desc, con2 asc
+con1 reverse， con2 verse
+
+text must be include by ''
+
+
+top:
+mysql> select * from student limit 2;
++--------+-------+------+
+| studno | fname | age  |
++--------+-------+------+
+|      1 | wx    |   22 |
+|      2 | ztt   |   22 |
++--------+-------+------+
+
+distinct:
+mysql> select distinct fname from student;
+
+
+% 	替代一个或多个字符
+_ 	仅替代一个字符
+[charlist] 	字符列中的任何单一字符
+[^charlist]
+[!charlist]
+	不在字符列中的任何单一字符
+
+
+select * from student where fname in ('wx', 'ztt');
++--------+-------+------+
+| studno | fname | age  |
++--------+-------+------+
+|      1 | wx    |   22 |
+|      2 | ztt   |   22 |
++--------+-------+------+
+
+
+mysql> select * from student where age  between 1 and 21;
++--------+--------+------+
+| studno | fname  | age  |
++--------+--------+------+
+|      3 | benben |    1 |
+|      4 | dandan |    1 |
++--------+--------+------+
+mysql> select * from student where age not between 1 and 21;
+
+
+表的 SQL Alias 语法
+SELECT column_name(s)
+FROM table_name
+AS alias_name
+列的 SQL Alias 语法
+SELECT column_name AS alias_name
+FROM table_name
+
+
+SQL UNION 语法
+SELECT column_name(s) FROM table_name1
+UNION
+SELECT column_name(s) FROM table_name2
+注释：默认地，UNION 操作符选取不同的值。如果允许重复的值，请使用 UNION ALL。
+SQL UNION ALL 语法
+SELECT column_name(s) FROM table_name1
+UNION ALL
+SELECT column_name(s) FROM table_name2
+
+
+select into:
+SELECT *
+INTO Persons_backup
+FROM Persons
+
+select * from wxztt.student;
+
+create table约束：
+    NOT NULL
+CREATE TABLE Persons
+(
+Id_P int NOT NULL,
+)
+    UNIQUE
+ create table wxztt.Persons ( Id_P int NOT NULL PRIMARY KEY, LastName varchar(255) NOT NULL UNIQUE);
+alter table wxztt.student add unique (fname);
+    PRIMARY KEY
+create table wxztt.Persons ( Id_P int NOT NULL PRIMARY KEY, LastName varchar(255) NOT NULL)
+alter table wxztt.Persons ADD PRIMARY KEY (Id_P)
+
+    CHECK
+CREATE TABLE Persons
+    -> (
+    -> Id_P int NOT NULL CHECK (Id_P>0)
+    -> );
+ALTER TABLE Persons ADD CHECK (Id_P>0)
+
+    DEFAULT
+CREATE TABLE Persons
+(
+City varchar(255) DEFAULT 'Sandnes'
+)
+insert into Persons value();
+
+ALTER TABLE Persons ALTER City SET DEFAULT 'SANDNES'
+ALTER TABLE Persons ALTER City DROP DEFAULT
+
+    AUTO_INCREMENT
+CREATE TABLE Persons ( P_Id int NOT NULL primary key AUTO_INCREMENT, LastName varchar(255) NOT NULL);
+insert into Persons(LastName) value("wah");
+
+
+index:
+create index fnamein on wxztt.student(fname);
+ drop index fnamein on wxztt.student;
+
+
+alter:
+ALTER TABLE table_name ADD column_name datatype
+ALTER TABLE table_name DROP COLUMN column_name
+
+
+
+
+function:
+SELECT function(列) FROM 表
+
+select count(age) from student;
+select count(distinct age) from student;
+select max(age) from student;
+select min(age) from student;
+select sum(age) from student;
+select avg(age) from student;
+
+select ucase(fname) from student;
+select lcase(fname) from student;
+select mid(fname, 2, 3) from student;
+
+select *,now() from student;
+
+
+group by
+SELECT Customer,SUM(OrderPrice) FROM Orders GROUP BY Customer

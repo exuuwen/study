@@ -1,0 +1,11 @@
+apt-get install libxml2-dev libxslt1-dev  zlib1g-dev python-dev libevent-dev python-pip libffi-dev libssl-dev
+pip install virtualenv
+
+
+virtualenv scrapy
+cd scrapy/
+source bin/activate
+pip install scrapy
+
+
+deactivate 

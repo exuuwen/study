@@ -1,0 +1,28 @@
+libvirt
+yum install libxml2-devel yajl-devel gnutls-devel device-mapper-devel python-devel libnl-devel libpciaccess-devel
+./configure --prefix=/usr --localstatedir=/var  --sysconfdir=/etc
+
+
+
+
+qemu
+yum install glib2-devel glib2 gilbc-devel gcc-c++ pixman-devel zlib-devel pciutils-devel
+./configure --prefix=/usr --target-list=x86_64-softmmu --enable-vhost-net --enable-kvm
+
+
+ksplice
+  153  yum install bc
+  168  yum install binutils-devel
+  170  yum install patch
+  171  yum search perl_Test
+  172  yum search perl-Test
+  173  yum install perl-Test-Harness perl-Test-NoWarnings
+  457  yum install mlocate
+  
+gcc:
+--prefix=/usr 
+  569  yum install libmpc libmpc-devel
+  569  yum install gmp-devel mpfr-devel
+  577  yum -y install glibc-devel.i686
+  580  yum install zip
+

@@ -1,0 +1,185 @@
+在虚拟机里面virtio设备是以pci类设备存在。虚拟机里面含有前端驱动程序, qemu在宿主机模拟相应的pci device
+
+1. qemu 注册device
+static void virtio_pci_register_types(void)
+{
+    type_register_static(&virtio_blk_info);      //块设备
+    type_register_static(&virtio_net_info);      //网络设备
+    type_register_static(&virtio_serial_info);   //串行设备
+    type_register_static(&virtio_balloon_info);  //气球
+    type_register_static(&virtio_scsi_info);     //scsi设备
+}
+
+2. virtio初始化
+a. virtio_bus
+/*注册一个virtio bus*/
+static struct bus_type virtio_bus = {
+	.name  = "virtio",
+	.match = virtio_dev_match,
+	.probe = virtio_dev_probe,
+};
+static int virtio_init(void)
+{
+	if (bus_register(&virtio_bus) != 0)
+		panic("virtio bus registration failed");
+	return 0;
+} 
+
+b. virtio pci driver
+static DEFINE_PCI_DEVICE_TABLE(virtio_pci_id_table) = {
+	{ PCI_DEVICE(0x1af4, PCI_ANY_ID) },
+	{ 0 }
+};
+static struct pci_driver virtio_pci_driver = {
+	.name		= "virtio-pci",
+	.id_table	= virtio_pci_id_table,
+	.probe		= virtio_pci_probe,
+};
+
+module_pci_driver(virtio_pci_driver);
+
+c.  virtio device
+当pci bus探索到了pci设备的存在, 就根据设备vendor找到相应的驱动程序进行probe
+virtio pci设备的vendor是0x1af4
+
+struct virtio_device {
+	struct device dev;
+	struct virtio_device_id id;
+	const struct virtio_config_ops *config;
+	unsigned long features[1];
+};
+struct virtio_pci_device
+{
+	/*需要注册到virtio_bus上的 virtio_device*/
+	struct virtio_device vdev;
+	struct pci_dev *pci_dev;
+	......
+};
+
++------------++---------------------+---------------------+----------+--------+---------+---------+---------+--------+
+| Bits       || 32                  | 32                  | 32       | 16     | 16      | 16      | 8       | 8      |
++------------++---------------------+---------------------+----------+--------+---------+---------+---------+--------+
+| Read/Write || R                   | R+W                 | R+W      | R      | R+W     | R+W     | R+W     | R      |
++------------++---------------------+---------------------+----------+--------+---------+---------+---------+--------+
+| Purpose    || Device              | Guest               | Queue    | Queue  | Queue   | Queue   | Device  | ISR    |
+|            || Features bits 0:31  | Features bits 0:31  | Address  | Size   | Select  | Notify  | Status  | Status |
++------------++---------------------+---------------------+----------+--------+---------+---------+---------+--------+
+/* MSI-X registers: only enabled if MSI-X is enabled. */
+/* A 16-bit vector for configuration changes. */
+/* A 16-bit vector for selected queue notifications. */
+ +------------++----------------+--------+
+| Bits       || 16             | 16     |
++----------------+--------+
++------------++----------------+--------+
+| Read/Write || R+W            | R+W    |
++------------++----------------+--------+
+| Purpose    || Configuration  | Queue  |
+| (MSI-X)    || Vector         | Vector |
++------------++----------------+--------+
+/*
+设备类型特有
+virtio_net特有
+struct virtio_net_config {
+	__u8 mac[ETH_ALEN];
+	__u16 status;
+	__u16 max_virtqueue_pairs;
+} __attribute__((packed));
+*/
++------------++--------------------+
+| Bits       || Device Specific    |
++--------------------+
++------------++--------------------+
+| Read/Write || Device Specific    |
++------------++--------------------+
+| Purpose    || Device Specific... |
+|            ||                    |
++------------++--------------------+
+
+/*virtio device的config_ops*/
+static const struct virtio_config_ops virtio_pci_config_ops = {
+	/*获取/设置设备特有信息 通过io寄存器获得*/
+	.get		= vp_get, 
+	.set		= vp_set,
+	/*获取/设置设备状态 是通过io寄存器获得*/
+	.get_status	= vp_get_status,
+	.set_status	= vp_set_status,
+	/*获得virtqueue*/
+	.find_vqs	= vp_find_vqs,
+	/*获得host feature 通过io寄存器获取*/
+	.get_features	= vp_get_features,
+	/*设置guest feature 通过io寄存器设置*/
+	.finalize_features = vp_finalize_features,
+	/*设置virtqueue中断亲和力*/
+	.set_vq_affinity = vp_set_vq_affinity,
+};
+static int virtio_pci_probe(struct pci_dev *pci_dev,
+			    const struct pci_device_id *id)
+{
+	struct virtio_pci_device *vp_dev;
+	/*创建virtio_pci_device*/
+	p_dev = kzalloc(sizeof(struct virtio_pci_device), GFP_KERNEL);
+	vp_dev->vdev.config = &virtio_pci_config_ops;
+	vp_dev->pci_dev = pci_dev;
+
+	/* Acknowledge that we've seen the device. */
+	//config_ops->set_status
+	add_status(dev, VIRTIO_CONFIG_S_ACKNOWLEDGE);
+	
+	/*io map*/
+	vp_dev->ioaddr = pci_iomap(pci_dev, 0, 0);
+	pci_set_drvdata(pci_dev, vp_dev);
+
+	/*subsystem_vendor: 标识了不同的子设备:net block ballon*/
+	vp_dev->vdev.id.vendor = pci_dev->subsystem_vendor;
+	vp_dev->vdev.id.device = pci_dev->subsystem_device;
+
+	/* finally register the virtio device */
+	err = register_virtio_device(&vp_dev->vdev);
+	
+}
+
+
+3. virtio device 状态
+a. ACKNOWLEDGE: 指示guest os发现了设备
+b. DRIVER: 表示guest os知道如何驱动这个设备,找到其driver
+c. DRIVER_OK: 指示driver已经setup
+d. FAILED: 失败
+
+
+4. virtio_net driver probe
+a. virtio_net driver
+/*subsystem_vendor*/
+#define VIRTIO_ID_NET		1 /* virtio net */
+static struct virtio_device_id id_table[] = {
+	{ VIRTIO_ID_NET, VIRTIO_DEV_ANY_ID },
+	{ 0 },
+};
+static struct virtio_driver virtio_net_driver = {
+	.feature_table = features,
+	.driver.owner =	THIS_MODULE,
+	.id_table =	id_table,
+	.probe =	virtnet_probe,
+};
+
+module_virtio_driver(virtio_net_driver);
+
+b. find the driver
+register_virtio_device---match the id--->virtio_bus.probe(virtio_dev_probe)
+{
+	add_status(dev, VIRTIO_CONFIG_S_DRIVER);
+	
+	/*跟去host feature与 driver feature设置dev->features*/
+	device_features = dev->config->get_features(dev);
+	memset(dev->features, 0, sizeof(dev->features));
+	for (i = 0; i < drv->feature_table_size; i++) {
+		unsigned int f = drv->feature_table[i];
+		if (device_features & (1 << f))
+			set_bit(f, dev->features);
+	}
+	err = drv->probe(dev);
+	if (err)
+		add_status(dev, VIRTIO_CONFIG_S_FAILED);
+	else {
+		add_status(dev, VIRTIO_CONFIG_S_DRIVER_OK);
+}
+

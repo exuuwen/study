@@ -1,0 +1,34 @@
+package ucloud.unetanalysis;
+
+import "ucloud.proto";
+
+enum MessageType {
+	BEGINNING_ID = 177000;
+    
+    RECORD_STATS_REQUEST = 177001;                                              // 上报数据请求      
+   
+    ENDING_ID = 178000;
+};
+
+
+extend ucloud.Body {
+
+    optional RecordStatsRequest record_stats_request = 177001;                     // 上报数据请求
+
+
+};
+
+
+message StatsData {
+    required string uuid = 10;                          // 分析目标 一般谁eip地址，如果是该机房总量uuid为特定值'all'
+    required uint32 item_id = 20;                       // 数据项ID
+    required uint32 region_id = 30;                     // REGION_ID 如果是全国的region_id = 0
+    required uint32 isp_id = 40;                        // ISP_ID    如果是所有isp总和 isp_id = 0
+    required uint64 value = 50;                          // 该值value
+    required uint32 time = 60;                          // 采集时间
+}
+
+message RecordStatsRequest { 
+    repeated StatsData stats_data_list = 10;            // 用于分析的元数据
+}
+

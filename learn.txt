@@ -1,0 +1,244 @@
+ovs:
+gre
+ovs-vsctl add-port br0 gre0 -- set interface gre0 type=gre options:local_ip=10.9.22.233 options:remote_ip=10.9.32.30 options:key=flow
+ovs-vsctl add-port br0 vnet0
+root@10-9-22-233:~# ovs-vsctl set bridge br0 protocols=OpenFlow13
+root@10-9-22-233:~# ovs-ofctl add-flow br0 'in_port=2,actions=set_field:0x123456->tun_id,output:1' -O OpenFlow13
+root@10-9-22-233:~# ovs-ofctl add-flow br0 in_port=1,tun_id=0x654321,actions=output:2  -O OpenFlow13
+
+ovs-vsctl add-port br0 gre0 -- set interface gre0 type=gre options:local_ip=10.9.32.30 options:remote_ip=10.9.22.233 options:key=flow
+ovs-vsctl add-port br0 vnet0
+root@10-9-22-233:~# ovs-vsctl set bridge br0 protocols=OpenFlow13
+root@10-9-22-233:~# ovs-ofctl add-flow br0 'in_port=2,actions=set_field:0x654321->tun_id,output:1' -O OpenFlow13
+root@10-9-22-233:~# ovs-ofctl add-flow br0 in_port=1,tun_id=0x123456,actions=output:2  -O OpenFlow13
+
+$ ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+$ ovs-ofctl add-flow br0 "in_port=LOCAL actions=set_tunnel:1,set_field:192.168.0.1->tun_dst,output:1"
+$ ovs-ofctl add-flow br0 "in_port=1 tun_src=192.168.0.1 tun_id=1 actions=LOCAL"
+
+
+ovs command
+ovs-ofctl dump-flows br0 | grep -o -E 'priority.*' # -o outpu匹配额
+ovs-vsctl list-ports br0 | grep -E  "veth.*" | xargs -i ovs-vsctl del-port br0 {}
+# ovs-ofctl monitor br0 watch:
+NXST_FLOW_MONITOR reply (xid=0x2):
+ event=ADDED table=0 cookie=0 actions=NORMAL
+NXST_FLOW_MONITOR reply (xid=0x0):
+ event=DELETED reason=delete table=0 cookie=0 actions=NORMAL
+NXST_FLOW_MONITOR reply (xid=0x0):
+ event=ADDED table=0 cookie=0 actions=NORMAL
+# ovs-ofctl snoop br0
+
+vroute && dhcp
+route: 52:53:00:0d:47:87
+ cookie=0x0, duration=281.120s, table=0, n_packets=15, n_bytes=1449, priority=60000,in_port=1305,dl_src=52:53:00:0d:47:87,dl_dst=52:54:00:2b:d3:01 actions=set_field:0x4f1fa2->tun_id,output:168
+ cookie=0x0, duration=278.692s, table=0, n_packets=14, n_bytes=1053, priority=60000,tun_id=0x4f1fa2,in_port=168,dl_src=52:54:00:2b:d3:01,dl_dst=52:53:00:0d:47:87 actions=output:1305
+ cookie=0x0, duration=278.838s, table=0, n_packets=1, n_bytes=42, priority=60020,tun_id=0x4f1fa2,in_port=168,dl_src=52:54:00:2b:d3:01,dl_dst=ff:ff:ff:ff:ff:ff actions=output:1305
+ cookie=0x0, duration=281.135s, table=0, n_packets=1, n_bytes=342, priority=60000,tun_id=0x4f1fa2,in_port=168,dl_src=52:54:00:2b:d3:01,dl_dst=ff:ff:ff:ff:ff:ff actions=output:1305
+
+
+vm1: 52:54:00:2b:d3:01
+cookie=0x0, duration=434.039s, table=0, n_packets=16, n_bytes=1185, priority=60000,in_port=1436,dl_src=52:54:00:2b:d3:01,dl_dst=52:53:00:0d:47:87 actions=set_field:0x4f1fa2->tun_id,output:260
+ cookie=0x0, duration=434.091s, table=0, n_packets=1, n_bytes=42, priority=60020,in_port=1436,dl_src=52:54:00:2b:d3:01,dl_dst=ff:ff:ff:ff:ff:ff actions=set_field:0x4f1fa2->tun_id,output:220,output:260
+ cookie=0x0, duration=436.371s, table=0, n_packets=1, n_bytes=342, priority=60000,in_port=1436,dl_src=52:54:00:2b:d3:01,dl_dst=ff:ff:ff:ff:ff:ff actions=set_field:0x4f1fa2->tun_id,output:220,output:260
+ cookie=0x0, duration=436.251s, table=0, n_packets=16, n_bytes=1491, priority=60000,tun_id=0x4f1fa2,in_port=260,dl_src=52:53:00:0d:47:87,dl_dst=52:54:00:2b:d3:01 actions=output:1436
+
+/////////////////////
+tc filter add dev vnat1 parent ffff: protocol ip prio 40 estimator 500ms 1sec u32 match ip dst 192.168.0.0/24 police avrate 88mbit mtu 64k drop flowid ffff:
+
+/////////////////////////////
+install 
+vim /usr/include/bits/typesizes.h 
+#define __FD_SETSIZE            65535 
+httperf --port 80 --server '120.132.49.47' --num-conn 40000000 --rate 10000
+
+
+///////////////////////////////////////////////////////////////////////////
+in srcdir 
+# mkdir ksplice 
+# cp /boot/System.map ksplice
+# cp /boot/config .config
+# cp /boot/Module.symvers .
+must be the same gcc compiler with the original kernel
+# ksplice-create --id=testpatch --patch=/data/wenxu/0001-wwww.patch . -j 4 
+# ksplice-apply ksplice-testpatch.tar.gz
+
+gcc patch:
+--- toplev.c (revision 193117)
++++ toplev.c (working copy)
+@@ -1467,12 +1467,6 @@ process_options (void)
+  }
+     }
+
+-  if (flag_function_sections && profile_flag)
+-    {
+-      warning (0, "-ffunction-sections disabled; it makes profiling
+impossible");
+-      flag_function_sections = 0;
+-    }
+- 
+
+
+
+ CHK     include/linux/version.h
+  UPD     include/linux/version.h
+  CHK     include/linux/utsrelease.h
+  UPD     include/linux/utsrelease.h
+  SYMLINK include/asm -> include/asm-x86
+  CC      kernel/bounds.s
+cc1: warnings being treated as errors
+kernel/bounds.c:1: error: -ffunction-sections disabled; it makes profiling impossible
+make[1]: *** [kernel/bounds.s] Error 1
+make: *** [prepare0] Error 2
+Aborting: Prebuild failed at /usr/local/bin/ksplice-create line 190.
+
+////////////////////////
+
+echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6
+cat /proc/sys/net/core/somaxconn
+cat /sys/devices/system/cpu/cpu22/topology/core_id
+cat /sys/devices/system/cpu/cpu22/topology/physical_package_id
+
+//////////////////////////////////////
+rpm
+
+rpm -ivh xxx
+rpm -iv --test xxx
+rpm -iv --replacefiles
+rpm -iv --replacepkgs
+rpm -iv --nodeps --force
+
+rpm -ev xxx
+rpm -ev --test xxx
+rpm -iv --nodeps
+
+rpm -Uv xxx
+rpm -Uv --test xxx
+rpm -Uv --replacefiles
+rpm -Uv --replacepkgs
+rpm -Uv --nodeps --force
+
+rpm -q xxx
+rpm -qa
+rpm -qf /bin/ls
+rpm -qi xxx
+
+rpm2cpio xxxx | cpio -t
+
+
+/////////////////////////////
+git 
+
+git archive  --format=tar `git log --max-count=1 --pretty=format:%H` | xz --threads 3 > my.xz
+xzcat -qq my.xz | git get-tar-commit-id
+
+git archive  --format=tar `git log --max-count=1 --pretty=format:%H` > a.tar
+git get-tar-commit-id < a.tar
+
+
+
+
+
+
+git merge test
+git branch --merge  branch_name
+git branch --no-merge branch_name
+
+git branch -d c2
+error: The branch 'c2' is not fully merged.
+If you are sure you want to delete it, run 'git branch -D c2'
+
+
+
+
+rm the file in the stage or registor if in the stage is the same as git reset HEAD
+# git rm --cached
+
+diff the stage with registor
+# git diff --cached
+diff untracked with stage
+# git diff
+
+git log --max-count=1 --pretty=format:%H    //get git id
+git log --pretty=format:"%H %h %s"
+git log --author 'wx'
+git log -2
+
+git init
+git remote add test http://gitlab.ucloudadmin.com/ucloud-kernel/ksplice.git
+git fetch test
+git checkout test/master
+git checkout -b master
+git push test master 
+git remote rename test origin
+git remote rm origin
+
+git push origin --tags
+
+//////////////////////////////////////////
+__LP64__ is not an abbreviation of "Leopard 64". It stands for "longs and pointers are 64 bits"
+
+grub2-set-default 2
+grub2-mkconfig -o /boot/grub2/grub.cfg
+
+
+yum groupinstall "Development Tools"
+systemctl list-unit-files
+
+
+
+
+//contrack
+//第一条+trk是本地发出额原因
+
+[root@10-10-28-238 ~]# ovs-ofctl dump-flows br0
+NXST_FLOW reply (xid=0x4):
+ cookie=0x0, duration=828.177s, table=0, n_packets=691, n_bytes=67718, idle_age=0, ct_state=+trk,ip,in_port=LOCAL actions=ct(table=1,zone=1)
+ cookie=0x0, duration=676.802s, table=0, n_packets=1020, n_bytes=99960, idle_age=0, ct_state=-trk,ip,tun_id=0x1,tun_src=10.10.59.233,in_port=1 actions=ct(table=1,zone=1)
+ cookie=0x0, duration=2265.694s, table=1, n_packets=136, n_bytes=13328, idle_age=407, ct_state=+new+trk,in_port=LOCAL actions=ct(commit,zone=1),set_tunnel:0x1,load:0xa0a3be9->NXM_NX_TUN_IPV4_DST[],output:1
+ cookie=0x0, duration=2199.285s, table=1, n_packets=555, n_bytes=54390, idle_age=0, ct_state=+est+trk,in_port=LOCAL actions=set_tunnel:0x1,load:0xa0a3be9->NXM_NX_TUN_IPV4_DST[],output:1
+ cookie=0x0, duration=1986.365s, table=1, n_packets=463, n_bytes=45374, idle_age=1, ct_state=+new+trk,tun_id=0x1,tun_src=10.10.59.233,in_port=1 actions=resubmit(,2)
+ cookie=0x0, duration=1945.910s, table=1, n_packets=557, n_bytes=54586, idle_age=0, ct_state=+est+trk,tun_id=0x1,tun_src=10.10.59.233,in_port=1 actions=LOCAL
+
+
+
+
+//////////////////////////
+
+ovs-ofctl add-flow br0 "in_port=LOCAL,tcp,tcp_flags=+syn-ack,actions=learn(idle_timeout=60,table=1,dl_type=0x0800,nw_proto=6,NXM_OF_IP_SRC[]=NXM_OF_IP_DST[],NXM_OF_IP_DST[]=NXM_OF_IP_SRC[],NXM_OF_TCP_SRC[]=NXM_OF_TCP_DST[],NXM_OF_TCP_DST[]=NXM_OF_TCP_SRC[],output:NXM_OF_IN_PORT[]),set_tunnel:1,set_field:10.10.59.233->tun_dst,output:1"
+
+
+[root@10-10-28-238 ~]# ovs-ofctl dump-flows br0
+NXST_FLOW reply (xid=0x4):
+ cookie=0x0, duration=9010.236s, table=0, n_packets=11, n_bytes=814, idle_age=1204,ip,tcp,in_port=LOCAL,tcp_flags=+syn-ack actions=learn(table=1,idle_timeout=60,eth_type=0x800,nw_proto=6,NXM_OF_IP_SRC[]=NXM_OF_IP_DST[],NXM_OF_IP_DST[]=NXM_OF_IP_SRC[],NXM_OF_TCP_SRC[]=NXM_OF_TCP_DST[],NXM_OF_TCP_DST[]=NXM_OF_TCP_SRC[],output:NXM_OF_IN_PORT[]),set_tunnel:0x1,load:0xa0a3be9->NXM_NX_TUN_IPV4_DST[],output:1
+ cookie=0x0, duration=4255.119s, table=0, n_packets=6, n_bytes=287, idle_age=3232,ip,udp,in_port=LOCAL actions=learn(table=3,idle_timeout=60,eth_type=0x800,nw_proto=17,NXM_OF_IP_SRC[]=NXM_OF_IP_DST[],NXM_OF_IP_DST[]=NXM_OF_IP_SRC[],NXM_OF_UDP_SRC[]=NXM_OF_UDP_DST[],NXM_OF_UDP_DST[]=NXM_OF_UDP_SRC[],output:NXM_OF_IN_PORT[]),set_tunnel:0x1,load:0xa0a3be9->NXM_NX_TUN_IPV4_DST[],output:1
+ cookie=0x0, duration=996.042s, table=0, n_packets=0, n_bytes=0, idle_age=996, ip,tcp,tun_id=0x1,tun_src=10.10.59.233,in_port=1 actions=resubmit(,1)
+ cookie=0x0, duration=735.432s, table=0, n_packets=0, n_bytes=0, idle_age=735, ip,udp,tun_id=0x1,tun_src=10.10.59.233,in_port=1 actions=resubmit(,3)
+ cookie=0x0, duration=38.611s, table=0, n_packets=17, n_bytes=1666, idle_age=4, ip,icmp,tun_id=0x1,tun_src=10.10.59.233,in_port=1,icmp_type=8,icmp_code=0 actions=drop
+ cookie=0x0, duration=8564.271s, table=0, n_packets=68, n_bytes=5007, idle_age=19, priority=10,in_port=LOCAL actions=set_tunnel:0x1,load:0xa0a3be9->NXM_NX_TUN_IPV4_DST[],output:1
+ cookie=0x0, duration=8478.707s, table=0, n_packets=40, n_bytes=2686, idle_age=19, priority=10,tun_id=0x1,tun_src=10.10.59.233,in_port=1 actions=LOCAL
+ cookie=0x0, duration=2134.312s, table=1, n_packets=15, n_bytes=1110, idle_age=16, priority=0 actions=resubmit(,2)
+ cookie=0x0, duration=217.208s, table=2, n_packets=0, n_bytes=0, idle_age=217, ip,tcp,tp_dst=2152 actions=LOCAL
+ cookie=0x0, duration=5171.730s, table=3, n_packets=1, n_bytes=47, idle_age=4329, priority=0 actions=resubmit(,4)
+ cookie=0x0, duration=185.586s, table=4, n_packets=0, n_bytes=0, idle_age=185, ip,udp,tp_dst=2152 actions=LOCAL
+
+
+/////////////////////////
+for one table all users
+[root@10-10-28-238 ~]# ovs-ofctl dump-flows br0
+NXST_FLOW reply (xid=0x4):
+ cookie=0x0, duration=1017.569s, table=0, n_packets=1, n_bytes=74, idle_age=501, tcp,in_port=LOCAL,tcp_flags=+syn-ack actions=learn(table=1,idle_timeout=60,tun_id=0x1,tun_src=10.10.59.233,eth_type=0x800,nw_proto=6,NXM_OF_IP_SRC[]=NXM_OF_IP_DST[],NXM_OF_IP_DST[]=NXM_OF_IP_SRC[],NXM_OF_TCP_SRC[]=NXM_OF_TCP_DST[],NXM_OF_TCP_DST[]=NXM_OF_TCP_SRC[],output:NXM_OF_IN_PORT[]),set_tunnel:0x1,load:0xa0a3be9->NXM_NX_TUN_IPV4_DST[],output:1
+ cookie=0x0, duration=1001.116s, table=0, n_packets=3, n_bytes=147, idle_age=129, udp,in_port=LOCAL actions=learn(table=3,idle_timeout=60,tun_id=0x1,tun_src=10.10.59.233,eth_type=0x800,nw_proto=17,NXM_OF_IP_SRC[]=NXM_OF_IP_DST[],NXM_OF_IP_DST[]=NXM_OF_IP_SRC[],NXM_OF_UDP_SRC[]=NXM_OF_UDP_DST[],NXM_OF_UDP_DST[]=NXM_OF_UDP_SRC[],output:NXM_OF_IN_PORT[]),set_tunnel:0x1,load:0xa0a3be9->NXM_NX_TUN_IPV4_DST[],output:1
+ cookie=0x0, duration=938.928s, table=0, n_packets=20, n_bytes=1406, idle_age=252, tcp,in_port=1 actions=resubmit(,1)
+ cookie=0x0, duration=932.274s, table=0, n_packets=5, n_bytes=243, idle_age=12, udp,in_port=1 actions=resubmit(,3)
+ cookie=0x0, duration=909.626s, table=0, n_packets=63, n_bytes=6174, idle_age=556, icmp,tun_id=0x1,tun_src=10.10.59.233,in_port=1,icmp_type=8,icmp_code=0 actions=drop
+ cookie=0x0, duration=874.946s, table=0, n_packets=32, n_bytes=1822, idle_age=7, priority=10,in_port=LOCAL actions=set_tunnel:0x1,load:0xa0a3be9->NXM_NX_TUN_IPV4_DST[],output:1
+ cookie=0x0, duration=855.920s, table=0, n_packets=19, n_bytes=944, idle_age=7, priority=10,tun_id=0x1,tun_src=10.10.59.233,in_port=1 actions=LOCAL
+ cookie=0x0, duration=802.350s, table=1, n_packets=13, n_bytes=936, idle_age=252, priority=0 actions=resubmit(,2)
+ cookie=0x0, duration=698.223s, table=2, n_packets=8, n_bytes=566, idle_age=276, tcp,tun_id=0x1,tun_src=10.10.59.233,tp_dst=2152 actions=LOCAL
+ cookie=0x0, duration=796.377s, table=3, n_packets=5, n_bytes=243, idle_age=12, priority=0 actions=resubmit(,4)
+ cookie=0x0, duration=684.149s, table=4, n_packets=3, n_bytes=146, idle_age=67, udp,tun_id=0x1,tun_src=10.10.59.233,tp_dst=2152 actions=LOCAL
+
+
+MSG_CONFIRM (Since Linux 2.3.15)
+Tell the link layer that forward progress happened: you got a successful reply from the other side. If the link layer doesn't get this it will regularly reprobe the neighbor (e.g., via a unicast ARP). Only valid on SOCK_DGRAM and SOCK_RAW sockets and currently only implemented for IPv4 and IPv6. See arp(7) for details.

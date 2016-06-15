@@ -1,0 +1,25 @@
+
+
+// ucloud所有协议的总名字空间
+message UMessage {
+    // 协议头
+    required Head head = 1;
+
+    // 协议体
+    required RecordStatsRequest body = 2;
+};
+
+message Head {
+    // 版本号
+    required uint32 version = 1;
+};
+
+message StatsData {
+    required uint32 num = 16;                       // 数据项ID
+}
+
+message RecordStatsRequest {
+    repeated StatsData stats_data_list = 10;            // 用于分析的元数据
+}
+
+

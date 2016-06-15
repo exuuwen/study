@@ -1,0 +1,254 @@
+<html>
+<body>
+<!-- This is a comment -->
+<h1 align="center">This is a heading</h1>
+<h2>This is a 2 heading</h2>
+<h3>This is a 3 heading</h3>
+
+<p>This is a paragraph.</p>
+<p>This is another paragraph.</p>
+
+<p>This is<br />a para<br />graph with line breaks</p>
+
+<hr />
+
+<strong>This text is strong</strong>
+<br />
+<big>This text is big</big>
+<br />
+<em>This text is emphasized</em>
+<br />
+<i>This text is italic</i>
+<br />
+<small>This text is small</small>
+<br />
+This text contains<sub>subscript</sub>
+<br />
+This text contains<sup>superscript</sup>
+<br />
+<hr />
+<pre>
+
+for i = 1 to 10
+     print i
+next i
+</pre>
+
+<bdo dir="rtl">
+Here is some Hebrew text
+</bdo>
+
+这是长的引用：
+<blockquote>
+这是长的引用。这是长的引用。这是长的引用。这是长的引用。这是长的引用。这是长的引用。这是长的引用。这是长的引用。这是长的引用。这是长的引用。这是长的引用。
+</blockquote>
+
+这是短的引用：
+<q>
+这是短的引用。
+</q>
+
+<p>一打有 <del>二十</del> <ins>十二</ins> 件。</p>
+
+<a href="#tips">有用的提示</a>
+<a href="http://www.w3school.com.cn/" target="_blank">Visit W3School!</a>
+<p>如果把链接的 target 属性设置为 "_blank"，该链接会在新窗口中打开。</p>
+
+<a name="tips">基本的注意事项 - 有用的提示</a>
+
+
+
+<a href="http://www.w3school.com.cn/html/html_links.asp#tips">有用的提示</a>
+<hr />
+<a href="http://www.w3school.com.cn">This is a link</a>
+<br />
+
+
+<img src="xxx" width="10" height="14" />
+<p>图像 <img src="/i/eg_cute.gif" align="bottom"> 在文本中</p>
+<p>图像 <img src ="/i/eg_cute.gif" align="middle"> 在文本中</p>
+<p>图像 <img src ="/i/eg_cute.gif" align="top"> 在文本中</p>
+<p>请注意，bottom 对齐方式是默认的对齐方式。</p>
+
+<img src ="/i/eg_cute.gif" align ="left"> 
+带有图像的一个段落。图像的 align 属性设置为 "left"。图像将浮动到文本的左侧。
+</p>
+
+<p>
+<img src ="/i/eg_cute.gif" align ="right"> 
+带有图像的一个段落。图像的 align 属性设置为 "right"。图像将浮动到文本的右侧。
+</p>
+
+<p>
+您也可以把图像作为链接来使用：
+<a href="/example/html/lastpage.html">
+<img border="0" src="/i/eg_buttonnext.gif" />
+</a>
+</p>
+
+
+
+<table border="1">
+<caption>我的标题</caption>
+<th>Heading</th>
+<th>Another Heading</th>
+<tr>
+<td>row 1, cell 1</td>
+<td>row 1, cell 2</td>
+</tr>
+<tr>
+<td>row 2, cell 1</td>
+<td>row 2, cell 2</td>
+</tr>
+</table>
+
+<h4>横跨两列的单元格：</h4>
+<table border="1">
+<tr>
+  <th>姓名</th>
+  <th colspan="2">电话</th>
+</tr>
+<tr>
+  <td>Bill Gates</td>
+  <td>555 77 854</td>
+  <td>555 77 855</td>
+</tr>
+</table>
+
+<html>
+<body>
+
+<h4>Disc 项目符号列表：</h4>
+<ul type="disc">
+ <li>苹果</li>
+ <li>香蕉</li>
+ <li>柠檬</li>
+ <li>桔子</li>
+</ul>  
+
+<h4>数字列表：</h4>
+<ol>
+ <li>苹果</li>
+ <li>香蕉</li>
+ <li>柠檬</li>
+ <li>桔子</li>
+</ol>  
+
+<h4>字母列表：</h4>
+<ol type="A">
+ <li>苹果</li>
+ <li>香蕉</li>
+ <li>柠檬</li>
+ <li>桔子</li>
+</ol>
+
+<h2>一个定义列表：</h2>
+
+<dl>
+   <dt>计算机</dt>
+   <dd>用来计算的仪器 ... ...</dd>
+   <dt>显示器</dt>
+   <dd>以视觉方式显示信息的装置 ... ...</dd>
+</dl>
+
+
+</body>
+</html>
+..............................................................................
+
+
+<html>
+<head>
+<style type="text/css">
+div#header {background-color:#99bbbb;}
+div#menu {background-color:#ffff99;height:200px;width:150px;float:left;}
+div#content {background-color:#EEEEEE;height:200px;width:350px;float:left;}
+div#footer {background-color:#99bbbb;clear:both;text-align:center;}
+h1 {margin-bottom:0;}
+h2 {margin-bottom:0;font-size:18px;}
+ul {margin:0;}
+li {list-style:none;}
+</style>
+</head>
+
+<body>
+
+<div id="container">
+
+<div id="header">
+<h1>Main Title of Web Page</h1>
+</div>
+
+<div id="menu">
+<h2>Menu</h2>
+<ul>
+<li>HTML</li>
+<li>CSS</li>
+<li>JavaScript</li>
+</ul>
+</div>
+
+<div id="content">Content goes here</div>
+
+<div id="footer">Copyright W3School.com.cn</div>
+
+</div>
+
+</body>
+</html>
+
+</body>
+</html>
+............................................................................................
+
+<form>
+<bod>me="user">
+<br />
+密码：
+<input type="password" name="password">
+</form>
+
+<form>
+<input type="radio" name="sex" value="male" /> Male
+<br />
+<input type="radio" name="sex" value="female" /> Female
+</form>
+
+<form>
+<input type="checkbox" name="bike" />
+I have a bike
+<br />
+<input type="checkbox" name="car" />
+I have a car
+</form>
+
+<form name="input" action="html_form_action.asp" method="get">
+Username: 
+<input type="text" name="user"  />
+<input type="submit" value="Submit" />
+</form>
+
+<form action="" method=post enctype=multipart/form-data>
+<input type=file name=file>
+<input type=submit value=Upload>
+</form>
+
+<form>
+<select name="cars">
+<option value="volvo">Volvo</option>
+<option value="saab">Saab</option>
+<option value="fiat">Fiat</option>
+<option value="audi">Audi</option>
+</select>
+</form>
+
+..........................................
+
+
+<iframe src="/example/html/demo_iframe.html" name="iframe_a"></iframe>
+
+<p><a href="http://www.w3school.com.cn" target="iframe_a">W3School.com.cn</a></p>
+
+<p><b>注释：</b>由于链接的目标匹配 iframe 的名称，所以链接会在 iframe 中打开。</p>
+
+

@@ -1,0 +1,20 @@
+/usr/lib/systemd/system/docker.service
+systemctl daemon-reload
+
+docker rmi image-id
+docker docker commit -m "Added json gem" -a "Kate Smith" container-id newimage-id:tage
+
+docker rm container-id
+
+volumn:
+docker run -t -i  -v /root/docker-src/:/root/mymount  ubuntu /bin/bash
+docker run -t -i  -v /root/docker.txt:/root/mymountfile  ubuntu /bin/bash
+
+docker run -t -i --volumes-from d86bcb885450  ubuntu /bin/bash
+
+docker rm -v xx:xx container_id
+
+
+docker hub:
+docker login
+docker push username/imagename

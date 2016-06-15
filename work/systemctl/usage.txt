@@ -1,0 +1,22 @@
+systemctl start/stop/restart/status foo
+systemctl is-active foo
+systemctl show foo
+
+service startup by os start
+# /etc/systemd/system/multi-user.target.wants/
+
+disable startup by os start
+# systemctl disable foo
+enable startup by os start
+# systemctl enable foo
+check is enable startup by os start
+# systemctl is-enabled foo
+
+Systemctl接受服务（.service），挂载点（.mount），套接口（.socket）和设备（.device）作为单元
+systemctl list-units
+systemctl list-unit-files
+
+systemctl list-units --type=service
+systemctl list-unit-files --type=mount
+
+journalctl -f -u foo

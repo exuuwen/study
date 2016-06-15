@@ -1,0 +1,219 @@
+1. 结构
+a. rule
+struct rule {
+    struct ofproto *const ofproto; /* The ofproto that contains this rule. */
+	/*cls_rule里面包含了flow的属性match, priority*/
+    const struct cls_rule cr;      /* In owning ofproto's classifier. */
+    const uint8_t table_id;        /* Index in ofproto's 'tables' array. */
+
+	/* Timeouts. */
+    uint16_t hard_timeout OVS_GUARDED; /* In seconds from ->modified. */
+    uint16_t idle_timeout OVS_GUARDED; /* In seconds from ->used. */
+
+	/*rule的actions*/
+	OVSRCU_TYPE(const struct rule_actions *) actions;	
+};
+
+/*match结构*/
+struct cls_rule {
+    struct minimatch match;      /* Matching rule. */
+    unsigned int priority;       /* Larger numbers are higher priorities. */
+	/*cls_match里面包含hash node连接到一个cls_subtable*/
+    struct cls_match *cls_match; /* NULL if rule is not in a classifier. */
+};
+
+/*action结构*/
+struct rule_actions {
+    uint32_t ofpacts_len;         /* Size of 'ofpacts', in bytes. */
+    struct ofpact ofpacts[];      /* Sequence of "struct ofpacts". */
+};
+
+b. table
+struct oftable {
+	/*cls 是rule的分类组织结构头 包含一个cls_classifer指针*/
+    struct classifier cls;      /* Contains "struct rule"s. */
+    char *name;                 /* Table name exposed via OpenFlow, or NULL. */
+
+    unsigned int max_flows;
+
+	/* Table config: contains enum ofproto_table_config; accessed atomically. */
+    atomic_uint config;
+};
+
+
+struct cls_classifier {
+    int n_rules;                /* Total number of rules. */
+	/*subtable的hash头*/
+    struct hmap subtables;      /* Contains "struct cls_subtable"s.  */
+    struct cls_subtable_cache subtables_priority;
+};
+
+struct cls_subtable {
+	/*指向cls_classifier的hmap*/ 
+    struct hmap_node hmap_node; /* Within struct cls_classifier 'subtables' hmap. */
+	/*rules的hash头*/
+    struct hmap rules;          /* Contains "struct cls_rule"s. */
+    int n_rules;                /* Number of rules, including duplicates. */
+    unsigned int max_priority;  /* Max priority of any rule in the subtable. */
+
+	/*同一subtable有相同的mask*/
+	struct minimask mask;       /* Wildcards for fields. */
+};
+
+struct cls_match {
+    struct cls_rule *cls_rule;
+    /*指向cls_subtables的hmap*/
+	struct hmap_node hmap_node; /* Within struct cls_subtable 'rules'. */
+    unsigned int priority;      /* Larger numbers are higher priorities. */
+    struct list list;           /* List of identical, lower-priority rules. */
+    struct miniflow flow;       /* Matching rule. Mask is in the subtable. */
+};
+
+
+2. 分类
+a. 根据mask进行做hash, 相同hash值的组成一个list, 每个list成员就是一个subtable
+b. 在每个subtables上进行mask+flow进行hash, 相同hash值组成一个list, 每个list成员就是cls_match组（也是list, 具有相同flow以及mask的rules)
+c. cls_match组成的list上按照priority就行连接
+
+
+3. 实现
+handle_flow_mod--->handle_flow_mod__-->add_flow()
+{
+	//如果if是0xff就指定为0, 可以通过rule_choose_table自定义行为
+	table = &ofproto->tables[table_id];	
+
+	a.精确查找是否有相同的流, 查找到了将相应的action换掉
+	rule = rule_from_cls_rule(classifier_find_rule_exactly(&table->cls, &cr));
+	if (rule)
+		error = modify_flows__(ofproto, ofconn, fm, request, &rules);
+	
+	b. 新的flow
+	/*分配struct rule*/
+	rule = ofproto->ofproto_class->rule_alloc();
+
+	/*初始化rule*/
+	rule->idle_timeout = fm->idle_timeout;
+    rule->hard_timeout = fm->hard_timeout;
+	*CONST_CAST(uint8_t *, &rule->table_id) = table - ofproto->tables;
+	ovsrcu_set(&rule->actions,
+               rule_actions_create(ofproto, fm->ofpacts, fm->ofpacts_len));
+	/*初始化数据*/
+	error = ofproto->ofproto_class->rule_construct(rule);
+	
+	/*插入rule*/
+	do_add_flow(ofproto, ofconn, request, fm->buffer_id, rule);
+}
+
+
+a. 精确查找, 以及modify
+1) 精确查找
+struct cls_rule *classifier_find_rule_exactly(const struct classifier *cls_,
+                             const struct cls_rule *target)
+{
+	/*根据mask找到subtable*/
+	subtable = find_subtable(cls, &target->match.mask);	
+	
+	/*根据flow+mask找到cls_match head*/
+	head = find_equal(subtable, &target->match.flow,
+                      miniflow_hash_in_minimask(&target->match.flow,
+                                                &target->match.mask, 0));
+
+	/*根据priority找到rule(指定的cls_match)*/
+	FOR_EACH_RULE_IN_LIST (rule, head) {
+        if (target->priority >= rule->priority) {
+            return target->priority == rule->priority ? rule->cls_rule : NULL;
+        }
+    }
+}
+2) modify
+modify_flows__()
+{
+	actions = rule_get_actions(rule);
+	actions_changed = !ofpacts_equal(fm->ofpacts, fm->ofpacts_len,
+                                         actions->ofpacts,
+                                         actions->ofpacts_len);
+	/*替换actions*/
+	reset_counters = (fm->flags & OFPUTIL_FF_RESET_COUNTS) != 0;
+	if (actions_changed || reset_counters) {
+            const struct rule_actions *new_actions;
+
+            op->actions = rule_get_actions(rule);
+            new_actions = rule_actions_create(ofproto,
+                                              fm->ofpacts, fm->ofpacts_len);
+
+            ovsrcu_set(&rule->actions, new_actions);
+	}
+}
+
+b. 插入新rule
+do_add_flow(struct ofproto *ofproto, struct ofconn *ofconn,)
+{
+    struct ofopgroup *group;
+
+	1) 插入rule到table里面
+    oftable_insert_rule(rule);
+
+	2) 创建operation group, 完成controller发下来的flow对应的miss flow的发送
+	/*当miss flow发送给controller后, ovs会将其buffer住, 当controller发下flow
+	的时候带着相应的buffer id. 将会通过flow的action处理对应的buffer*/
+    /*创建group 以及operation*/
+	group = ofopgroup_create(ofproto, ofconn, request, buffer_id);
+    ofoperation_create(group, rule, OFOPERATION_ADD, 0);
+	/*提交operation*/
+    ofopgroup_submit(group);
+}
+
+1) insert
+oftable_insert_rule--->classifier_insert(&table->cls, CONST_CAST(struct cls_rule *, &rule->cr))
+{
+	/*找subtable*/
+	subtable = find_subtable(cls, &rule->match.mask);
+    if (!subtable) {
+        subtable = insert_subtable(cls, &rule->match.mask);
+    }
+
+	/*插入rule*/
+    old_rule = insert_rule(cls, subtable, rule);
+}
+
+
+2) 创建operation
+ofopgroup_submit--->ofopgroup_complete
+{
+	if (!error && group->ofconn && group->buffer_id != UINT32_MAX) {
+		/*获取每个ops通常就一个*/
+        LIST_FOR_EACH (op, group_node, &group->ops) {
+            if (op->type != OFOPERATION_DELETE) {
+				/*获取buffer中的packet*/
+                error = ofconn_pktbuf_retrieve(group->ofconn, group->buffer_id,
+                                               &packet, &in_port);
+                if (packet) {
+					/*创建rule_exec放到rule_executes上*/
+                    re = xmalloc(sizeof *re);
+                    re->rule = op->rule;
+                    re->in_port = in_port;
+                    re->packet = packet;
+
+                    if (!guarded_list_push_back(&ofproto->rule_executes,
+                                                &re->list_node, 1024)) {
+                        ofproto_rule_unref(op->rule);
+                        ofpbuf_delete(re->packet);
+                    }
+                }
+                break;
+            }
+        }
+}
+
+ofproto_run/handle_flow_mod__--->run_rule_executes
+{
+	guarded_list_pop_all(&ofproto->rule_executes, &executes);
+    LIST_FOR_EACH_SAFE (e, next, list_node, &executes) {
+        struct flow flow;
+        flow_extract(e->packet, NULL, &flow);
+        flow.in_port.ofp_port = e->in_port;
+		/*通过rule_execute通过netlink让内核packet out这个报文*/
+        ofproto->ofproto_class->rule_execute(e->rule, &flow, e->packet);
+
+    }
+}

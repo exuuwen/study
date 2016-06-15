@@ -1,0 +1,21 @@
+gcc -shared -o lib.so lib.c
+gcc -c program1.c  -o program1.o
+gcc -c program2.c  -o program2.o
+gcc program1.o -o program1  ./lib.so 
+gcc program2.o -o program2  ./lib.so 
+
+1 编译好可执行文件后只为可执行文件分配虚拟地址空间，共享库不分配
+2 程序加载根据可执行文件dynamic段查找所学的共享库，并导入符号构建全局符号表
+3 根据.rel.dyn和rel.pl重定位.got和.got.plt里面的函数和变量地址
+4 跳转到程序地址入口执行文件
+
+
+
+
+
+cr7@cr7-virtual-machine:~/pro/linux/link_build/dynamic_linker$ ldd program1
+	linux-gate.so.1 =>  (0x007e9000)
+	./lib.so (0x00c1a000)
+	libc.so.6 => /lib/libc.so.6 (0x005f6000)
+	/lib/ld-linux.so.2 (0x00e18000)
+

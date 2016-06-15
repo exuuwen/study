@@ -1,0 +1,5 @@
+    location ~ \.(gif|jpg|png)$ {
+        root /data/images;
+    }
+
+The parameter is a regular expression matching all URIs ending with .gif, .jpg, or .png. A regular expression should be preceded with ~. The corresponding requests will be mapped to the /data/images directory. 

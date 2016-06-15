@@ -1,0 +1,21 @@
+tunnel:
+recirc_id(0),skb_priority(0),tunnel(tun_id=0x123456,src=10.9.22.129,dst=10.9.32.42,tos=0x0,ttl=64,flags(key)),in_port(2),skb_mark(0),eth_type(0x0800),ipv4(src=192.168.0.1/0.0.0.0,dst=192.168.0.2/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:220, bytes:21560, used:0.444s, actions:3
+recirc_id(0),skb_priority(0),in_port(3),eth_type(0x0800),ipv4(src=192.168.0.2/0.0.0.0,dst=192.168.0.1/0.0.0.0,proto=1/0,tos=0/0x3,ttl=64/0,frag=no/0xff), packets:220, bytes:21560, used:0.444s, actions:set(tunnel(tun_id=0x654321,src=10.9.32.42,dst=10.9.22.129,tos=0x0,ttl=64,flags(key))),2
+
+
+icmp
+recirc_id(0),skb_priority(0),in_port(5),eth_type(0x0800),ipv4(src=172.168.0.2/0.0.0.0,dst=172.168.0.1/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:333, bytes:32634, used:0.137s, actions:4
+recirc_id(0),skb_priority(0),in_port(4),eth_type(0x0800),ipv4(src=172.168.0.1/0.0.0.0,dst=172.168.0.2/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:333, bytes:32634, used:0.137s, actions:5
+
+
+
+tcp:
+ecirc_id(0),skb_priority(0),in_port(3),eth_type(0x0800),ipv4(src=192.168.0.1/0.0.0.0,dst=192.168.0.2/0.0.0.0,proto=6/0,tos=0/0x3,ttl=64/0,frag=no/0xff), packets:8365, bytes:12663762, used:0.000s, flags:P., actions:set(tunnel(tun_id=0x123456,src=10.9.22.129,dst=10.9.32.42,tos=0x0,ttl=64,flags(key))),2
+recirc_id(0),skb_priority(0),tunnel(tun_id=0x654321,src=10.9.32.42,dst=10.9.22.129,tos=0x0,ttl=64,flags(key)),in_port(2),skb_mark(0),eth_type(0x0800),ipv4(src=192.168.0.2/0.0.0.0,dst=192.168.0.1/0.0.0.0,proto=6/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:4169, bytes:275166, used:0.000s, flags:., actions:3
+
+
+arp:
+recirc_id(0),skb_priority(0),in_port(4),eth_type(0x0806), packets:0, bytes:0, used:never, actions:5
+recirc_id(0),skb_priority(0),in_port(5),eth_type(0x0806), packets:0, bytes:0, used:never, actions:4
+
+

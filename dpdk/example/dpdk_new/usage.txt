@@ -1,0 +1,2 @@
+./build/test  -c 01ff -n 4 -m 16384 -- -p 0x1 -f config/test.cfg 
+socat stdin unix-connect:/tmp/UNIX.udpi

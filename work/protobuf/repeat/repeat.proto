@@ -1,0 +1,8 @@
+message Data {
+    required int32 data = 10;                          // 分析目标 一般谁eip地址，如果是该机房总量uuid为特定值'all'
+}
+
+message DataList {
+    repeated Data data_list = 10;            // 用于分析的元数据
+}
+

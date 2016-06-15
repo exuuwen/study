@@ -1,0 +1,10 @@
+1. sudo apt-get install python-pip
+apt-get install libxml2-dev libxslt1-dev python-dev
+sudo apt-get install python-eventlet python-routes python-webob python-paramiko
+2. 
+git clone git://github.com/osrg/ryu.git
+cd ryu
+python ./setup.py install 
+
+3. start 
+ryu-manager ryu_test.py --log-config-file log.config --ofp-tcp-listen-port 6633

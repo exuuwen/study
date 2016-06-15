@@ -1,0 +1,26 @@
+[Unit]
+Description=systemd foo exampel
+#Requires=dev-hugepages.mount
+#Wants=rsyslog.service 
+#After=dev-hugepages.mount rsyslog.service
+
+[Service]
+Type=simple
+
+ExecStart=/usr/bin/foo one two
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+#ExecStartPre=/bin/start.sh
+
+#Type=forking
+#ExecStart=/opt/unet/bin/phygw_start.sh                                                                                                        #ExecStop=/opt/unet/bin/phygw_stop.sh
+
+StandardOutput=syslog
+StandardError=inherit
+SyslogIdentifier=phygw
+SyslogFacility=local0
+
+[Install]
+WantedBy=multi-user.target

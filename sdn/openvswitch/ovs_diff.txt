@@ -1,0 +1,37 @@
+ping 
+2.5 timeout 10s
+# ovs-ofctl dump-flows br0
+NXST_FLOW reply (xid=0x4):
+ cookie=0x0, duration=241846.712s, table=0, n_packets=2206, n_bytes=216188, idle_age=0, hard_age=65534, in_port=2 actions=output:1
+ cookie=0x0, duration=241841.483s, table=0, n_packets=2206, n_bytes=216188, idle_age=0, hard_age=65534, in_port=1 actions=output:2
+[root@10-19-61-167 ~]# ovs-dpctl dump-flows
+recirc_id(0),in_port(3),eth_type(0x0800),ipv4(frag=no), packets:1992, bytes:195216, used:0.632s, actions:2
+recirc_id(0),in_port(2),eth_type(0x0800),ipv4(frag=no), packets:1992, bytes:195216, used:0.632s, actions:3
+
+2.3
+timeout 1.5s
+# ovs-ofctl dump-flows br0
+NXST_FLOW reply (xid=0x4):
+ cookie=0x0, duration=628.584s, table=0, n_packets=914, n_bytes=89572, idle_age=0, in_port=1 actions=output:2
+ cookie=0x0, duration=624.840s, table=0, n_packets=914, n_bytes=89572, idle_age=0, in_port=2 actions=output:1
+[root@10-19-160-148 ~]# ovs-dpctl dump-flows
+recirc_id(0),skb_priority(0),in_port(2),eth_type(0x0800),ipv4(src=192.168.0.1/0.0.0.0,dst=192.168.0.2/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:772, bytes:75656, used:0.016s, actions:3
+recirc_id(0),skb_priority(0),in_port(3),eth_type(0x0800),ipv4(src=192.168.0.2/0.0.0.0,dst=192.168.0.1/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:772, bytes:75656, used:0.016s, actions:2
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+ping -s 1500
+2.5
+recirc_id(0),in_port(2),eth_type(0x0800),ipv4(frag=later), packets:63, bytes:3906, used:0.529s, actions:3
+recirc_id(0),in_port(3),eth_type(0x0800),ipv4(frag=later), packets:63, bytes:3906, used:0.529s, actions:2
+recirc_id(0),in_port(3),eth_type(0x0800),ipv4(frag=first), packets:63, bytes:95382, used:0.529s, actions:2
+recirc_id(0),in_port(2),eth_type(0x0800),ipv4(frag=first), packets:63, bytes:95382, used:0.529s, actions:3
+
+
+2.3
+recirc_id(0),skb_priority(0),in_port(3),eth_type(0x0800),ipv4(src=192.168.0.2/0.0.0.0,dst=192.168.0.1/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=later/0xff), packets:143, bytes:8866, used:0.504s, actions:2
+recirc_id(0),skb_priority(0),in_port(3),eth_type(0x0800),ipv4(src=192.168.0.2/0.0.0.0,dst=192.168.0.1/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=first/0xff), packets:143, bytes:216502, used:0.504s, actions:2
+recirc_id(0),skb_priority(0),in_port(2),eth_type(0x0800),ipv4(src=192.168.0.1/0.0.0.0,dst=192.168.0.2/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=first/0xff), packets:143, bytes:216502, used:0.504s, actions:3
+recirc_id(0),skb_priority(0),in_port(2),eth_type(0x0800),ipv4(src=192.168.0.1/0.0.0.0,dst=192.168.0.2/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=later/0xff), packets:143, bytes:8866, used:0.504s, actions:3
+

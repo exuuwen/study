@@ -1,0 +1,58 @@
+1. args:
+set args a b c
+show args
+
+2.  break && watch
+break func
+break filename:line/func
+break +/-offset
+break *address
+break
+
+watch <expr>
+rwatch <expr>
+
+3. delete
+delete [breakpoints] [range...] 
+disable [breakpoints] [range...] 
+enable [breakpoints] [range...] 
+
+delete 2
+delete breakpoints 1-3
+
+4. run
+run
+continue
+next
+nexti
+step
+stepi
+finsh
+
+5.signal
+handle <signal> <keywords...>
+stop/nostop
+pass/nopass
+print/noprint
+info signal
+
+6. backtarce
+
+7. list
+list line
+list funct
+list first,laste
+list ,last
+list +/-offset
+
+8. info line function/lines
+
+9.  disassemble func/address
+
+10. print/f data
+f: x,u,f,d,o,c,t,a
+
+12. x/<n/f/u> <addr>
+u: b,h,w,g
+
+

@@ -1,0 +1,19 @@
+
+yum provides "*/libmpfr.so*"
+yumdownloader xxx
+
+yum-repo from local iso
+# mount -o loop ~/CentOS-7-x86_64-DVD-1511.iso /mnt/iso/
+# mv  /etc/yum.repos.d/  /etc/yum.repos.d.bk/
+# cat <<EOF > /etc/yum.repos.d/iso.repo
+[CentOS7-ISO]
+name=CentOS7-ISO
+baseurl=file:///mnt/iso
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+EOF
+ 
+# yum clean all
+
+

@@ -1,0 +1,21 @@
+ range 0 enable
+ dst.mac start 0 6c:92:bf:04:7f:d4
+ Pktgen> src.ip start 0 10.0.0.3
+ Pktgen> src.ip max 0 10.0.0.254
+ Pktgen> src.ip min 0 10.0.0.3
+ src.ip inc 0 0.0.0.1
+ Pktgen> dst.ip start 0 10.0.0.2
+ Pktgen> dst.ip max 0 10.0.0.2
+ Pktgen> dst.ip min 0 10.0.0.2
+ Pktgen> src.port start 0 100
+ Pktgen> src.port min 0 100
+ Pktgen> src.port max 0 65530
+ Pktgen> src.port inc 0 1
+ Pktgen> dst.port start 0 2222
+ Pktgen> dst.port min 0 2222
+ Pktgen> dst.port max 0 2222
+				dst.port inc 0 1
+ set 0 rate 10
+
+
+ ./pktgen -c 0x1f -n 3 -- -P -m "[1-4].0"
