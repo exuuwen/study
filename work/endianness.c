@@ -16,7 +16,7 @@ struct B {
 int main()
 {
 	printf("0x%x\n", *(uint16_t *)addr);
-	//for little endian should be 1
+	//for little endian should be 0x3412
 	
 	union A a;
 	a.i = 1;
@@ -41,8 +41,8 @@ bit  offset  01234567 01234567 01234567 01234567
         hex     0a       0b      0c        0d
 
 Write Integer for Little Endian System
-byte  addr      3         2       1        0
-bit  offset  76543210 76543210 76543210 76543210
-     binary  00001010 00001011 00001100 00001101
-        hex     0a       0b      0c        0d
+byte  addr       0        1         2       3    
+bit  offset   76543210 76543210 76543210 76543210
+     binary   00001101 00001100 00001011 00001010
+        hex      0d      0c        0b       0a   
 */
