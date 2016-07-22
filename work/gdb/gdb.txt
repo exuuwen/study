@@ -55,4 +55,8 @@ f: x,u,f,d,o,c,t,a
 12. x/<n/f/u> <addr>
 u: b,h,w,g
 
+13. up/down
+
+14. thread num
+
 

@@ -1,0 +1,11 @@
+set(MYFIND_INCLUDE_DIR   @MYFIND_INCLUDE_DIR@)
+set(MYFIND_LIB_DIR         @MYFIND_LIB_DIR@)
+
+
+if(AUTO_CONFIGURE_PACKAGE)
+  message(STATUS "auto configure package 'myfind', version = @MYFIND_VERSION@")
+  message(STATUS "auto configure package 'myfind', link = @MYFIND_LIB_DIR@")
+
+  include_directories(${MYFIND_INCLUDE_DIR})
+  link_directories(${MYFIND_LIB_DIR})
+endif()

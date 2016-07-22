@@ -4,6 +4,6 @@ void haha(int);
 
 void haha(int a)
 {
-	printf("in teh func %d\n", a);
+	printf("in the func %d\n", a);
 }
 

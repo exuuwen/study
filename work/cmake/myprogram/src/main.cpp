@@ -1,14 +1,18 @@
 #include <stdio.h>
 #include <ev.h>
 #include "mylib.h"
+#include "myfind.h"
 #include "unetanalysis.177000.178000.pb.h"
 
 extern void haha(int a);
+static unsigned long find;
 
 static void
 timer_repeat_cb (struct ev_loop *loop, ev_timer *w, int revents)
 {
 	printf("timer repeat out %d\n", revents);
+	myfind_func(find);
+	find++;
 }
 
 int main(void)

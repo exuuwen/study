@@ -22,13 +22,14 @@ int main()
 	a.i = 1;
 	
 	printf("a.ch: %d\n", a.ch);
+	//for little endian should be 0x1
 
 	struct B b;
 	b.a = 1;
 	b.b = 2;
 
 	printf("0x%x\n", *(uint8_t *)&b);
-	//for little endian should be 0x21
+	/*00100001*/
 }
 
 /*
