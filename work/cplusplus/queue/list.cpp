@@ -31,7 +31,7 @@ int main()
 	front = 1000;
 	end = 100;
 
-	for (auto item : array)
+	for (auto & item : array)
 	{
 		cout << item << " ";
 	}

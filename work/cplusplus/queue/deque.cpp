@@ -30,7 +30,7 @@ int main()
 	cout << "c.front:" << front << ". c.end():" << end << endl;
 	front = 1000;
 	end = 100;
-	for (auto item : array)
+	for (auto & item : array)
 	{
 		cout << item << " ";
 	}

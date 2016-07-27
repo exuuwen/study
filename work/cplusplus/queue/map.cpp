@@ -31,7 +31,7 @@ int main()
 	cout << "dict[www]:" << dict["www"] << endl; // [] operation may come out a new value ifkey is not exist
 
 	cout << "show-------------" << endl;
-	for (auto item : dict)
+	for (auto & item : dict)
 	{
 		cout << item.first << ":" << item.second << endl;
 	}

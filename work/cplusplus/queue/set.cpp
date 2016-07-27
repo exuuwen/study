@@ -23,7 +23,7 @@ int main()
 	sset.insert("wat");
 	sset.insert("test");
 
-	for (auto item : sset)
+	for (auto& item : sset)
 	{
 		cout << item << " ";
 	}
