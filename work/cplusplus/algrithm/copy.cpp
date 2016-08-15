@@ -14,6 +14,7 @@ int main () {
 	std::vector<int> myvector(7);
 	std::vector<int> myvector2(5);
 
+	//copy 不能插入空的容器中
 	std::copy(myints, myints+7, myvector.begin()); //reverse_copy
 	std::cout << "myvector contains:";
 	for (auto item : myvector)

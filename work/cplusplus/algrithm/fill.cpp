@@ -12,7 +12,7 @@ int main ()
 	std::fill_n (myvector.end() - 2, 2, 3);   // myvector: 5 5 5 8 8 8 3 3
 
 	std::cout << "myvector contains:";
-	for (auto item : myvector)
+	for (auto const& item : myvector)
 		std::cout << item << " ";
 	std::cout << std::endl;
 

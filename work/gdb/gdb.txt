@@ -47,7 +47,7 @@ list +/-offset
 
 8. info line function/lines
 
-9.  disassemble func/address
+9. disassemble func/address
 
 10. print/f data
 f: x,u,f,d,o,c,t,a
