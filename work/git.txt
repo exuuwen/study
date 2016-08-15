@@ -118,4 +118,31 @@ ae44ab0 4
 5f44b94 1
 
 
+# vim ~/.gitconfig
+[user]
+    name = wenxu
+    email = wenxu@test.cn
+
+[sendemail]
+    mtpencryption = tls
+    smtpuser = test@163.com
+    from = test@163.com
+    smtpserverport = 25
+    smtpserver = smtp.163.com
+    smtppass = xxxxx
+    suppresscc = all
+
+[sendemail "test"]
+    mtpencryption = tls
+    smtpuser = wenxu@test.cn
+    from = wenxu@test.cn
+    smtpserverport = 25
+    smtpserver = smtp.qiye.163.com
+    smtppass = xxxx
+    suppresscc = all
+    chainreplayto = false
+
+# ./scripts/get_maintainer.pl -f net/ipv4/ip_tunnel_core.c
+# ./scripts/checkpatch.pl ./0001-net-ip_finish_output_gso-If-skb_gso_network_seglen-e.patch
+# git send-email --identity=test 0001-net-ip_finish_output_gso-If-skb_gso_network_seglen-e.patch --to test@163.com
 
