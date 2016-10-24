@@ -16,5 +16,14 @@ int main ()
 	mycount = std::count_if(myvector.begin(), myvector.end(), IsOdd);
 	std::cout << "odd " << mycount  << " times.\n";
 
+	/*
+	for (; first!=last first++) {
+		if (binary_Op(*first)
+			++n;
+	}
+	
+	return n;
+	*/
+
 	return 0;
 }

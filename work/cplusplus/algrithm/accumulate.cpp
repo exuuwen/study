@@ -31,5 +31,13 @@ int main ()
 	std::cout << std::accumulate (numbers, numbers+3, init, myobject);
 	std::cout << '\n';
 
+	/*
+	for ( ; first !=last; firt++) {
+		init = binary_op(init, *first);
+	}
+	
+	retrun init;
+	*/
+
 	return 0;
 }

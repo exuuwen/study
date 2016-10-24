@@ -122,6 +122,7 @@ rpm -q xxx
 rpm -qa
 rpm -qf /bin/ls
 rpm -qi xxx
+rpm -qlp xxx
 
 rpm2cpio xxxx | cpio -t
 

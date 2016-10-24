@@ -79,9 +79,15 @@ int main()
 	{
 		cout << " find_if 3 in the v2" << endl;
 	}
+
+	/*
+	while(first!=last && !binary_op(*first)) first++;
+	return first;
+	*/
 	
 	//find_if_not
 	//find_end
+	//find_first_of
 
 	return 0;
 }
