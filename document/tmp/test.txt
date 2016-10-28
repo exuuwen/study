@@ -1,0 +1,56 @@
+kernel:
+
+device
+vfs
+cfs
+
+
+structure
+
+rb tree 
+radix tree
+trie three
+
+bitwise
+
+
+
+GDB
+network: iptable
+c++
+
+
+
+ When  bash  is invoked as an interactive login shell, or as a non-interactive shell with the --login option, it first reads and exe‐
+       cutes commands from the file  /etc/profile,  if  that  file  exists.   After  reading  that  file,  it  looks  for  ~/.bash_profile,
+       ~/.bash_login,  and  ~/.profile, in that order, and reads and executes commands from the first one that exists and is readable.  The
+       --noprofile option may be used when the shell is started to inhibit this behavior.
+
+       When a login shell exits, bash reads and executes commands from the file ~/.bash_logout, if it exists.
+
+       When an interactive shell that is not a login shell  is  started,  bash  reads  and  executes  commands  from  /etc/bash.bashrc  and
+       ~/.bashrc,  if  these  files  exist.  This may be inhibited by using the --norc option.  The --rcfile file option will force bash to
+       read and execute commands from file instead of /etc/bash.bashrc and ~/.bashrc.
+
+
+
+文件最后一个字符变成cpp
+for i in `find . -name "*.c"`; do mv -f $i `echo $i | sed 's/.$/cpp/'`; done
+
+文件第一个字符变成tt
+for i in `find . -name "*.c"`; do mv -f $i `echo $i | sed 's/^./tt/'`; done
+
+文件后加cc
+for i in houd . -name "*.c"`; do mv -f $i `echo $i"cc"`; done
+
+文件前加hh
+for i in houd . -name "*.c"`; do mv -f $i `echo "hh"$i`; done
+
+文件小写变大写
+for i in houd . -name "*.c"`; do mv -f $i `echo $i` | tr a-z A-Z; done
+
+
+
+
+
+

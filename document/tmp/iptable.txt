@@ -1,0 +1,46 @@
+nat:
+                  This table is consulted when a packet that creates a new connection is encountered.  It consists of three built-ins: PRE‐
+                  ROUTING  (for  altering packets as soon as they come in), OUTPUT (for altering locally-generated packets before routing),
+                  and POSTROUTING (for altering packets as they are about to go out).
+
+SQUERADE
+       This target is only valid in the nat table, in the POSTROUTING chain.  It should only be used with dynamically assigned IP  (dialup)
+       connections: if you have a static IP address, you should use the SNAT target.
+
+iptables -t nat -A POSTROUTING -o eth0 -s 10.0.20.7 -j MASQUERADE
+
+
+SNAT
+       This  target is only valid in the nat table, in the POSTROUTING chain.  It specifies that the source address of the packet should be
+       modified 
+
+iptables -t nat -A POSTROUTING -p icmp -o eth0 -s 10.0.20.7 -j SNAT --to-source 192.168.130.128
+iptables -t nat -A POSTROUTING -p tcp --dport 22 -o eth0 -s 10.0.20.7 -j SNAT --to-source 192.168.130.128
+
+iptables -t nat -A POSTROUTING -p udp --dport 2152 -o eth0 -s 10.0.20.7 -j SNAT --to-source 192.168.130.128:1234
+
+
+
+DNAT
+       This  target is only valid in the nat table, in the PREROUTING and OUTPUT chains, and user-defined chains which are only called from
+       those chains.  It specifies that the destination address of the packet should be modified
+
+iptables -t nat -A PREROUTING -p udp --dport 2152 -i eth0 -s 192.168.130.143 -j DNAT --to-destination 10.0.20.7:1234
+iptables -t nat -A PREROUTING -p tcp --dport 22 -i eth0 -s 192.168.130.143 -j DNAT --to-destination 10.0.20.7
+
+
+
+mangle:
+                  This table is used for specialized packet alteration.  Until kernel 2.4.17 it had two built-in  chains:  PREROUTING  (for
+                  altering incoming packets before routing) and OUTPUT (for altering locally-generated packets before routing).  Since ker‐
+                  nel 2.4.18, three other built-in chains are also supported: INPUT (for packets coming into the box itself), FORWARD  (for
+                  altering packets being routed through the box), and POSTROUTING (for altering packets as they are about to go out).
+
+MARK:
+iptables -t mangle -A PREROUTING -p tcp --dport 22 -j MARK --set-mark 2
+
+TOS:
+iptables -t mangle -A PREROUTING -p TCP --dport 22 -j TOS --set-tos 0x10
+
+TTL:
+iptables -t mangle -A PREROUTING -i eth0 -j TTL --ttl-set 64

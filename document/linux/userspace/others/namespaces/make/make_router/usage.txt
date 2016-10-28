@@ -1,0 +1,9 @@
+gcc -o userns_child_exec userns_child_exec.c if_ops.c  rtnetlink.c rtnetlink_addr.c  rtnetlink_route.c  rtnetlink_link_veth.c bridge.c 
+# chmod a+s userns_child_exec
+# brctl addbr br0
+# ifconfig br0 10.0.0.1/24 up
+# ip route add 192.168.0.0/16 dev br0
+# echo 1 > /proc/sys/net/ipv4/ip_forward
+# echo 1 > /proc/sys/net/ipv4/conf/all/proxy_arp
+# echo 1 > /proc/sys/net/ipv4/conf/br0/proxy_arp
+

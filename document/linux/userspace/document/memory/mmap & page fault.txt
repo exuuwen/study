@@ -1,0 +1,155 @@
+Mmap and page fault
+1. MAP_SHARED/MAP_PRIVATE with fd that opened a file
+
+offset should align with PAGE_SIZE
+a. MAP_SHARED: each process shared the same file they mmapped and the write operation will be write back to the file
+fd = open("a.txt", O_RDWR)); //must be write and read for mmap prot_read and prot_write
+ftruncate(fd, 1024*1024); // truncate the file for mmap
+vaddr = mmap(0, 1024, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 1024*4);
+
+b. MAP_PRIVATE: each process doesn't share the same file  they mapped and the write operation will not be write back to the file
+fd = open("a.txt", O_RDONLY)); //At least read permission for mmap prot_read and prot_write
+ftruncate(fd, 1024*1024); // truncate the file for mmap
+vaddr = mmap(0, 1024, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 1024*4);
+
+
+2. MAP_ANONYMOUS and MAP_SHARED/MAP_PRIVATE without opened file
+
+a. MAP_SHARED: fd and offset is meanless
+vaddr = mmap(0, 1024*1024, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+/*when access the vaddr it arise a page fault---> do_liner_fault*/
+*vaddr = 'a';
+
+b. MAP_PRIVATE: fd and offset is meanless.
+vaddr = mmap(0, 1024*1024, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+/*when access the vaddr it arise a page fault---> do_anonymous_page*/
+*vaddr = 'a';
+
+
+3. hugetlb
+
+a. Map with MAP_HUGETLB and fd associate with files in hugetlbfs
+vaddr = mmap(0, 1024*1024, PROT_READ | PROT_WRITE, MAP_HUGETLB | MAP_PRIVATE, fd, 0);
+/*when access the vaddr it arise a page fault---> hugetlb_fault*/
+*vaddr = 'a';
+
+b. Map with MAP_HUGETLB and MAP_ANONYMOUS, no fd.
+vaddr = mmap(0, 1024*1024, PROT_READ | PROT_WRITE, MAP_HUGETLB | MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+/*when access the vaddr it arise a page fault---> hugetlb_fault*/
+*vaddr = 'a';
+
+sys_mmap()
+{
+	if (offset & ~PAGE_MASK)
+		return -EINVAL;
+        pgoff = offset >> PAGE_SHIFT;
+
+	if (!(flags & MAP_ANONYMOUS)) {
+		audit_mmap_fd(fd, flags);
+		file = fget(fd);
+	/*if mmap is MAP_HUGETLB with a fd, the fd must associate with a hugetlbfs file */ //for case 3a
+	if (unlikely(flags & MAP_HUGETLB && !is_file_hugepages(file)))
+			goto out_fput;
+	}else if (flags & MAP_HUGETLB) {
+		/*MAP_ANONYMOUS and MAP_HUGETLB without fd*/ //for case 3b
+		/*get the hugetlbfs file*/
+		file = hugetlb_file_setup();
+	}
+	
+	if (file) {
+		struct inode *inode = file_inode(file);
+
+		switch (flags & MAP_TYPE) {
+		case MAP_SHARED:
+			/*must open with write*/// for case 1a
+			if ((prot&PROT_WRITE) && !(file->f_mode&FMODE_WRITE))
+			return -EACCES;
+
+			/*
+		 	* Make sure we don't allow writing to an append-only
+		 	* file..
+		 	*/
+			if (IS_APPEND(inode) && (file->f_mode & FMODE_WRITE))
+			return -EACCES;
+
+		/* fall through */
+		case MAP_PRIVATE:
+			/*must open with READ for both*/  //for case 1b
+			if (!(file->f_mode & FMODE_READ))
+		
+			/*the mmap op must be exist*/
+	  		if (!file->f_op || !file->f_op->mmap)
+				return -ENODEV;
+
+		default:
+			return -EINVAL;
+		}
+	} else {
+		/*no file for anonymous map*/ //for case 2
+		switch (flags & MAP_TYPE) {
+		case MAP_SHARED://for case 2a
+			/*
+			 * Ignore pgoff.
+		 	*/
+			pgoff = 0;
+			vm_flags |= VM_SHARED | VM_MAYSHARE;
+			break;
+		case MAP_PRIVATE: //for case 2b
+			/*
+		 	* Set pgoff according to addr for anon_vma.
+		 	*/
+			pgoff = addr >> PAGE_SHIFT;
+			break;
+		default:
+			return -EINVAL;
+		}
+	.......
+
+	if£¨file){
+		error = file->f_op->mmap(file, vma);
+			/* for hugetlb file is hugetlbfs_file_mmap*/ //for case 3a 3b
+			//vma->vm_flags |= VM_HUGETLB
+	}else if (vm_flags & VM_SHARED) { //for case 2a
+		/*MAP_ANONYMOUS mmap  so no file for MAP_SHARED*/
+		error = shmem_zero_setup(vma);
+			//vma->vm_file = file;
+			//vma->vm_ops = &shmem_vm_ops;
+	}
+	
+	
+	 
+}
+
+
+int handle_mm_fault->handle_pte_fault
+{
+	if (unlikely(is_vm_hugetlb_page(vma))) // for case 3a, 3b
+			/*check the flags VM_HUGETLB*/
+		return hugetlb_fault(mm, vma, address, flags);
+
+	if (!pte_present(entry)) {
+		if (pte_none(entry)) {
+			if (vma->vm_ops) {
+				if (likely(vma->vm_ops->fault)) //for case 2a
+					return do_linear_fault(mm, vma, address,
+						pte, pmd, flags, entry);
+			}
+			//for case 2b
+			return do_anonymous_page(mm, vma, address,
+						 pte, pmd, flags);
+		}
+		if (pte_file(entry))
+			return do_nonlinear_fault(mm, vma, address,
+					pte, pmd, flags, entry);
+		return do_swap_page(mm, vma, address,
+					pte, pmd, flags, entry);
+	}
+}
+
+
+
+
+
+
+
+

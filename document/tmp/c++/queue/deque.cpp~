@@ -1,0 +1,42 @@
+#include <deque>
+#include <iostream>
+#include <stdio.h>
+
+using namespace std;
+int main()
+{
+	deque<int> v;
+
+	cout << "v deque capacity:" << v.capacity() << " v deque reserve:" << v.reserve() << endl;
+
+	for(int i=0; i<5; i++)
+	{
+		v.push_back(i);
+	}
+	v.push_front(10);
+	v.insert(v.begin()+2, 9);
+	deque<int>::size_type size = v.size();
+	cout << "v deque size:" << size << endl;
+	cout << "back:" << v.back() <<" front:" << v.front() << endl;// can not access empty vector
+
+	v.pop_front();// can not empty
+	cout << "size:" << v.size() << endl;
+	
+	
+	cout << "5 item:" << v.at(5) << endl;// like v[5], can not access the exits ones
+	v.pop_back();// can not empty
+	v.erase(v.begin() + 2);
+	for(deque<int>::iterator iter=v.begin(); iter!=v.end(); iter++)
+	{
+		cout <<"item" << ":" <<  *iter << endl;
+	}
+
+	//c1.swap(c2);
+	//c.assign(i1, i2);
+
+	
+
+	
+
+	return 0;
+}

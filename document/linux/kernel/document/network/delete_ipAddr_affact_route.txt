@@ -1,0 +1,36 @@
+
+我们知道设置一条网关路由在任意table中，需要一条能到该网关的直接路由在main,local表中。
+a.
+ip addr add 10.0.0.1/24 dev eth0  添加一个掩码非32的地址会在main表中产生一个通过eth0到10.0.0.0/24的直接路由
+ip route add default via 10.0.0.7 table n
+
+b.
+ip addr add 10.0.0.7/32 dev eth0  添加一个掩码32的地址会在local表中产生一个10.0.0.1的本地路由
+ip route add default via 10.0.0.7 table n
+
+有时候我们只需要着一条路由 并不希望有这个地址，我们可以在创建路由后删除该地址。
+但是有时还发现后面的网关路由也会被删除
+
+static int fib_inetaddr_event(struct notifier_block *this, unsigned long event, void *ptr)
+{
+	struct in_ifaddr *ifa = (struct in_ifaddr *)ptr;
+	struct net_device *dev = ifa->ifa_dev->dev;
+	struct net *net = dev_net(dev);
+	
+	switch (event) {
+	......
+	case NETDEV_DOWN:
+		fib_del_ifaddr(ifa, NULL);
+		atomic_inc(&net->ipv4.dev_addr_genid);
+		if (ifa->ifa_dev->ifa_list == NULL) {
+			/* Last address was deleted from this interface.
+			 * Disable IP.It will delete all the route(all the table) associate with the interface
+			 */
+			fib_disable_ip(dev, 1);
+		}
+	}
+}
+
+所以要这条网关路由继续生效就必须在eth0上拥有一个ip地址
+
+

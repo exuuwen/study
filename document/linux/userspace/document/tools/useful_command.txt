@@ -1,0 +1,207 @@
+﻿bash command line
+Ctrl+a: move cursor to the beginning of the line
+Ctrl+e: move cursor to the ending of the line
+Ctrl+w: delete the last word of the line
+Ctrl+u: delete the whole line
+
+cd ~: move to the home directory of the current user
+cd -: move to last dirctory
+
+pstree: print the process trees.
+pstree -p: print the process trees with pid
+
+netstat: show the state the the network connection
+-u: show udp connection
+-t: show tcp connection
+-l: show the connection in the listen state
+-n: don't translate the ip to domain name
+-p: show the process information 
+
+ps: displays information about a selection of the active processes
+-e: show every processes
+-f: show with parameters
+-o: user defined output format
+ps -eo pid,ppid,gid,uid
+
+kill: send a signal to a process
+-l: list the signal number
+kill -s 9 pid
+
+man ascii: lookup the ascii
+
+traceroute: print the route packets trace to network host
+-I: using icmp
+-z: time interval
+traceroute -I www.baidu.com -z 0.5
+
+top: display Linux processes
+d: change the refresh time
+c: show the comman line
+1: show each cpu cores
+h: show help
+
+tcpdump: capture the packet
+-i: interface
+-c: count
+-e: show the L2 information
+-w: write files
+-t: no timstamp
+-tt: timstamp with numbers
+-ttt: show relative time
+-n: Don't convert addresses
+-nn: Don't convert addresses and ports
+tcpdump -i eth0 -c 10 icmp -w file.pcap -t -n
+
+'proto gre': show the detail of gre header 
+tcpdump -i eth0   'proto gre' -n
+
+
+stat: display file or file system status
+
+dd if=/dev/zero of=file bs=1M count=2
+
+ping: send ICMP ECHO_REQUEST to network hosts
+-i: interval
+-I: interface
+-c: numbers
+
+watch: repeat watch a command with interval n(s)
+-n: interval
+-d: command
+watch -n 1 -d arp -n
+
+nc: arbitrary TCP and UDP connections and listens
+nc -l 10.0.0.1 66 < file
+nc 10.0.0.1 66 > file
+
+Check the type of network card
+lspci -vvv
+
+Cpu limit: yes and cpulimit
+# apt-get install cpulimit
+# yes > /dev/null 2>&1 &
+29794
+limit the yes prgram to 60% cpu
+# cpulimit -l 60 -p 29794
+
+set the txqueuelen of interface
+ifconfig eth0 | grep txqueuelen
+ifconfig eth0 txqueuelen 0
+
+set teh speed of interface
+ethtool eth0|grep Speed
+ethtool -s eth0 speed 100 duplex full
+
+set the txring buffer len of interface
+ethtool -g eth0
+ethtool -G eth0 tx 32
+
+get the routable ip address of gateway
+curl ifconfig.me
+
+get the socket information
+cat /proc/net/sockstat
+
+get the packet information on network card driver 
+cat /proc/net/softnet_stat
+
+cat /proc/loadavg :查看cpu loadavg, 过去一段时间cpu的使用率
+
+查找新安装文件的位置
+apt-get install mlocate
+updatedb
+locate file
+
+制作swap空间
+dd if=/dev/zero of=file bs=10M count=200
+mkswap file
+swapon file
+可以通过free查看, swapoff取消
+
+bc: 浮点数
+#echo "2.2*1.532" | bc
+3.350 echo server > /proc/sysy/kernel/hostname 
+
+memory:
+vmstat -m 查看slab信息
+
+cat /proc/slabinfo
+
+free 
+-l 显示各个zone
+-m: 兆 
+-g: gibit
+
+cat /proc/buddyinfo 查看伙伴系统信息
+
+pmap -p pid: 查看进程虚拟地址布局
+
+process:
+ps 
+-L: 显示线程id
+-l: long mode显示pid ppid nice等
+-F: 显示参数
+
+pidstat:查看进程cpu使用
+
+mpstat -P ALL 查看各个cpu的使用情况包括irq,softirq
+
+strace -p pid 跟踪进程系统调用
+
+strace -c command 查看一个命令的系统调用
+
+taskset -p pid [cpumask] 查看或者设置一个进程的cpumask
+
+
+network:
+nicstat -n time 查看网卡流量与 sar -n DEV 1一样
+
+sar -n TCP/UDP/ICMP 1 查看协议类型报文流量
+
+ss -tim :i查看socket信息, m查看socket内存 使用
+
+修改网卡名字
+#vim /etc/udev/rules.d/70-persistent-net.rules
+# PCI device 0x14e4:0x1713 (tg3)
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", ATTR{address}=="00:1e:ec:0f:79:f6", ATTR{type}=="1", KERNEL=="eth*", NAME="eth0"
+# PCI device 0x14e4:0x1713 (tg3)
+SUBSYSTEM=="net", ACTION=="add", DRIVERS=="?*", ATTR{address}=="00:1e:ec:0f:79:f7", ATTR{type}=="1", KERNEL=="eth*", NAME="eth1"
+
+create swap:
+dd if=/dev/zero of=/swapfile1 bs=1024 count=524288
+mkswap /swapfile1
+swapon /swapfile1
+
+virtualenv for python
+virtualenv my27project
+# Activate the my27project sandbox and check the version of the default Python interpreter in it:
+source my27project/bin/activate
+deactivate
+
+grub:
+# vim /etc/sysconfig/grub
+# grub2-mkconfig -o /boot/grub2/grub.cfg
+
+yum from iso:
+scp CentOS-7.0-1406-x86_64-DVD.iso root@192.168.32.54:/opt/iso
+mount /opt/iso/CentOS-7.0-1406-x86_64-DVD.iso /mnt/iso/ -o loop
+
+vim /etc/yum.repos.d/iso.repo
+[iso]
+name = centos 7.0 install iso
+baseurl=file:///mnt/iso
+enabled=1
+gpgcheck=0
+# set others enabled=0
+
+killall process_name
+
+screen -a -S name
+'ctrl+a+c': new one
+'ctrl+a+d': detach
+'ctrl+a+p/n': switch to pri/next
+screen -r name: reattach
+
+
+$ echo $((0x12))
+$ printf "0x%x\n" 20

@@ -1,0 +1,99 @@
+A. cpu
+在NUMA模式下，有多个node,每个node就是一个socket，每个socket有多个core，每个core可以有1到2个processor 开启了超线程每个core就有2个processor
+1. node: 
+# ls /sys/devices/system/node/
+node0
+
+# ls /sys/devices/system/node/node0/
+cpu0 cpu1 cpu2 cpu3 cpu4 cpu5 cpu6 cpu7
+
+2. socket
+# cat /proc/cpuinfo  | grep "physical id" | sort -u 
+physical id	: 0
+# cat /proc/cpuinfo | grep  "physical id" | sort -u | wc -l
+1
+
+3. core
+# cat /proc/cpuinfo  | grep "core id" | sort -u 
+core id		: 0
+core id		: 1
+core id		: 2
+core id		: 3
+# cat /proc/cpuinfo  | grep "core id" | sort -u | wc -l
+4
+
+4. processor
+# cat /proc/cpuinfo  | grep "processor" | sort -u 
+processor	: 0
+processor	: 1
+processor	: 2
+processor	: 3
+processor	: 4
+processor	: 5
+processor	: 6
+processor	: 7
+# cat /proc/cpuinfo  | grep "processor" | sort -u | wc -l
+8
+
+例子：物理node为0，socket id为0, core id为4， processor为6
+siblings: 同一个socket下有8个processor兄弟
+cpu cores: 同一个socket下有4个core
+有4个core，8个processor说明开了超线程
+
+processor	: 6
+physical id	: 0
+siblings	: 8
+core id		: 2
+cpu cores	: 4
+
+
+B. cpu cache
+# ls /sys/devices/system/cpu/cpu0/cache/
+index0  index1  index2  index3
+
+# cat /sys/devices/system/cpu/cpu0/cache/index0/level 
+1
+# cat /sys/devices/system/cpu/cpu0/cache/index0/type 
+Data
+# cat /sys/devices/system/cpu/cpu0/cache/index0/size 
+32K
+# cat /sys/devices/system/cpu/cpu0/cache/index0/coherency_line_size 
+64
+# cat /sys/devices/system/cpu/cpu0/cache/index0/shared_cpu_list 
+0,4
+index0是L1 instruction cache，大小是32k，cache line为64字节，processor0,4共享
+同一core共享L1 data cache
+
+
+# cat /sys/devices/system/cpu/cpu0/cache/index1/level 
+1
+# cat /sys/devices/system/cpu/cpu0/cache/index1/type 
+Instruction
+# cat /sys/devices/system/cpu/cpu0/cache/index1/size 
+32K
+# cat /sys/devices/system/cpu/cpu0/cache/index1/shared_cpu_list 
+0,4
+index1是L1 instruction cache，大小是32k，cache line为64字节，processor0,4共享
+同一core共享L1 instruction cache
+
+
+# cat /sys/devices/system/cpu/cpu0/cache/index2/level 
+2
+# cat /sys/devices/system/cpu/cpu0/cache/index2/size
+256K
+# cat /sys/devices/system/cpu/cpu0/cache/index2/shared_cpu_list 
+0,4
+index2是L2 cache，大小是256k，cache line为64字节，processor0,4共享
+同一core共享L2 cache
+
+
+# cat /sys/devices/system/cpu/cpu0/cache/index3/level 
+3
+# cat /sys/devices/system/cpu/cpu0/cache/index3/size
+6144K
+# cat /sys/devices/system/cpu/cpu0/cache/index3/shared_cpu_list 
+0-7
+index3是L3 cache，大小是6144k，cache line为64字节，processor0到7共享
+同一socket共享L3 cache
+
+

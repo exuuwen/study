@@ -1,0 +1,39 @@
+1. openat
+The openat() system call operates in exactly the same way as open(2), except for the differences described in this manual page.
+
+If  the  pathname given in pathname is relative, then it is interpreted relative to the directory referred to by the file descriptor
+dirfd (rather than relative to the current working directory of the calling process, as is done by open(2) for a relative pathname).
+
+If pathname is relative and dirfd is the special value AT_FDCWD, then pathname is interpreted relative to the current working direc©\
+tory of the calling process
+
+$ cat openat.c
+int main()
+{
+    int dfd, ffd;
+    dfd = open("/home/test/tmp", O_RDONLY);
+    if(dfd < 1)
+    {
+        perror("open home");
+        return -1;
+    }
+    ffd = openat(dfd, "test1.txt", O_CREAT | O_RDWR, 0775);
+    if(ffd < 1)
+    {
+        perror("open new file");
+        return -1;
+    }
+
+    close(dfd);
+    close(ffd);
+
+    return 0;
+}
+
+$ pwd
+/home/test
+$ gcc -o openat openat.c
+$ ./openat
+$ ls /home/test/tmp/test1.txt
+/home/test/tmp/test1.txt
+

@@ -1,0 +1,239 @@
+1 command
+$ echo this is a test line > input.txt
+wxztt@wxztt-family:~/ucloud/test$ exec 3<input.txt
+wxztt@wxztt-family:~/ucloud/test$ cat <&3 
+this is a test line
+$ exec 3<&-
+
+$ exec 4>output.txt
+$ echo wdijde >&4 
+$ echo wdijde1 >&4 
+$ cat output.txt
+wdijde
+wdijde1
+$ exec 4>&-
+
+a=`seq 0 5`
+echo $a
+0 1 2 3 4 5 
+
+#!/bin/bash
+#Filename: time_take.sh
+start=$(date +%s)
+commands;
+statements;
+end=$(date +%s)
+difference=$(( end - start))
+echo Time taken to execute commands is $difference seconds.
+
+debug:
+set -x
+echo $i
+set +x
+
+set -x : This displays arguments and commands upon their execution
+set +x : This disables debugging
+set -v : This displays input when they are read
+set +v : This disables printing input
+
+echo 'Text through stdin' | cat - test.c
+Text through stdin
+...........
+
+find . -type f -name "*.c" -delete:删除 .c文件
+
+# 排除 s1 目录下的file
+find . \( -name "s1" -prune \) -o \( -type f -print \)
+
+xargs 会把多行合并成一行
+command | xargs
+三个为1行
+command | xargs -n 3
+
+
+find . -type f -name "*.txt" -print0 | xargs -0 rm -f
+-print0 每个以\0分割; 默认是空格或者\n  如果有空格的文件名 xargs会拆分  就会删除失败 或者误删了其他的-0: 以\0作为分割
+
+$ mktemp
+/tmp/tmp.NshIU8VHfK
+mktemp -d # a tmp dir
+mktemp -u # just make a tmp file name but not create it
+mktemp test.XXX
+test.gxe
+
+$ rename 's/ /_/g' * #批量修改文件名
+
+
+2 file
+dirctor
+The read permission ( r ) for the directories enables reading the list of files
+and subdirectories in the directory 列表文件
+The write permission ( w ) for a directory enables creating or removing files
+and directories from a directory 创建删除文件
+The execute permission ( x ) specifies whether the access to the files and
+directories in a directory is possible or not 真正的读写 也包含创建删除
+
+sticky bit. When a sticky bit is set for a directory, only the user who created the directory can delete the files in the directory, even
+if the group and others have write permissions
+chmod a+t directory_name
+
+ln -s /var/www/ ~/web
+# readlink web
+/var/www
+
+seq 100 | head -n +3 #从头到第三个, from 1 to 3
+seq 100 | head -n -3 #从头到倒数第三个
+seq 100 | tail -n +6 #正数第6个到尾 from 6 to 100.
+seq 100 | tail -n -6 #倒数第6个到尾
+
+dmesg | tail -f
+
+Print the length of the longest line in a file using the -L option:
+$ wc file -L
+205
+
+4. match
+() :This treats the terms enclosed as one entity
+ma(tri)?x: matches max or matrix.
+| This specifies the alternation—one of the items on either of side of | should match.
+Oct (1st | 2nd): matches Oct 1st or Oct 2nd.
+\b: word边界
+
+有多少行匹配
+grep -c "text" filename
+10
+
+仅仅打印匹配的 并且每个匹配为单独一行
+grep -o "test" filename
+
+To search over multiple files, and list which files contain the pattern, we use
+the following:
+$ grep -l linux sample1.txt sample2.txt # -L without
+sample1.txt
+sample2.txt
+
+multile pattern
+$ grep -e "pattern1" -e "pattern"
+
+grep "main()" . -r --include *.{c,cpp}
+grep "main()" . -r --exclude "README"
+
+Z: 每个以\0分割
+grep "test" file* -lZ | xargs -0 rm
+
+
+In order to print three lines after a match, use the -A option:
+$ seq 10 | grep 5 -A 3
+5
+6
+7
+8
+
+n order to print three lines before the match, use the -B option:
+$ seq 10 | grep 5 -B 3
+2
+3
+4
+5
+
+
+Print three lines after and before the match, and use the -C option as follows:
+$ seq 10 | grep 5 -C 3
+2
+3
+4
+5
+6
+7
+8
+
+basename /c/a/a.c
+a.c
+
+5. sed&awk
+sed:
+cat sed_data.txt
+11 abc 111 this 9 file contains 111 11 88 numbers 0000
+$ sed -i 's/\b[0-9]\{3\}\b/NUMBER/g' sed_data.txt
+$ cat sed_data.txt
+11 abc NUMBER this 9 file contains NUMBER 11 88 numbers 0000
+\b: word边界
+-i: 替换原来的文件
+
+echo this is an exampl2e | sed 's/\w\+/[&]/g'
+[this] [is] [an] [exampl2e]
+\w\+:匹配每个word
+
+
+echo this is digit 7 in a number | sed 's/digit \([0-9]\)/\1/'
+this is 7 in a number
+\1:替代符号, 第1个模式匹配
+
+echo /wxwxwxhahwx | sed s/^//m/g
+sed: -e expression #1, char 7: unknown option to `s'
+echo /wxwxwxhahwx | sed s@^/@m@g
+mwxwxwxhahwx
+
+text=hello
+$ echo hello world | sed "s/$text/HELLO/"
+HELLO world
+
+awk:
+显示的读取一行
+seq 3 | awk 'BEGIN { getline; print "Read ahead first line", $0 } {
+print $0 }'
+Read ahead first line 1
+2
+3
+
+5. tar
+$ tar -tf ss.tar
+zx.txt
+$ tar -rf ss.tar zx.txt
+$ tar -tf ss.tar
+zx.txt
+zx.txt
+
+tar -Af ss.tar s2.tar
+tar -tf ss.tar
+zx.txt
+zx.txt
+Linux Shell Scripting Cookbook, Second Edition.pdf
+
+tar -f ss.tar --delete zx.txt
+
+-j for bunzip2
+-z for gzip
+
+$ tar -cf arch.tar * --exclude "*.txt"
+
+6. others
+du --exclude "*.txt" FILES(s)
+du --max-depth 2 DIRECTORY
+
+last [user]
+
+host baidu.com
+
+logger hh # log in /var/log/syslog
+
+ps -eo a,b,c
+Parameter
+pcpu Description
+pid Process ID
+ppid Parent Process ID
+pmem Percentage of memory
+comm Executable filename
+cmd Simple command
+user The user who started the process
+nice The priority (niceness)
+time Cumulative CPU time
+etime Elapsed time since the process started
+tty The associated TTY device
+euid The effective user
+stat Process state
+
+ps -C COMMAND_NAME -o a,b,c
+ps -u euser -U ruser -t TTY1 -o user,pcpu
+ps -eo cmd e # enviroment variable
+

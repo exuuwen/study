@@ -1,0 +1,86 @@
+Since Linux kernel version 3.7 onwards, support has been added for signed kernel modules. When enabled, the Linux kernel will only load kernel modules that are digitally signed with the proper key. This allows further hardening of the system by disallowing unsigned kernel modules, or kernel modules signed with the wrong key, to be loaded. Malicious kernel modules are a common method for loading rootkits on a Linux system.
+
+1. Enabling module signature verification
+
+Enabling support is a matter of toggling a few settings in the Linux kernel configuration. Unless you want to use your own keypair, this is all that has to be done to enable kernel module support.
+
+Module signature verification is a kernel feature, so has to be enabled through the Linux kernel configuration. You can find the necessary options under Enable loadable module support.
+
+CONFIG_MODULE_SIG=y
+# CONFIG_MODULE_SIG_FORCE is not set
+CONFIG_MODULE_SIG_ALL=y
+CONFIG_MODULE_SIG_SHA512=y
+CONFIG_MODULE_SIG_HASH="sha512"
+
+The option Module signature verification (CONFIG_MODULE_SIG) enables the module signature verification in the Linux kernel. It supports two approaches on signed module support: a rather permissive one and a strict one. By default, the permissive approach is used, which means that the Linux kernel module either has to have a valid signature, or no signature. With the strict approach, a valid signature must be present. In the above example, the strict approach is used by selecting Require modules to be validly signed (CONFIG_MODULE_SIG_FORCE) or dynamic enable it through: echo 1 > /sys/module/module/parameters/sig_enforce
+N
+ When building the Linux kernel, the kernel modules will not be signed automatically unless you select Automatically sign all modules (CONFIG_MODULE_SIG_ALL).Finally, we need to select the hash algorithm to use with the cryptographic signature. In the above example, we use SHA-512.
+
+When the Linux kernel is building with module signature verification support enabled, then you can use your own keys or have the Linux kernel build infrastructure create a set for you. If you want the Linux kernel build infrastructure to create it for you, just continue as you always do with a make and make modules_install. At the end of the build process, you will notice that signing_key.priv and signing_key.x509 will be available on the root of the Linux kernel sources.
+
+If we want to use our own keys, you can use openssl to create a key pair (private key and public key). The following command, taken from kernel/Makefile, creates such a key pair. 
+$ openssl req -new -nodes -utf8 -sha512 -days 36500 -batch -x509 -config x509.genkey -outform DER -out signing_key.x509 -keyout signing_key.priv
+The resulting files need to be stored as signing_key.x509 and signing_key.priv in the root of the Linux kernel source tree.
+
+
+2. Validating module signature support
+
+# cat /sys/module/module/parameters/sig_enforce
+N
+enable it:
+# echo Y > /sys/module/module/parameters/sig_enforce
+but it can't be seten back to N
+
+Reboot with the newly configured kernel. In the output of dmesg you should be able to confirm that the proper certificate is loaded:
+$ dmesg | grep signing
+[    0.478469] Loaded X.509 cert 'Magrathea: Glacier signing key: 42a2f047f6c31dd60deb35856f0a6c3c3babd7d8'
+
+The kernel modules have the digital signature appended at the end. A simple hexdump can confirm if a signature is present or not:
+$ hexdump -C vxlan.ko | tail
+
+00008880  cf 0e e7 cb 10 9e 98 5f  4b 21 d4 03 ba 3d 7e e7  |......._K!...=~.|
+00008890  68 db f9 e3 5f 62 3c c7  d6 6c 84 c7 d6 68 c1 73  |h..._b<..l...h.s|
+000088a0  3d d7 5a 38 66 99 12 b8  84 c9 84 45 dd 68 6d 17  |=.Z8f......E.hm.|
+000088b0  03 24 dc 9c 6f 6d 11 01  e9 74 82 ea b5 5b 46 07  |.$..om...t...[F.|
+000088c0  fe dd 66 97 1a 33 58 3d  6e d0 ac 03 08 16 73 06  |..f..3X=n.....s.|
+000088d0  9f 90 c4 eb b3 82 1d 9f  48 8c 5b 51 01 06 01 1e  |........H.[Q....|
+000088e0  14 00 00 00 00 00 02 02  7e 4d 6f 64 75 6c 65 20  |........~Module |
+000088f0  73 69 67 6e 61 74 75 72  65 20 61 70 70 65 6e 64  |signature append|
+00008900  65 64 7e 0a                                       |ed~.|
+00008904
+
+The string ~Module signature appended~ at the end confirms that a signature is present. Of course, it does not confirm that the signature is valid or not.
+
+To remove the signature, we can use the strip command:
+root # strip --strip-debug vxlan.ko
+root # hexdump -C vxlan.ko | tail
+
+00097330  6c 5f 67 65 74 5f 73 74  61 74 73 36 34 00 72 63  |l_get_stats64.rc|
+00097340  75 5f 62 61 72 72 69 65  72 00 5f 72 61 77 5f 73  |u_barrier._raw_s|
+00097350  70 69 6e 5f 75 6e 6c 6f  63 6b 00 72 65 67 69 73  |pin_unlock.regis|
+00097360  74 65 72 5f 70 65 72 6e  65 74 5f 64 65 76 69 63  |ter_pernet_devic|
+00097370  65 00 6b 6d 61 6c 6c 6f  63 5f 63 61 63 68 65 73  |e.kmalloc_caches|
+00097380  00 6e 65 74 64 65 76 5f  69 6e 66 6f 00 6e 65 69  |.netdev_info.nei|
+00097390  67 68 5f 6c 6f 6f 6b 75  70 00 72 65 6c 65 61 73  |gh_lookup.releas|
+000973a0  65 5f 73 6f 63 6b 00 72  65 67 69 73 74 65 72 5f  |e_sock.register_|
+000973b0  6e 65 74 64 65 76 69 63  65 00                    |netdevice.|
+000973ba
+
+If we try to load this module now, we get a failure:
+root # modprobe vxlan
+modprobe: ERROR: could not insert 'vxlan': Required key not available
+
+This confirms that modules without a signature are not loaded.Administering kernel module signatures
+
+
+If you ever need to manually sign a kernel module, you can use the scripts/sign-file script available in the Linux kernel source tree. It requires four arguments:
+
+    The hash algorithm to use, such as sha512
+    The private key location
+    The certificate (which includes the public key) location
+    The kernel module to sign
+
+In this case, the key pair does not need to be named signing_file.priv and such, nor do they need to be in the root of the Linux kernel source tree location.
+$ perl /usr/src/linux/scripts/sign-file sha512 /mnt/sdcard/kernel-signkey.priv /mnt/sdcard/kernel-signkey.x509 vxlan.ko
+
+

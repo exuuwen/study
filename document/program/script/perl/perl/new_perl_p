@@ -1,0 +1,66 @@
+s/mode1/mode2/  用2替换1
+if(s/(\w+) (\w+)/$2,$1/)
+{
+	print "$_\n"; 
+}
+
+
+/g 全局替换
+$_ = "wasd fred wasd";
+if(s/wasd/wx/g)# /g for all the wasd
+it is bak file
+{
+	print "$_\n"; 
+
+}
+
+/U：全为大写，/u首字母为大写
+it is bak file
+/L:全为小写，/l首字母为小写
+/E上述作用域终点，否这就是全部
+$_ = "I saw Barney witH Fred.";
+if(s/(\w+) witH (\w+)/\U$2\E \uwit\lh \L$1/)
+{
+	print "$_\n"; 
+
+}
+
+
+split:分割副
+@fields = split /mode/, $string; #mode 是分割符
+@fields = split  等于  @fields = split \\s+\ $_
+
+@sp = split /:/, "::a:b:c:d:::";#("","",a,b,c,d)
+it is bak file
+print "@sp\n"; 
+
+
+join:合并
+$strings = join $connect, @fields;
+
+@field = ("a","b","cc","da");
+$connect = ":";
+$jo = join $connect, @field;
+print "$jo\n";
+
+
+m//返回给标量代表bool
+返回给列表则返回捕获的列表
+$_ = "hh aa: sd, wws xxs ad";
+@get = /(\w+)/g;
+print "@get\n";
+
+
+$_ = "hh aa: sd,";
+@get = /(\S+) (\S+) (\S+)/;
+print "@get\n";
+
+数量词加？ 非贪婪词汇
++？
+？？
+*？
+{m, n}?
+{m,}?
+
+/m：把字符串里面的 \n当着多行处理每一行都可以有^$,如果没加这个整个当一行只有一个^$
+

@@ -1,0 +1,23 @@
+1. hugepage size
+# cat /proc/cpuinfo | grep pdpe1gb # support 1gb hugepagesz
+# add cmdline to the grub.cfg
+default_hugepagesz=1G hugepagesz=1G hugepages=4
+
+2. compile
+# make install T=x86_64-native-linuxapp-gcc
+
+3. set enviroment
+export RTE_SDK=/opt/dpdk/dpdk-2.0.0
+export RTE_TARGET=x86_64-native-linuxapp-gcc
+
+4. bind port
+# modprobe uio
+# insmod /opt/dpdk/dpdk-2.0.0/x86_64-native-linuxapp-gcc/kmod/igb_uio.ko
+
+# /opt/dpdk/dpdk-2.0.0/tools/dpdk_nic_bind.py --status
+# /opt/dpdk/dpdk-2.0.0/tools/dpdk_nic_bind.py --bind=igb_uio 06:00.3 //pci id
+# /opt/dpdk/dpdk-2.0.0/tools/dpdk_nic_bind.py --status
+
+5. set hugepagefs
+mkdir /mnt/huge_1GB
+mount -t hugetlbfs nodev /mnt/huge_1GB

@@ -1,0 +1,33 @@
+gcc -o userns_child_exec userns_child_exec.c if_ops.c  rtnetlink.c rtnetlink_addr.c  rtnetlink_route.c  rtnetlink_link_veth.c bridge.c tun_tap.c
+chmod a+s userns_child_exec
+
+# brctl addbr vlanbr1
+# ifconfig vlanbr1 10.0.10.11/24 up
+# brctl addbr vlanbr2
+# ifconfig vlanbr2 10.0.20.11/24 up
+
+# brctl addbr vlanbr11
+# ifconfig vlanbr12 10.0.10.12/24 up
+# brctl addbr vlanbr22
+# ifconfig vlanbr22 10.0.20.12/24 up
+
+# ip link add ethA type veth peer name ethB
+# ifconfig ethA up
+# ifconfig ethB up
+
+# vconifg ethA 10
+# ifconfig ethA.10 up
+# brctl addif vlanbr1 ethA.10
+
+# vconifg ethA 20
+# ifconfig ethA.20 up
+# brctl addif vlanbr2 ethA.20
+
+# vconifg ethB 10
+# ifconfig ethB.10 up
+# brctl addif vlanbr11 ethB.10
+
+# vconifg ethB 20
+# ifconfig ethB.20 up
+# brctl addif vlanbr22 ethA.20
+

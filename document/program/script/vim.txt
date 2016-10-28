@@ -1,0 +1,116 @@
+J:combined two lines
+
+word cursor move:
+w/W, b/B, e/E, ge/gE: all can add with counter 3w
+
+$, ^, 0: 0 jump to the beginning of the line, ^ jump to beginning of the line with contents, $ can add with counter
+
+H, M, L: move cursor to head, middle, last in the screen
+zz, zt, zb: put the line show in the mid, top, last in the screen
+
+:set ruler: show the postion of the cursor
+:set ignorecase
+
+*, #: seach using the word under cursor, can add with counter
+
+U: undo for a line operations. The second 'U' will undo the first one
+4: jump to the 4th line
+
+search:
+/\<the\>: the word the
+/was$: a line end with was
+/^was: a line start wi
+/c.a: any cxa, . can match any one character
+/c\.a: match string c.a
+
+delete:
+d2w/e/b/ge,d4l/h, 2dd
+d^, d$, D
+diw/daw
+dis/das
+d2G,dgg,dG
+
+c2w/e/b/ge,c4l/h, 2cc
+c^, c$, C
+ciw/caw
+cis/cas
+c2G,cgg,cG
+
+x/X s/S
+xp
+
+.: repeat all the modify operation except 'u'
+;: repeat all the 'f' operation
+
+
+block:
+v: operations in a single line
+V: Whole line in multiple lines
+ctrl+v: block
+virtual mode 'o' jump to the other corner and 'O' jump to side corner
+
+copy:
+y2h,y2l,3yy/Y,y3$
+y2w/b/e/ge
+y^, y$
+yiw/yaw
+yis/yas
+y3G,yG,ygg
+
+
+open muliple files:
+edit new.txt: edit a new file and close old one that should be 'write'
+edit ! new.txt: should't be 'write'
+
+vim a.c b.c c.c
+next/wnext/next!/2next
+previous/wprevious/previous!/2previous
+last/first
+
+args
+[a.c] b.c c.c
+
+saveas newfile: save to new file and open as the newfile
+vim -R file :readonly file
+vim -M file: can't modify, but can 'set modifiable'
+
+
+split:
+:[4]split
+:[4]vsplit
+:[4]new
+:[4]vnew
+
+:[4]split file.txt
+:[4]vsplit file.txt
+
+move to:
+ctrl-w-h/j/k/l/t/b
+put current to:
+ctrl-w-H/J/K/L
+
+[4]ctrl-w-+/-
+
+:only
+:qall,wall,wqall
+
+vim -o/O a.c b.c c.c
+
+
+tabe:
+:tabe a.c
+gt, 2gt
+
+replace:
+[region]s/patern1/replace/[flags]
+region: % n m,n/$ .,n/$ .+3,$-2
+flags: g c
+
+registor:
+q[a-z]
+op1
+op2
+op3
+q
+
+@q[a-z]

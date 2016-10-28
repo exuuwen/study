@@ -1,0 +1,46 @@
+#include <iostream>
+#include <assert.h>
+#include <stdio.h>
+#include <math.h>
+
+#include "ThreadPool.h"
+
+using namespace std;
+
+static void waste_time(void *num)
+{
+	double res = 0;
+	long i = 0;
+	long n = *(long*)(num);
+
+	cout << "tid:" << CurrentThread::tid() <<" name:" << CurrentThread::name() << endl;
+	while(i <n * 200000) 
+	{
+		i++;
+		res += sqrt(i);
+	}
+	//sleep(100);
+
+}
+
+int main()
+{
+	ThreadPool pool("MainThreadPool");
+	pool.start(4);
+	
+	int time = 5000;
+	sleep(1);
+	for (int i=0; i<4; ++i)
+	{
+		pool.run(waste_time, &time);
+	}
+
+	sleep(3);
+	
+	pool.stop();
+	
+	
+	printf("wait\n");
+	Thread::waitAllThreadsTerminate();
+	printf("ok\n");
+}

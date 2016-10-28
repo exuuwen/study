@@ -1,0 +1,109 @@
+1. Grub
+Grub program get the kernel and initrd image from the hardisk.
+$ vim /boot/grub/grub.cfg
+.......
+menuentry 'Ubuntu, with Linux 3.11.0-15-generic' --class ubuntu --class gnu-linux --class gnu --class os {
+		......
+        linux   /boot/vmlinuz-3.11.0-15-generic 
+        initrd  /boot/initrd.img-3.11.0-15-generic
+}
+
+$ ls /boot/
+initrd.img-3.11.0-15-generic  mvmlinuz-3.11.0-15-generic
+
+2. kernel and initrd image loading
+Load the kernel image to memory first, then load the initrd image to the memory and add some neccessory driver such as hardisk to the kernel. Then the kernel can recognize the hardisk and mount the Rootfs.
+
+3. /sbin/init
+Run the /sbin/init as the first process with pid 1 in the os. 
+init process will start some services(deamon). But the different services needed in different enviornment. Linux provide a "run level" for different situation.
+There are six level for linux. 
+0: shutdwon mode
+1: single mode
+2~5: normal mode
+6: reboot mode 
+
+For the destop Linux, the default run level is 2. It defines in /etc/initab
+# vim /etc/initab
+id:2:initdefault:
+
+But There is no initab file in Ubuntu, It defines in /etc/init/rc-sysinit.conf
+# vim rc-sysinit.conf
+env DEFAULT_RUNLEVEL=2
+telinit "${DEFAULT_RUNLEVEL}"
+
+/sbin/runlevel can show the previous and current runlevel
+/sbin/telinit can switch the runlevel for current enviornmet
+
+4. starup services in the run level
+Services for N level is in the /etc/rcN.d, all the real programs is locate in the /etc/init.d/
+file name rules:
+K; kill
+S: start
+kill and start the progarms in the order of the numbers after the K/S.
+
+Level 0: shutdown
+# ls -l /etc/rc0.d/ 
+lrwxrwxrwx 1 root root  29 Apr  4 20:57 K10unattended-upgrades -> ../init.d/unattended-upgrades
+lrwxrwxrwx 1 root root  27 Apr  4 20:57 K20speech-dispatcher -> ../init.d/speech-dispatcher
+lrwxrwxrwx 1 root root  17 Apr  5 18:11 K20winbind -> ../init.d/winbind
+lrwxrwxrwx 1 root root  18 Apr  4 20:57 S20sendsigs -> ../init.d/sendsigs
+lrwxrwxrwx 1 root root  17 Apr  4 20:57 S30urandom -> ../init.d/urandom
+lrwxrwxrwx 1 root root  22 Apr  4 20:57 S31umountnfs.sh -> ../init.d/umountnfs.sh
+lrwxrwxrwx 1 root root  20 Apr  4 20:57 S35networking -> ../init.d/networking
+lrwxrwxrwx 1 root root  18 Apr  4 20:57 S40umountfs -> ../init.d/umountfs
+lrwxrwxrwx 1 root root  20 Apr  4 20:57 S60umountroot -> ../init.d/umountroot
+lrwxrwxrwx 1 root root  14 Apr  4 20:57 S90halt -> ../init.d/halt
+
+Level 1: single mode
+# ls -l /etc/rc1.d/ 
+lrwxrwxrwx 1 root root  20 Apr  4 20:57 K15pulseaudio -> ../init.d/pulseaudio
+lrwxrwxrwx 1 root root  22 Apr  4 20:57 K20acpi-support -> ../init.d/acpi-support
+lrwxrwxrwx 1 root root  20 Apr  4 20:57 K20kerneloops -> ../init.d/kerneloops
+lrwxrwxrwx 1 root root  15 Apr  4 20:57 K20saned -> ../init.d/saned
+lrwxrwxrwx 1 root root  27 Apr  4 20:57 K20speech-dispatcher -> ../init.d/speech-dispatcher
+lrwxrwxrwx 1 root root  17 Apr  5 18:11 K20winbind -> ../init.d/winbind
+lrwxrwxrwx 1 root root  19 Apr  4 20:57 S30killprocs -> ../init.d/killprocs
+lrwxrwxrwx 1 root root  19 Apr  4 20:57 S70dns-clean -> ../init.d/dns-clean
+lrwxrwxrwx 1 root root  18 Apr  4 20:57 S70pppd-dns -> ../init.d/pppd-dns
+lrwxrwxrwx 1 root root  16 Apr  4 20:57 S90single -> ../init.d/single
+
+Level 6: reboot mode
+# ls -l /etc/rc6.d/ 
+lrwxrwxrwx 1 root root  29 Apr  4 20:57 K10unattended-upgrades -> ../init.d/unattended-upgrades
+lrwxrwxrwx 1 root root  27 Apr  4 20:57 K20speech-dispatcher -> ../init.d/speech-dispatcher
+lrwxrwxrwx 1 root root  17 Apr  5 18:11 K20winbind -> ../init.d/winbind
+lrwxrwxrwx 1 root root  18 Apr  4 20:57 S20sendsigs -> ../init.d/sendsigs
+lrwxrwxrwx 1 root root  17 Apr  4 20:57 S30urandom -> ../init.d/urandom
+lrwxrwxrwx 1 root root  22 Apr  4 20:57 S31umountnfs.sh -> ../init.d/umountnfs.sh
+lrwxrwxrwx 1 root root  20 Apr  4 20:57 S35networking -> ../init.d/networking
+lrwxrwxrwx 1 root root  18 Apr  4 20:57 S40umountfs -> ../init.d/umountfs
+lrwxrwxrwx 1 root root  20 Apr  4 20:57 S60umountroot -> ../init.d/umountroot
+lrwxrwxrwx 1 root root  16 Apr  4 20:57 S90reboot -> ../init.d/reboot
+
+Level 2: default os startup
+# ls -l /etc/rc2.d/
+lrwxrwxrwx 1 root root  20 Apr  4 20:57 S20kerneloops -> ../init.d/kerneloops
+lrwxrwxrwx 1 root root  27 Apr  4 20:57 S20speech-dispatcher -> ../init.d/speech-dispatcher
+lrwxrwxrwx 1 root root  17 Apr  5 18:11 S20winbind -> ../init.d/winbind
+lrwxrwxrwx 1 root root  20 Apr  4 20:57 S50pulseaudio -> ../init.d/pulseaudio
+lrwxrwxrwx 1 root root  15 Apr  4 20:57 S50rsync -> ../init.d/rsync
+lrwxrwxrwx 1 root root  15 Apr  4 20:57 S50saned -> ../init.d/saned
+lrwxrwxrwx 1 root root  19 Apr  4 20:57 S70dns-clean -> ../init.d/dns-clean
+lrwxrwxrwx 1 root root  18 Apr  4 20:57 S70pppd-dns -> ../init.d/pppd-dns
+lrwxrwxrwx 1 root root  14 Apr  4 20:57 S75sudo -> ../init.d/sudo
+lrwxrwxrwx 1 root root  22 Apr  4 20:57 S99acpi-support -> ../init.d/acpi-support
+lrwxrwxrwx 1 root root  21 Apr  4 20:57 S99grub-common -> ../init.d/grub-common
+lrwxrwxrwx 1 root root  18 Apr  4 20:57 S99ondemand -> ../init.d/ondemand
+lrwxrwxrwx 1 root root  18 Apr  4 20:57 S99rc.local -> ../init.d/rc.local
+
+
+5. user login
+a. virtual terminal(ttyN)
+init->getty ask user to login, then init->login->bash.
+
+b. ssh: remote network login
+sshd->sshd─>sshd─>bash
+
+c. GNOME terminal 
+init─>gnome-terminal->bash

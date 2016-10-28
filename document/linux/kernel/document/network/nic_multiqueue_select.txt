@@ -1,0 +1,118 @@
+1. 结构
+struct sk_buff {
+	__u16  queue_mapping;
+};
+struct net_device {
+	/*软件形式的tx queue, 包含qdisc. dev_queue_xmit选择相应的netdev_queue 将报文放入其qidsic*/
+	struct netdev_queue	*_tx;
+	/* Number of TX queues allocated at alloc_netdev_mq() time  */
+	unsigned int		num_tx_queues;
+	/* Number of TX queues currently active in device  */
+	unsigned int		real_num_tx_queues;
+
+	/*软件形式的rx queue, 包含的是rpf以及rfs结构*/
+	struct netdev_rx_queue	*_rx;
+	/* Number of RX queues allocated at register_netdev() time */
+	unsigned int		num_rx_queues;
+	/* Number of RX queues currently active in device */
+	unsigned int		real_num_rx_queues;
+
+};
+
+2. 初始化
+struct net_device *alloc_netdev_mqs(int sizeof_priv, const char *name,
+		void (*setup)(struct net_device *),
+		unsigned int txqs, unsigned int rxqs)
+{
+	dev->num_tx_queues = txqs;
+	dev->real_num_tx_queues = txqs;
+	/*分配tx queue*/
+	netif_alloc_netdev_queues(dev);
+
+	dev->num_rx_queues = rxqs;
+	dev->real_num_rx_queues = rxqs;
+	/*分配rx queue, 主要用来进行rps和rfs*/
+	netif_alloc_rx_queues(dev);
+}
+
+3. 实现
+a. 接收
+接收的queue通常是由网卡硬件决定, 一般做L3 hash到同一个queue上. 然后内核就行记录到queue_mapping上
+static inline void skb_record_rx_queue(struct sk_buff *skb, u16 rx_queue)
+{
+	skb->queue_mapping = rx_queue + 1;
+}
+
+在软中断中会根据skb->queue_mapping找到相应的rps文件,选择deliver到指定的cpu进行__netif_receive_skb处理. 详见rps_xps文档
+
+b. 发送
+dev_queue_xmit-->netdev_pick_tx(struct net_device *dev,
+				    struct sk_buff *skb,
+				    void *accel_priv)
+{
+	/*get the txqueue*/
+	if (dev->real_num_tx_queues != 1) {
+		const struct net_device_ops *ops = dev->netdev_ops;
+		/*如果driver支持选择queue 就直接调用*/
+		if (ops->ndo_select_queue)
+			queue_index = ops->ndo_select_queue(dev, skb, accel_priv,
+							    __netdev_pick_tx);
+		else
+			/*否则自己来选择*/
+			queue_index = __netdev_pick_tx(dev, skb);
+	}
+
+	/*记录queue_index到skb->queue_mapping 让驱动发送的时候选择硬件queue发送*/
+	skb_set_queue_mapping(skb, queue_index);
+	
+	/*获取软件netdev_queue, 后续会将skb放入到netdev_queue的qdisc里面*/
+	return netdev_get_tx_queue(dev, queue_index);
+}
+
+static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
+{
+	struct sock *sk = skb->sk;
+	1. skb与sk相关联
+	/*根据sk->sk_tx_queue_mapping选择queue, 这个值表示跟这个sk相关联的skb都通过sk_tx_queue_mapping发送
+	这个值的设置也是在这个函数的后面sk_tx_queue_set. 初始化值为-1*/
+	int queue_index = sk_tx_queue_get(sk);
+
+	if (queue_index < 0 || queue_index >= dev->real_num_tx_queues) {
+		/*没有sk或者没有记录过*/
+		2. 根据xps选择: xps根据当前cpu找到相应的文件 查找到指定的queue
+		int new_index = get_xps_queue(dev, skb);
+		if (new_index < 0)
+		3. 最后没有xps 就通过skb_tx_hash选择
+			new_index = skb_tx_hash(dev, skb);
+
+		if (queue_index != new_index && sk &&
+			/*如果skb与sk相关联就记录 让后续的skb直接在第一步选择*/
+			sk_tx_queue_set(sk, new_index);
+
+		queue_index = new_index;
+	}
+
+	return queue_index;
+}
+
+skb_tx_hash--->__skb_tx_hash(dev, skb, dev->real_num_tx_queues)
+{
+	/*skb是转发的 可以通过接收上来的skb->queue_mapping进行选择*/
+	if (skb_rx_queue_recorded(skb)) {
+		hash = skb_get_rx_queue(skb);
+		while (unlikely(hash >= num_tx_queues))
+			hash -= num_tx_queues;
+		return hash;
+	}
+
+	/*对于相关联sk的 第一次就跟据sk的hash(L4 hash)值进行hash*/
+	if (skb->sk && skb->sk->sk_hash)
+		hash = skb->sk->sk_hash;
+	else
+		/*否则就针对三层协议类型进行hash 个人认为很粗糙 相当于IP报文通过一个queue发送, ARP报文通过一个queue发送*/
+		hash = (__force u16) skb->protocol;
+	hash = __flow_hash_1word(hash);
+
+	return (u16) (((u64) hash * qcount) >> 32) + qoffset;
+}
+

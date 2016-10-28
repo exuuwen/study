@@ -1,0 +1,200 @@
+handle_openflow__(struct ofconn *ofconn, const struct ofpbuf *msg)
+{
+	ofptype_decode(&type, oh);
+	
+	switch (type) {
+        /* OpenFlow requests. *	
+		.......
+	}
+}
+
+1. bridge
+a. get
+# ovs-ofctl show br0
+1) OFPTYPE_FEATURES_REQUEST
+/*获得n_buffer传递给controller时你能buffer的数据个数, n_tables以及capabilities*/
+enum ofperr
+handle_features_request(struct ofconn *ofconn, const struct ofp_header *oh)
+{
+	features.n_buffers = pktbuf_capacity();
+    features.n_tables = ofproto_get_n_visible_tables(ofproto);
+    features.capabilities = (OFPUTIL_C_FLOW_STATS | OFPUTIL_C_TABLE_STATS |
+                             OFPUTIL_C_PORT_STATS | OFPUTIL_C_QUEUE_STATS);
+}
+2) OFPTYPE_PORT_DESC_STATS_REQUEST
+3) OFPTYPE_GET_CONFIG_REQUEST
+/*获得miss_send_len和frag_handle方式*/
+enum ofperr
+handle_get_config_request(struct ofconn *ofconn, const struct ofp_header *oh)
+{
+	flags = ofproto->frag_handling;
+	osc->flags = htons(flags);
+    osc->miss_send_len = htons(ofconn->miss_send_len);
+}
+
+# ovs-ofctl get-frags br0
+单独调用OFPTYPE_GET_CONFIG_REQUEST
+
+b. set
+# ovs-ofctl set-frags br0 normal/drop
+normal: Fragments pass through the flow table like non-fragmented packets.  The TCP ports, UDP ports, and ICMP type  and  code 
+fields  are  always  set  to 0, even for fragments where that information would otherwise be available (fragments with offset 0).
+This is the default fragment handling mode for an OpenFlow switch.
+drop:   Fragments are dropped without passing through the flow table.
+
+OFPTYPE_SET_CONFIG
+enum ofperr
+handle_set_config(struct ofconn *ofconn, const struct ofp_header *oh)
+{
+	ofproto->frag_handling = ntohs(osc->flags);
+	ofconn->miss_send_len = ntohs(osc->miss_send_len);	
+}
+
+2. ports
+a. get
+# ovs-ofctl dump-ports br0
+OFPTYPE_PORT_STATS_REQUEST
+append_port_stat(struct ofport *port, struct list *replies)
+{
+	ofproto->ofproto_class->port_get_stats(port, stats);
+	//netdev->netdev_class->get_stats(netdev, stats)
+	// 1. netdev 通过netlink获取网口的数据
+	// 2. internal 通过 OVS_VPORT_CMD_GET获取数据
+	// 3. tunnel struct netdev_vport *dev = netdev_vport_cast(netdev); dev->stats
+}
+enum ofperr handle_port_stats_request
+{
+	 HMAP_FOR_EACH (port, hmap_node, &ofproto->ports) {
+            append_port_stat(port, &replies);
+        }
+}
+
+# ovs-ofctl dump-ports-desc br0
+static void
+append_port_desc--->ofputil_encode_ofp11_port(const struct ofputil_phy_port *pp,
+                          struct ofp11_port *op)
+{
+    memset(op, 0, sizeof *op);
+
+    op->port_no = ofputil_port_to_ofp11(pp->port_no);
+    memcpy(op->hw_addr, pp->hw_addr, ETH_ADDR_LEN);
+    ovs_strlcpy(op->name, pp->name, OFP_MAX_PORT_NAME_LEN);
+
+    op->config = htonl(pp->config & OFPPC11_ALL);
+    op->state = htonl(pp->state & OFPPS11_ALL);
+
+    op->curr = netdev_port_features_to_ofp11(pp->curr);
+
+    op->curr_speed = htonl(pp->curr_speed);
+    op->max_speed = htonl(pp->max_speed);
+}
+
+enum ofperr handle_port_desc_stats_request
+{
+	 HMAP_FOR_EACH (port, hmap_node, &ofproto->ports) {
+            append_port_desc(port, &replies);
+        }
+	
+}
+
+b. set
+# ovs-ofctl mod-port port action
+up
+down   
+Enable or disable the interface.  This is equivalent to ifconfig up or ifconfig down on a Unix system.
+
+receive
+no-receive   
+Enable  or  disable  OpenFlow  processing  of packets received on this interface.  When packet processing is disabled, packets will be dropped instead of being processed through the OpenFlow table.
+
+forward
+no-forward
+Allow or disallow forwarding of traffic to this interface.  By default, forwarding is enabled.
+
+flood
+no-flood
+Controls whether an OpenFlow flood action will send traffic out this interface.   By  default,  flooding  is  enabled. Disabling flooding is primarily useful to prevent loops when a spanning tree protocol is not in use.
+
+packet-in
+no-packet-in
+Controls whether packets received on this interface that do not match a flow table entry generate a ``packet in'' message to the OpenFlow controller.  By default, ``packet in'' messages are enabled.
+这些参数是port->pp的config/status
+
+OFPTYPE_PORT_MOD
+handle_port_mod(struct ofconn *ofconn, const struct ofp_header *oh)
+{
+	port = ofproto_get_port(p, pm.port_no);
+	update_port_config(ofconn, port, pm.config, pm.mask);	
+}
+
+
+3. tables
+a. get
+# ovs-vsctl dump-tables br0
+OFPTYPE_TABLE_STATS_REQUEST
+handle_table_stats_request(struct ofconn *ofconn,
+                           const struct ofp_header *request)
+{
+	struct ofproto *p = ofconn_get_ofproto(ofconn);
+	for (i = 0; i < p->n_tables;; i++) {
+    	out = ofpbuf_put_uninit(buf, sizeof *out);
+    	out->table_id = in->table_id;
+    	out->active_count = in->active_count;
+    	out->lookup_count = in->lookup_count;
+    	out->matched_count = in->matched_count;
+	}	
+}
+
+b. set
+# ovs-ofctl mod-table br0 table_id flow_miss_handling
+drop:   Drop the packet.
+continue: Continue  to  the  next table in the pipeline.
+controller: Send to controller
+
+默认行为是在openflow1.3以及以上是drop, 1.1和1.2是controller
+OFPTYPE_TABLE_MOD
+handle_table_mod--->table_mod(struct ofproto *ofproto, const struct ofputil_table_mod *tm)
+{
+	atomic_store(&ofproto->tables[tm->table_id].config,
+                     (unsigned int)tm->config);
+}
+
+
+4. groups
+# ovs-ofctl dump-groups br0
+OFPTYPE_GROUP_DESC_STATS_REQUEST
+handle_group_desc_stats_request--->append_group_desc
+{
+	struct ofputil_group_desc gds;
+
+    gds.group_id = group->group_id;
+    gds.type = group->type;
+	/*获取每个bucket信息*/
+    ofputil_append_group_desc_reply(&gds, &group->buckets, replies);
+}
+
+# ovs-ofctl dump-group-stats br0
+FPTYPE_GROUP_STATS_REQUEST
+void append_group_stats(struct ofgroup *group, struct list *replies)
+{
+	ogs.bucket_stats = xmalloc(group->n_buckets * sizeof *ogs.bucket_stats);
+
+    /* Provider sets the packet and byte counts, we do the rest. */
+    ogs.ref_count = group_get_ref_count(group);
+    ogs.n_buckets = group->n_buckets;
+
+    error = (ofproto->ofproto_class->group_get_stats
+             ? ofproto->ofproto_class->group_get_stats(group, &ogs)
+	//  ogs->packet_count = group->packet_count;
+    //  ogs->byte_count = group->byte_count;
+	ogs.group_id = group->group_id;
+}
+
+handle_group_stats_request--->handle_group_request
+{
+	/*each group*/
+	HMAP_FOR_EACH (group, hmap_node, &ofproto->groups) {
+            append_group_stats(group, &replies);
+        }
+}
+

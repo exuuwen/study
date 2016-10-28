@@ -1,0 +1,409 @@
+1. devices: devices is used to control the permission of the tasks in a group to access the block or character devices
+
+struct cgroup_subsys devices_subsys = {
+	.name = "devices",
+	.can_attach = devcgroup_can_attach,
+	.css_alloc = devcgroup_css_alloc,
+	.css_free = devcgroup_css_free,
+	.css_online = devcgroup_online,
+	.css_offline = devcgroup_offline,
+	.subsys_id = devices_subsys_id,
+	.base_cftypes = dev_cgroup_files,
+};
+
+
+struct dev_cgroup {
+	struct cgroup_subsys_state css;
+	struct list_head exceptions;
+	enum devcg_behavior behavior;
+};
+
+a. When create a group it should create a css(dev_cgroup) for each group
+cgroup_create->css_alloc()
+
+enum devcg_behavior {
+	DEVCG_DEFAULT_NONE,
+	DEVCG_DEFAULT_ALLOW,
+	DEVCG_DEFAULT_DENY,
+};
+
+struct cgroup_subsys_state * cpuset_css_alloc()
+{
+	struct dev_cgroup *dev_cgroup;
+
+	dev_cgroup = kzalloc(sizeof(*dev_cgroup), GFP_KERNEL);
+
+	dev_cgroup->behavior = DEVCG_DEFAULT_NONE;
+
+	return &dev_cgroup->css;
+}
+
+b. files
+There are three important files to devices permission for this group
+
+static struct cftype dev_cgroup_files[] = {
+	{
+		/*white list*/
+		.name = "allow",
+		.write_string  = devcgroup_access_write,
+		.private = DEVCG_ALLOW,
+	},
+	{
+		/* black list*/
+		.name = "deny",
+		.write_string = devcgroup_access_write,
+		.private = DEVCG_DENY,
+	},
+	{
+		.name = "list",
+		.read_seq_string = devcgroup_seq_read,
+		.private = DEVCG_LIST,
+	},
+	{ }	/* terminate */
+};
+
+static int devcgroup_seq_read(struct cgroup_subsys_state *css,
+			      struct cftype *cft, struct seq_file *m)
+{
+	/*if behavior is DEVCG_DEFAULT_ALLOW allow all access*/
+	if (devcgroup->behavior == DEVCG_DEFAULT_ALLOW) {
+		set_access(acc, ACC_MASK);
+		set_majmin(maj, ~0);
+		set_majmin(min, ~0);
+		seq_printf(m, "%c %s:%s %s\n", type_to_char(DEV_ALL),
+			   maj, min, acc);
+	} else {
+		/*if behavior is DEVCG_DEFAULT_DENY just allow all exception*/
+		list_for_each_entry_rcu(ex, &devcgroup->exceptions, list) {
+			set_access(acc, ex->access);
+			set_majmin(maj, ex->major);
+			set_majmin(min, ex->minor);
+			seq_printf(m, "%c %s:%s %s\n", type_to_char(ex->type),
+				   maj, min, acc);
+		}
+	}
+	rcu_read_unlock();
+
+	return 0;
+}
+
+
+/*when set all to allow, the exception is meanless and tasks can access all devices*/
+/*when set all to deny, the tasks can only access exceptions*/
+int devcgroup_access_write->devcgroup_update_access()
+{
+	switch (*b) {
+	case 'a':
+		switch (filetype) {
+		case DEVCG_ALLOW:
+			/*if has children, the group can't set all*/
+			if (has_children(devcgroup))
+				return -EINVAL;
+			/*parent must allow too*/
+			if (!may_allow_all(parent))
+				return -EPERM;
+			dev_exception_clean(devcgroup);
+			devcgroup->behavior = DEVCG_DEFAULT_ALLOW;
+			if (!parent)
+				break;
+			/*clean all exception*/
+			rc = dev_exceptions_copy(&devcgroup->exceptions,
+						 &parent->exceptions);
+			if (rc)
+				return rc;
+			break;
+		case DEVCG_DENY:
+			if (has_children(devcgroup))
+				return -EINVAL;
+
+			dev_exception_clean(devcgroup);
+			devcgroup->behavior = DEVCG_DEFAULT_DENY;
+			break;
+		default:
+			return -EINVAL;
+		}
+		return 0;
+	case 'b':
+		ex.type = DEV_BLOCK;
+		break;
+	case 'c':
+		ex.type = DEV_CHAR;
+		break;
+	default:
+		return -EINVAL;
+	}
+	//get the ex.major and ex.minor
+	
+	/*get the access for the exception*/
+	for (b++, count = 0; count < 3; count++, b++) {
+		switch (*b) {
+		case 'r':
+			ex.access |= ACC_READ;
+			break;
+		case 'w':
+			ex.access |= ACC_WRITE;
+			break;
+		case 'm':
+			ex.access |= ACC_MKNOD;
+			break;
+		case '\n':
+		case '\0':
+			count = 3;
+			break;
+		default:
+			return -EINVAL;
+		}
+	}
+
+	switch (filetype) {
+	case DEVCG_ALLOW:
+		if (!parent_has_perm(devcgroup, &ex))
+			return -EPERM;
+		
+		if (devcgroup->behavior == DEVCG_DEFAULT_ALLOW) {
+			// remove the exception, if set through device.deny in allow mode
+			dev_exception_rm(devcgroup, &ex);
+			return 0;
+		}
+		rc = dev_exception_add(devcgroup, &ex);
+		break;
+	case DEVCG_DENY:
+		
+		if (devcgroup->behavior == DEVCG_DEFAULT_DENY)
+			// remove the exception, if set through devices.allow in deny mode
+			dev_exception_rm(devcgroup, &ex);
+		else
+			rc = dev_exception_add(devcgroup, &ex);
+
+		break;
+	default:
+		rc = -EINVAL;
+	}
+}
+
+c. how to implement the cgroup devices
+When access the device
+devcgroup_inode_permission->__devcgroup_check_permission()
+{
+	/*the access type for this oper*/
+	memset(&ex, 0, sizeof(ex));
+	ex.type = type;
+	ex.major = major;
+	ex.minor = minor;
+	ex.access = access;
+
+	dev_cgroup = task_devcgroup(current);
+	rc = may_access(dev_cgroup, &ex, dev_cgroup->behavior);
+}
+
+static bool may_access(struct dev_cgroup *dev_cgroup,
+		       struct dev_exception_item *refex,
+		       enum devcg_behavior behavior)
+{
+	struct dev_exception_item *ex;
+	bool match = false;
+	
+	/*find the exception*/
+	list_for_each_entry_rcu(ex, &dev_cgroup->exceptions, list) {
+		if ((refex->type & DEV_BLOCK) && !(ex->type & DEV_BLOCK))
+			continue;
+		if ((refex->type & DEV_CHAR) && !(ex->type & DEV_CHAR))
+			continue;
+		if (ex->major != ~0 && ex->major != refex->major)
+			continue;
+		if (ex->minor != ~0 && ex->minor != refex->minor)
+			continue;
+		if (refex->access & (~ex->access))
+			continue;
+		match = true;
+		break;
+	}
+
+	if (dev_cgroup->behavior == DEVCG_DEFAULT_ALLOW) {
+		if (behavior == DEVCG_DEFAULT_ALLOW) {
+			/*if the behavior of the group is allow, the code alyways be here so the exception is meanfulless*/
+			return true;
+		} else {
+			/* the exception will allow access to certain devices */
+			if (match)
+				/*
+				 * a new exception allowing access shouldn't
+				 * match an parent's exception
+				 */
+				return false;
+			return true;
+		}
+	} else {
+		/*the behavior of the group is deny and find a exception one so it can success*/
+		if (match)
+			/* parent has an exception that matches the proposed */
+			return true;
+		else
+			return false;
+	}
+	return false;
+}
+
+
+So according to the codes when group is in the deny mode,  the exception is the white list for the group to access.
+But in allow mode, the exception is nothing. Maybe in the future the exceptions are the black list for the group to access.
+# echo a > /cgroup/devices/exuuwen/devices.allow
+# echo "c 1:3 mwr" > /cgroup/devices/exuuwen/devices.deny  // add a exception but no useful.
+# echo 1 > /dev/null  //It will success.
+
+
+2. freezer: freezer is used to freeze/unfreeze tasks in a group
+
+
+struct cgroup_subsys freezer_subsys = {
+	.name		= "freezer",
+	.css_alloc	= freezer_css_alloc,
+	.css_online	= freezer_css_online,
+	.css_offline	= freezer_css_offline,
+	.css_free	= freezer_css_free,
+	.subsys_id	= freezer_subsys_id,
+	.attach		= freezer_attach,
+	.fork		= freezer_fork,
+	.base_cftypes	= files,
+};
+
+enum freezer_state_flags {
+	CGROUP_FREEZER_ONLINE	= (1 << 0), /* freezer is fully online */
+	CGROUP_FREEZING_SELF	= (1 << 1), /* this freezer is freezing */
+	CGROUP_FREEZING_PARENT	= (1 << 2), /* the parent freezer is freezing */
+	CGROUP_FROZEN		= (1 << 3), /* this and its descendants frozen */
+
+	/* mask for all FREEZING flags */
+	CGROUP_FREEZING		= CGROUP_FREEZING_SELF | CGROUP_FREEZING_PARENT,
+};
+
+
+struct freezer {
+	struct cgroup_subsys_state	css;
+	unsigned int			state;
+	spinlock_t			lock;
+};
+
+a. When create a group it should create a css(freezer) for each group
+cgroup_create->css_alloc()
+
+struct cgroup_subsys_state *freezer_css_alloc(struct cgroup_subsys_state *parent_css)
+{
+	struct freezer *freezer;
+
+	freezer = kzalloc(sizeof(struct freezer), GFP_KERNEL);
+
+	spin_lock_init(&freezer->lock);
+	return &freezer->css;
+}
+
+b. After alloc a css it will online the css in the create group
+cgroup_create->css_online()
+{
+	freezer->state |= CGROUP_FREEZER_ONLINE;
+	// if parents freezing and freezing it
+	if (parent && (parent->state & CGROUP_FREEZING)) {
+		freezer->state |= CGROUP_FREEZING_PARENT | CGROUP_FROZEN;
+	}
+}
+
+c. when a task attack to a group
+cgroup_attach->freezer_attach()
+{
+	cgroup_taskset_for_each(task, new_css, tset) {
+		/*thaw the task*/
+		if (!(freezer->state & CGROUP_FREEZING)) {
+			__thaw_task(task);
+		} else {
+			/*freeze the task*/
+			freeze_task(task);
+			freezer->state &= ~CGROUP_FROZEN;
+		}
+	}
+
+}
+
+
+d. there are three important files for control the frezzing statement for the group
+static struct cftype files[] = {
+	{
+		.name = "state",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_seq_string = freezer_read,
+		.write_string = freezer_write,
+	},
+	{
+		.name = "self_freezing",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_u64 = freezer_self_freezing_read,
+	},
+	{
+		.name = "parent_freezing",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_u64 = freezer_parent_freezing_read,
+	},
+	{ }	/* terminate */
+};
+
+//check if the group is freezen by itself
+static u64 freezer_self_freezing_read(struct cgroup_subsys_state *css,
+				      struct cftype *cft)
+{
+	struct freezer *freezer = css_freezer(css);
+
+	return (bool)(freezer->state & CGROUP_FREEZING_SELF);
+}
+
+//check if the group is freezen by the parents
+static u64 freezer_parent_freezing_read(struct cgroup_subsys_state *css,
+					struct cftype *cft)
+{
+	struct freezer *freezer = css_freezer(css);
+
+	return (bool)(freezer->state & CGROUP_FREEZING_PARENT);
+}
+
+//check the status of this group
+freezer_read->freezer_state_strs()
+{
+	if (state & CGROUP_FROZEN)
+		return "FROZEN";
+	if (state & CGROUP_FREEZING)
+		return "FREEZING";
+	return "THAWED";
+}
+
+//change the status of this group
+freezer_write->freezer_change_state->freezer_apply_state
+{
+	/*must be online*/
+	if (!(freezer->state & CGROUP_FREEZER_ONLINE))
+		return;
+
+	if (freeze) {
+		freezer->state |= state;
+		/*freeze it*/
+		freeze_cgroup(freezer);// freeze_task: freeze each task in the group
+	} else {
+		bool was_freezing = freezer->state & CGROUP_FREEZING;
+
+		freezer->state &= ~state;
+
+		if (!(freezer->state & CGROUP_FREEZING)) {
+			freezer->state &= ~CGROUP_FROZEN;
+			/*unfreeze it*/
+			unfreeze_cgroup(freezer); //unfreeze_task: unfreeze each task in the group
+		}
+	}
+}
+
+
+
+
+
+
+
+
+
+
+

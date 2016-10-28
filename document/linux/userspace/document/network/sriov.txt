@@ -1,0 +1,78 @@
+1. enable vt-d in bios
+2. kernel config
+    make menuconfig
+    set "Bus options (PCI etc.)" -> "Support for DMA Remapping Devices" to "*"
+    set "Bus options (PCI etc.)" -> "Enable DMA Remapping Devices" to "*"
+    set "Bus options (PCI etc.)" -> "PCI Stub driver" to "*"
+    optional setting:
+    set "Bus options (PCI etc.)" -> "Support for Interrupt Remapping" to "*"
+
+3. CONFIG_DMAR_DEFAULT_ON is not set. In that case, pass "intel_iommu=on" as kernel parameter to enable it.
+
+4. add max_vfs parameter to ixgbe.ko 
+# echo "options ixgbe max_vfs=7" >>/etc/modprobe.d/ixgbe.conf
+
+5. reboot and verify
+# dmesg | grep -e DMAR -e IOMMU
+
+6. check virtual functions
+# lspci | grep 82599
+83:00.0 Ethernet controller: Intel Corporation 82599EB 10-Gigabit SFI/SFP+ Network Connection (rev 01)
+83:00.1 Ethernet controller: Intel Corporation 82599EB 10-Gigabit SFI/SFP+ Network Connection (rev 01)
+83:10.0 Ethernet controller: Intel Corporation 82599 Ethernet Controller Virtual Function (rev 01)
+83:10.2 Ethernet controller: Intel Corporation 82599 Ethernet Controller Virtual Function (rev 01)
+83:10.4 Ethernet controller: Intel Corporation 82599 Ethernet Controller Virtual Function (rev 01)
+83:10.6 Ethernet controller: Intel Corporation 82599 Ethernet Controller Virtual Function (rev 01)
+83:11.0 Ethernet controller: Intel Corporation 82599 Ethernet Controller Virtual Function (rev 01)
+83:11.2 Ethernet controller: Intel Corporation 82599 Ethernet Controller Virtual Function (rev 01)
+83:11.4 Ethernet controller: Intel Corporation 82599 Ethernet Controller Virtual Function (rev 01)
+83:11.6 Ethernet controller: Intel Corporation 82599 Ethernet Controller Virtual Function (rev 01)
+
+7. list virtual functions in libvirt
+# virsh nodedev-list | grep 83
+pci_0000_83_00_0
+pci_0000_83_00_1
+pci_0000_83_10_0
+pci_0000_83_10_2
+pci_0000_83_10_4
+pci_0000_83_10_6
+pci_0000_83_11_0
+pci_0000_83_11_2
+pci_0000_83_11_4
+pci_0000_83_11_6
+
+8. get information of the specific virtual function
+# virsh nodedev-dumpxml pci_0000_83_10_0
+<device>
+  <name>pci_0000_83_10_0</name>
+  <path>/sys/devices/pci0000:80/0000:80:02.0/0000:83:10.0</path>
+  <parent>pci_0000_80_02_0</parent>
+  <driver>
+    <name>pci-stub</name>
+  </driver>
+  <capability type='pci'>
+    <domain>0</domain>
+    <bus>131</bus>
+    <slot>16</slot>
+    <function>0</function>
+    <product id='0x10ed'>82599 Ethernet Controller Virtual Function</product>
+    <vendor id='0x8086'>Intel Corporation</vendor>
+    <capability type='phys_function'>
+      <address domain='0x0000' bus='0x83' slot='0x00' function='0x0'/>
+    </capability>
+  </capability>
+</device>
+
+9. create the xml
+# vim sriov.xml
+<interface type='hostdev' managed='yes'>
+  <source>
+    <address type='pci' domain='0' bus='131' slot='16' function='0'/>
+  </source>
+  <mac address='52:54:00:6d:90:02'/>
+</interface>
+
+10. attach/detach the device to guest dynamicly
+# virsh attach-device myguest sriov.xml --persistent
+# virsh detach-device myguest sriov.xml --persistent
+

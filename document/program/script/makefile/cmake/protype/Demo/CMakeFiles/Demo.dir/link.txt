@@ -1,0 +1,2 @@
+/usr/bin/ar cr libDemo.a  CMakeFiles/Demo.dir/demo.cxx.o
+/usr/bin/ranlib libDemo.a

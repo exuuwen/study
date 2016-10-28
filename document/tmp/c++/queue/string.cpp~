@@ -1,0 +1,91 @@
+#include <string>
+#include <iostream>
+#include <stdio.h>
+
+using namespace std;
+
+int main()
+{
+	string::size_type size;
+	string s1;
+	if(!s1.empty())
+	{
+		size = s1.size();
+		cout << "s1 size " << size << ":" << s1 << endl;
+		cout << "s1[0]:" << s1[0] << endl;
+	}
+	else
+	{
+		cout << "s1 is empty" << endl;
+	}
+
+	string s2("value");
+	if(!s2.empty())
+	{
+		size = s2.size();
+		cout << "s2 size " << size << ":" << s2 << endl;
+		cout << "s2[0]:" << s2[0] << endl;
+	}
+	else
+	{
+		cout << "s2 is empty" << endl;
+	}
+
+	string s3(s2);//can not refer than the size;
+	//s3[10] = 's';  /*error*/
+	if(!s3.empty())
+	{
+		size = s3.size();
+		cout << "s3 size " << size << ":" << s3 << endl;
+		cout << "s3[0]:" << s3[0] << endl;
+	}
+	else
+	{
+		cout << "s3 is empty" << endl;
+	}
+
+	string s4(5, 'c');
+	if(!s4.empty())
+	{
+		size = s4.size();
+		cout << "s4 size " << size << ":" << s4 << endl;
+		cout << "s4[0]:" << s4[0] << endl;
+	}
+	else
+	{
+		cout << "s4 is empty" << endl;
+	}
+
+	if(s2 == s3)
+	{
+		cout << "s2 == s3" << endl;
+	}
+
+	s3 = s4;
+	cout << "new s3:" << s3 << endl;
+
+	s2 += s3;
+	cout << "s2 + s3:" << s2 << endl;
+
+	//string to char*
+	const char *p = s2.c_str();  // return a const pointer;
+	printf("*p %s\n", p);
+
+	//char* to string
+	string ss(p);
+	cout<< "ss:" << ss << endl;
+	
+	string s;
+	//end-of-file uot of while: ctrl+D 
+	cout << "input a line or end with ctrl+D" << endl;
+	while(getline(cin, s))  //get a line just only a enter can end it
+	{
+		cout << "input" << s << endl;
+		cout << "input a line or end with ctrl+D" << endl;
+	}
+
+	
+	
+	return 0;
+}
+

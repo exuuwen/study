@@ -1,0 +1,23 @@
+#!/usr/bin/python
+
+poem = '''snuwhduedh
+skwisjwijwjddjiw
+seidjeudueduedhd!
+'''
+#mode 'w', 'r', 'a'
+f = file("test.txt", 'w')
+f.write(poem)
+f.close()
+
+f = file('test.txt')
+#default is 'r'
+
+while True:
+	line = f.readline()
+	if len(line) == 0:
+		break;
+	print line,
+
+f.close() 
+
+

@@ -1,0 +1,71 @@
+A. startup a virtual machine
+1. install the qemu-kvm
+# apt-get install qemu-kvm
+
+2. hardisk startup
+1). qemu img 
+a. qcow2 format
+# qemu-img create -f qcow2 ubuntu.img 3G
+
+How to mount the qcow2 ubuntu.img?
+First you need the module loaded:
+# sudo modprobe nbd max_part=8
+Then you can share the disk on the network and create the device entries:
+# sudo qemu-nbd --connect=/dev/nbd0 /path/ubuntu.img
+Then you mount it:
+# sudo mount /dev/nbd0p1 /mnt/
+When done, unmount and unshare it:
+# sudo umount /mnt/
+# sudo nbd-client -d /dev/nbd0
+
+b. raw format
+qemu-img create -f qcow2 ubuntu.img 3G
+
+How to mount the raw ubuntu.img?
+# sudo mount -o loop,offset=32256 /path/ubuntu.img /mnt
+
+c.onvert
+/*qcow2 to raw*/
+qemu-img convert -O raw diskimage.qcow2 diskimage.raw
+
+2). install a os to a img
+# quem-system_x86_64 -hda ubuntu.img -m 512 -boot d -cdrom ./ubuntu-12.04.3-server-amd64.iso
+
+3). startup
+# quem-system_x86_64 -hda ubuntu.img -m 512
+
+
+3. ext3/ext4 filesystem with kernel image startup
+1). create ext4 filesystem or find a exist ext3/ext4 filesystem(such as cirros https://launchpad.net/cirros/+download)
+# dd if=/dev/zero of=ubuntu.ext4 count=3 bs=1G
+# mkfs.ext4 ubuntu.ext4
+
+2). mount ext4 filesystem and copy from a usable filesystem.
+
+3). startup
+# qemu-system-x86_64  -kernel vmlinuz-3.12.1 -hda ubuntu.ext4 -m 512 -append "root=/dev/sda console=ttyS0" -nographic
+
+B. network for virtual machine
+1). create a tap device in host and bring up
+# sudo tunctl -u myid -t tap0
+# sudo ifconfig tap0 x.x.x.x up
+
+2). startup 
+# qemu-system-x86_64  -kernel vmlinuz-3.12.1 -hda ubuntu.ext4 -m 512 -append "root=/dev/sda console=ttyS0" -nographic -netdev tap,id="my1",ifname="tap0",script= -device virtio-net-pci,netdev="my1",mac=00:80:37:0E:88:88
+
+
+C. file shared with host
+1). start it share the host dirctory /home/xxx to VM
+# qemu-system-x86_64  -kernel vmlinuz-3.12.1 -hda ubuntu.ext4  -m 512 -append "root=/dev/sda console=ttyS0" -nographic -netdev tap,id="my2",ifname="tap0",script= -device virtio-net-pci,netdev="my2",mac=00:80:37:0E:88:77 \
+-fsdev local,id="myfs2",path=/home/xxx,security_model=none \
+-device virtio-9p-pci,fsdev="myfs2",mount_tag=host2
+
+2). in the VM
+# sudo modprobe 9pnet_virtio
+# sudo mount -t 9p -o trans=virtio host2 /mnt -oversion=9p2000.L
+# ls /mnt
+
+
+
+
+

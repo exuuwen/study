@@ -1,0 +1,73 @@
+1. init napi_struct
+for (vector = 0; vector < adapter->num_q_vectors; vector++) {
+netif_napi_add(adapter->netdev, &q_vector->napi, xx_poll, 64);
+napi_hash_add(&q_vector->napi);
+}
+
+2. request intr
+for (vector = 0; vector < adapter->num_q_vectors; vector++) {
+err = request_irq(entry->vector, &xx_clean_rings, 0,  q_vector->name, q_vector);
+}
+
+static irqreturn_t xx_clean_rings(int irq, void *data)
+{
+	struct q_vector *q_vector = data;
+	//schedule the napi
+	if (q_vector->rx.ring || q_vector->tx.ring)
+		napi_schedule(&q_vector->napi);
+
+	return IRQ_HANDLED;
+}
+
+static inline void napi_schedule(struct napi_struct *n)
+{
+	/*如果napi没有schedule和disable 就加入sd->poll, 设置为schdule*/
+	if (napi_schedule_prep(n))
+		__napi_schedule(n);
+}
+
+3. 
+int xx_poll()
+{
+	bool clean_complete = true;
+
+	ixgbe_for_each_ring(ring, q_vector->rx)
+		clean_complete &= (ixgbe_clean_rx_irq(q_vector, ring,
+				   per_ring_budget) < per_ring_budget);
+
+	/*未完成*/
+	if (!clean_complete)
+		return budget;
+
+	/* all work done, exit the polling mode */
+	//完成所有报文就去标志schedule，从sd->poll删除
+	napi_complete(napi);	
+}
+
+
+
+4. receive skb
+ixgbe_clean_rx_irq---> ixgbe_rx_skb--->netif_receive_skb_internal
+{
+	//如果开启了rps, 在扔到相应core的backlog去处理，在进行一次软中断处理
+	#ifdef CONFIG_RPS
+	if (static_key_false(&rps_needed)) {
+		struct rps_dev_flow voidflow, *rflow = &voidflow;
+		int cpu, ret;
+
+		rcu_read_lock();
+
+		cpu = get_rps_cpu(skb->dev, skb, &rflow);
+
+		if (cpu >= 0) {
+			ret = enqueue_to_backlog(skb, cpu, &rflow->last_qtail);
+			rcu_read_unlock();
+			return ret;
+		}
+		rcu_read_unlock();
+	}
+	#endif
+	return __netif_receive_skb(skb);
+}
+
+

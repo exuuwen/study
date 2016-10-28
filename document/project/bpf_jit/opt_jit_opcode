@@ -1,0 +1,67 @@
+
+[  642.710325] JIT code: ffffffffa0106000: 55 48 89 e5 48 83 ec 60 48 89 5d f8 31 db 44 8b
+[  642.710326] JIT code: ffffffffa0106010: 4f 68 44 2b 4f 6c 4c 8b 87 e0 00 00 00 be 0c 00
+[  642.710328] JIT code: ffffffffa0106020: 00 00 41 0f b7 04 30 66 c1 c0 08 3d 00 08 00 00
+[  642.710329] JIT code: ffffffffa0106030: 75 51 be 17 00 00 00 41 0f b6 04 30 83 f8 11 75
+[  642.710330] JIT code: ffffffffa0106040: 42 be 14 00 00 00 41 0f b7 04 30 66 c1 c0 08 66
+[  642.710331] JIT code: ffffffffa0106050: a9 ff 1f 75 2e be 0e 00 00 00 41 0f b6 1c 30 80
+[  642.710333] JIT code: ffffffffa0106060: e3 0f c0 e3 02 be 10 00 00 00 01 de 41 0f b7 04
+[  642.710334] JIT code: ffffffffa0106070: 30 66 c1 c0 08 3d 0b 02 00 00 75 07 b8 60 00 00
+[  642.710335] JIT code: ffffffffa0106080: 00 eb 02 31 c0 48 8b 5d f8 c9 c3
+
+
+
+Disassembly of section .data:
+
+0000000000000000 <.data>:
+   0:	55                   	push   %rbp
+   1:	48 89 e5             	mov    %rsp,%rbp
+   4:	48 83 ec 60          	sub    $0x60,%rsp
+   8:	48 89 5d f8          	mov    %rbx,-0x8(%rbp)		xxxxxxxxxxx
+   c:	31 db                	xor    %ebx,%ebx		xxxxxxxxxxxx
+   e:	44 8b 4f 68          	mov    0x68(%rdi),%r9d		xxxxxxxxxxxxxx
+  12:	44 2b 4f 6c          	sub    0x6c(%rdi),%r9d		xxxxxxxxxxxxx
+  16:	4c 8b 87 e0 00 00 00 	mov    0xe0(%rdi),%r8         	xxxxxxxxxxxxx
+  1d:	be 0c 00 00 00       	mov    $0xc,%esi
+  22:	41 0f b7 04 30       	movzwl (%r8,%rsi,1),%eax
+  27:	66 c1 c0 08          	rol    $0x8,%ax
+  2b:	3d 00 08 00 00       	cmp    $0x800,%eax
+  30:	75 51                	jne    0x83
+  32:	be 17 00 00 00       	mov    $0x17,%esi
+  37:	41 0f b6 04 30       	movzbl (%r8,%rsi,1),%eax
+  3c:	83 f8 11             	cmp    $0x11,%eax
+  3f:	75 42                	jne    0x83
+  41:	be 14 00 00 00       	mov    $0x14,%esi
+  46:	41 0f b7 04 30       	movzwl (%r8,%rsi,1),%eax
+  4b:	66 c1 c0 08          	rol    $0x8,%ax
+  4f:	66 a9 ff 1f          	test   $0x1fff,%ax
+  53:	75 2e                	jne    0x83
+  55:	be 0e 00 00 00       	mov    $0xe,%esi
+  5a:	41 0f b6 1c 30       	movzbl (%r8,%rsi,1),%ebx
+  5f:	80 e3 0f             	and    $0xf,%bl
+  62:	c0 e3 02             	shl    $0x2,%bl
+  65:	be 10 00 00 00       	mov    $0x10,%esi
+  6a:	01 de                	add    %ebx,%esi
+  6c:	41 0f b7 04 30       	movzwl (%r8,%rsi,1),%eax
+  71:	66 c1 c0 08          	rol    $0x8,%ax
+  75:	3d 0b 02 00 00       	cmp    $0x20b,%eax
+  7a:	75 07                	jne    0x83
+  7c:	b8 60 00 00 00       	mov    $0x60,%eax
+  81:	eb 02                	jmp    0x85
+  83:	31 c0                	xor    %eax,%eax
+  85:	48 8b 5d f8          	mov    -0x8(%rbp),%rbx
+  89:	c9                   	leaveq 
+  8a:	c3                   	retq   
+
+
+[  651.044490] the difference 50000000 times is 30, high:4295002502, low:4295002472
+[  651.341757] (*filter->bpf_func)(skb, filter->insns) res is 96
+[  651.341760]  sk addr is 0x316ea800, sk->sk_filter addr is 0x31482580,filter->bpf_func addr is 0xa0088000. sk_filter IP[192.168.60.129]
+[  651.341762] the difference 50000000 times is 30, high:4295002532, low:4295002502
+[  651.637972] (*filter->bpf_func)(skb, filter->insns) res is 96
+[  651.637975]  sk addr is 0x316ea800, sk->sk_filter addr is 0x31482580,filter->bpf_func addr is 0xa0088000. sk_filter IP[192.168.60.129]
+[  651.637977] the difference 50000000 times is 29, high:4295002561, low:4295002532
+[  651.932593] (*filter->bpf_func)(skb, filter->insns) res is 96
+[  651.932597]  sk addr is 0x316ea800, sk->sk_filter addr is 0x31482580,filter->bpf_func addr is 0xa0088000. sk_filter IP[192.168.60.129]
+[  651.932599] the difference 50000000 times is 30, high:4295002591, low:4295002561
+

@@ -1,0 +1,114 @@
+有两种方法可以从熵池中获取内核随机数。一种是通过内核导出的随机数接口，另一种是通过特殊的设备文件/dev/random和/dev/urandom。下面分别讨论两种方法。
+
+1. kernel	
+void get_random_bytes(void *buf, int nbytes)
+
+该函数返回长度为nbytes字节的缓冲区buf，无论熵估计是否为0都将返回数据。使用这个函数时需要在内核空间。我们写一个小模块来测试一下。
+
+ 
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/kernel.h>
+#define NUM 10
+ 
+void get_random_bytes(void *buf, int nbytes);
+ 
+static int get_random_number(void)
+{
+    unsigned long randNum[10];
+    int i = 0;
+ 
+    printk(KERN_ALERT "Get some real random number.\n");
+    for (i=0; i<NUM; i++)
+    {
+        get_random_bytes(&randNum[i], sizeof(unsigned long));
+        printk(KERN_ALERT "We get random number: 0x%lx\n", randNum[i]);
+    }
+    return 0;
+}
+ 
+static void random_exit(void)
+{
+    printk(KERN_ALERT "quit get_random_num.\n");
+}
+ 
+module_init(get_random_number);
+module_exit(random_exit);
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Test");
+
+Makefile如下：
+
+obj-m = random.o
+KDIR = $(shell uname -r)
+PWD = $(shell pwd)
+ 
+all:
+    make -C /lib/modules/$(KDIR)/build M=$(PWD) modules
+clean:
+    make -C /lib/modules/$(KDIR)/build M=$(PWD) clean
+ 
+
+编译之后加载模块，通过dmesg命令输出系统log最新的信息，可以看到我们的小模块输出了10个从内核熵池中得到的随机数。卸载模块后再次加载可以重新获取新的随机数，观察输出结果，与之前得到的随机数完全不一样。
+
+[26216.035879] Get some real random number.
+[26216.035890] We get random number: 0x7ca1a7aa8ba8094d
+[26216.035895] We get random number: 0x42406d29c1450378
+[26216.035900] We get random number: 0xb5e0f17a1d70d647
+[26216.035904] We get random number: 0x1fffeacf7fb7a034
+[26216.035908] We get random number: 0x77840df5e5cadbde
+[26216.035913] We get random number: 0x5b5da30e552678de
+[26216.035917] We get random number: 0x2ba98a8f73b1a214
+[26216.035921] We get random number: 0x63f04302a120d8e
+[26216.035926] We get random number: 0x2408d7b3af12003e
+[26216.035930] We get random number: 0xb1e92348077efaf
+	
+
+
+2. /dev/random & /dev/urandom
+
+这两个特殊设备都是字符型设备。我们可以在用户空间通过read系统调用读这两个设备文件以此获取随机数。这两个设备文件的区别在于：如果内核熵池的估计值为0时，
+
+/dev/random将被阻塞，而/dev/urandom不会有这个限制。
+	
+#include <assert.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <unistd.h>
+ 
+/* 从min和max中返回一个随机值 */
+ 
+int random_number(int min, int max)
+{
+    static int dev_random_fd = -1;
+    char *next_random_byte;
+    int bytes_to_read;
+    unsigned random_value;
+     
+    assert(max > min);
+     
+    if (dev_random_fd == -1)
+    {
+        dev_random_fd = open("/dev/random", O_RDONLY);
+        assert(dev_random_fd != -1);
+    }
+     
+    next_random_byte = (char *)&random_value;
+    bytes_to_read = sizeof(random_value);
+     
+    /* 因为是从/dev/random中读取，read可能会被阻塞，一次读取可能只能得到一个字节，
+     * 循环是为了让我们读取足够的字节数来填充random_value.
+     */
+    do
+    {
+        int bytes_read;
+        bytes_read = read(dev_random_fd, next_random_byte, bytes_to_read);
+        bytes_to_read -= bytes_read;
+        next_random_byte += bytes_read;
+    }while(bytes_to_read > 0);
+     
+    return min + (random_value % (max - min + 1));
+}
+
+

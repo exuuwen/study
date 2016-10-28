@@ -1,0 +1,80 @@
+1. 问题
+host1上有container1 192.168.0.1连接到ovs-br1上
+host2上有container2 192.168.0.2连接到ovs-br2上
+host1与host2通过gre tunnel相连, 各个gre tunnel连接上ovs-br上
+
+openvswitch内核ko使用linux自带的ko
+
+container1能ping通container2
+
+在contaner1中
+file 大小为2M
+nc -l 192.168.0.1 66 < file 
+在contaner2中
+nc 192.168.0.1 66 > file
+发现传输速度很慢
+
+2. 分析
+抓包分析
+a. 在container的vethx接口上发现发出很多大包
+b. 在host1 eth0接口上抓取gre报文, 发现大包并没有发出去, 导致tcp连接很多重传
+
+对于a: container1里面的接口打开连TSO功能, 内核会产生大包，让硬件去做分片. 但是veth是虚拟接口, 直接把tso的大报文传递给host上的vethx借口
+对于b: vethx上的报文是一个tso大报文, 但是在通过ovs gre tunnel后在大报文前再加上gre header, deliver ip header. 并且不会去做软件分片, 然后传递给eth0网卡驱动, 但是网卡驱动不能有效处理这个半tso报文(报文传输层头并不是tcp), 丢弃掉报文
+
+3. 解方案
+a. 关掉container网卡接口的tso
+# ethtool -K xxx tso off
+这样在container发出的报文都是小于mtu的非tso报文
+
+b. 升级内核ko到上游的自编译版本
+在上游的自编译版本已经fix这个问题
+
+用rpl_ip_local_out代替 ip_local_out函数
+int rpl_ip_local_out(struct sk_buff *skb)
+{
+	int ret = NETDEV_TX_OK;
+	int id = -1;
+	
+	/*gso 报文, 进行软件 segment*/
+	if (skb_is_gso(skb)) {
+		struct iphdr *iph;
+
+		iph = ip_hdr(skb);
+		id = ntohs(iph->id);
+		skb = tnl_skb_gso_segment(skb, 0, false);
+		if (!skb || IS_ERR(skb))
+			return 0;
+	}  else if (skb->ip_summed == CHECKSUM_PARTIAL) {
+		int err;
+
+		err = skb_checksum_help(skb);
+		if (unlikely(err))
+			return 0;
+	}
+
+	/*为每个报文加上deliver头,并且ip local out*/
+	while (skb) {
+		struct sk_buff *next_skb = skb->next;
+		struct iphdr *iph;
+		int err;
+
+		skb->next = NULL;
+
+		iph = ip_hdr(skb);
+		if (id >= 0)
+			iph->id = htons(id++);
+
+		memset(IPCB(skb), 0, sizeof(*IPCB(skb)));
+
+#undef ip_local_out
+		err = ip_local_out(skb);
+		if (unlikely(net_xmit_eval(err)))
+			ret = err;
+
+		skb = next_skb;
+	}
+	return ret;
+}
+
+

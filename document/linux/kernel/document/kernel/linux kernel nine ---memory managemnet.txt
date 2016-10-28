@@ -1,0 +1,84 @@
+Page:
+The physical memory is divided into server pages. The important point to understand is that the page structure is associated with physical pages, not virtual pages.Therefore, what the structure describes is transient at best. Even if the data contained in the page continues to exist, it might not always be associated with the same page structure because of swapping and so on.
+
+The virtual field of the struct page is the page¡¯s virtual address. Normally, this is simply the address of the page in virtual memory. Some memory (called high memory) is not permanently mapped in the kernel¡¯s address space. In that case, this field is NULL, and the page must be dynamically mapped if needed.We discuss high memory shortly.
+page_address() function can get the field of a page.
+
+
+Zone:
+1. ZONE_DMA: This zone contains pages that can undergo DMA. ZONE_DMA on x86 consists of all memory in the range 0MB¨C16MB.
+2. ZONE_DMA32: Like ZOME_DMA, this zone contains pages that can undergo DMA. Unlike ZONE_DMA, these pages are accessible only by 32-bit devices. On some architectures, this zone is a larger subset of memory.
+3. ZONE_NORMAL: This zone contains normal, regularly mapped, pages.
+4. ZONE_HIGHMEM¡ªThis zone contains ¡°high memory,¡± which are pages not permanently.
+
+What an architecture can and cannot directly map varies. On 32-bit x86 systems, ZONE_HIGHMEM is all memory above the physical 896MB mark.a 64-bit architecture such as Intel¡¯s x86-64 can fully map and handle 64-bits of memory.Thus, x86-64 has no ZONE_HIGHMEM and all physical memory is contained within ZONE_DMA and ZONE_NORMAL
+
+
+
+Allcate a Pages: physically contiguous pages contiguous
+
+1. struct page * alloc_pages(gfp_t gfp_mask, unsigned int order)
+
+flags:
+__GFP_DMA Allocates only from ZONE_DMA
+__GFP_DMA32 Allocates only from ZONE_DMA32
+__GFP_HIGHMEM Allocates from ZONE_HIGHMEM or ZONE_NORMAL
+
+the max value of order is 10, So only allocate 4M memory with. 
+
+2. unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order)
+
+You cannot specify __GFP_HIGHMEM to either __get_free_pages() or kmalloc(). Because these both return a logical address, and not a page structure, it is possible that these functions would allocate memory not currently mapped in the kernel¡¯s virtual address space and, thus, does not have a logical address. Only alloc_pages() can allocate high memory.
+
+
+Vmalloc:
+The vmalloc() function, to make nonphysically contiguous pages contiguous in the virtual address space, must specifically set up the page table entries.Worse, pages obtained via vmalloc() must be mapped by their individual pages (because they are not physically contiguous), which results in much greater TLB4 thrashing than you see
+when directly mapped memory is used. Because of these concerns, vmalloc() is used only when absolutely necessary¡ªtypically, to obtain large regions of memory.
+
+
+Slab: effectively allocate a smmall memory more less than a PageSize.
+The slab layer divides different objects into groups called caches, each of which stores a different type of object. The caches are then divided into slabs (hence the name of this subsystem). The slabs are composed of one or more physically contiguous pages.Typically, slabs are composed of only a single page. Each cache may consist of multiple slabs. Each slab contains some number of objects, which are the data structures being cached. Each slab is in one of three states: full, partial, or empty. When some part of the kernel requests a new object, the request is satisfied from a partial slab, if one exists. Otherwise, the request is satisfied from an empty slab. If there exists no empty slab, one is created. 
+
+benifit:
+1. The free list provides improved performance during frequent allocation and deallocation because a freed object can be immediately returned to the next allocation.
+2. If the allocator is aware of concepts such as object size, page size, and total cache size, it can make more intelligent decisions.
+3. Stored objects can be colored to prevent multiple objects from mapping to the same cache lines.
+
+kmalloc: allocate the small memory from a simple kinds of caches. the size from 1 byte to 128kb.
+
+
+
+High memory mappings
+On the x86 architecture, all physical memory beyond the 896MB mark is high memory and is not permanently or automatically mapped into the kernel¡¯s address space, despite x86 processors being capable of physically addressing up to 4GB (64GB with PAE6)
+
+1. permanent mapping
+void *kmap(struct page *page) only be used for process context
+After a highmem page is permanent mapping, the virtual field of page is write by the return value.
+
+2. temporary maaping
+void *kmap_atomic(struct page *page, enum km_type type) can be used for intrrupt context.
+After a highmem page is temporary mapping, the virtual field of page is still zero.
+kunmap_atomic must be done in the same context with kmap_atomic
+
+
+PerCPU
+benifit:
+a. The first is the reduction in locking requirements.
+b. per-CPU data greatly reduces cache invalidation.
+
+1. type
+DECLARE_PER_CPU(int, name);
+get_cpu_var(name)++; /* increment name on this processor */
+put_cpu_var(name); /* done; enable kernel preemption */
+
+2. ptr
+void *percpu_ptr;
+unsigned long *foo;
+percpu_ptr = alloc_percpu(unsigned long);
+if (!ptr)
+/* error allocating memory .. */
+foo = get_cpu_var(percpu_ptr);
+/* manipulate foo .. */
+put_cpu_var(percpu_ptr);
+
+

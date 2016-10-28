@@ -1,0 +1,26 @@
+[Unit]
+Description=systemd foo exampel
+Wants=rsyslog.service 
+#Requires=dev-hugepages.mount
+#After=dev-hugepages.mount rsyslog.service
+
+[Service]
+Type=simple
+
+ExecStart=/usr/bin/foo one two
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+#ExecStop=/opt/bin/stop.sh
+
+StandardOutput=syslog
+StandardError=inherit
+SyslogIdentifier=phygw
+SyslogFacility=local0
+
+[Install]
+WantedBy=multi-user.target
+
+# cp foo.service /etc/systemd/system/

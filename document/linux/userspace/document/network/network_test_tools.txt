@@ -1,0 +1,119 @@
+1. check the traffic of interface 
+a. sar:  counts packets that pass through the interface
+# sar -n DEV 1
+06:16:58 PM     IFACE   rxpck/s   txpck/s    rxkB/s    txkB/s   rxcmp/s   txcmp/s  rxmcst/s   %ifutil
+06:16:59 PM      eth0  18982.00      0.00   1816.64      0.00      0.00      0.00      0.00      1.49
+06:16:59 PM        lo      0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00
+
+06:16:59 PM     IFACE   rxpck/s   txpck/s    rxkB/s    txkB/s   rxcmp/s   txcmp/s  rxmcst/s   %ifutil
+06:17:00 PM      eth0  17432.00      0.00   1668.30      0.00      0.00      0.00      0.00      1.37
+06:17:00 PM        lo      0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00
+
+06:17:00 PM     IFACE   rxpck/s   txpck/s    rxkB/s    txkB/s   rxcmp/s   txcmp/s  rxmcst/s   %ifutil
+06:17:01 PM      eth0  16463.37      0.00   1575.60      0.00      0.00      0.00      0.00      1.29
+06:17:01 PM        lo      0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00
+
+b.  iftop:  counts all IP packets that pass through the interface, display as a peer of connections
+# apt-get install iftop
+1)
+# iftop -nN -i eth0
+1.2.3.4  =>  5.6.7.8      1Kb  500b   100b
+         <=               2Mb    2Mb    2Mb
+n: turn off name resolution
+N:  turn off port resolution
+
+2) filter with ip
+iftop -i eth0 -F 192.168.1.0/255.255.255.0
+
+3) bpf filter
+iftop -i eth0 -f 'port (80 or 443)'
+
+
+2. traffic sending tools
+a. iperf
+# apt-get install iperf
+1) server 
+tcp:
+listen ip addr 10.7.17.215 and port 2152
+# iperf -s 10.7.17.215 -p 2152
+udp:
+# iperf -u -s 10.7.17.215 -p 2152
+ 
+2) client
+tcp:
+300s, packet length 64 bytes
+# iperf -c  10.7.17.215 -p 2152 -t 300 -l 64
+udp:
+300s, target bandwidth 10M, packet length 64 bytes
+# iperf -u -c  10.7.17.215 -p 2152 -t 300 -b 10M -l 64
+
+3) client multiple connections
+tcp:
+300s, packet length 64 bytes, 100 connections
+# iperf -c  10.7.17.215 -p 2152 -t 300 -l 64 -P 100
+udp:
+300s, target bandwidth 10M, packet length 64 bytes, 100 connections
+# iperf -u -c  10.7.17.215 -p 2152 -t 300 -b 10M -l 64 -P 100
+
+
+b. netperf
+1) server
+listen on all ip with port 2152
+# netserver -L 0.0.0.0 -p 2152
+
+2) client
+a. tcp/udp_stream: test the bandwidth and throughput
+connect to 192.168.0.28 port 2152 with 60s
+# netperf -H 192.168.0.28 -l 60 -p 2152
+
+connect to 192.168.0.28 port 2152 with 60s and packet length 100 bytes
+# netperf -H 192.168.0.28 -l 60 -p 2152 -- -m 100
+
+b. tcp/udp_rr: test the request and response times/s
+connect to 192.168.0.28 port 2152 with 60s for test request and response
+# netperf -H 192.168.0.28 -l 60 -p 2152 -t tcp_rr
+
+connect to 192.168.0.28 port 2152 with 60s for test request and response, request packet size 10 and response packet size 20
+# netperf -H 192.168.0.28 -l 60 -p 2152 -t tcp_rr -- -r 10,20
+
+c. tcp/udp_crr: test the the whole request and response(each connection with three handshake and four termination) times/s
+connect to 192.168.0.28 port 2152 with 60s for test whole request and response, request packet size 10 and response packet size 20
+# netperf -H 192.168.0.28 -l 60 -p 2152 -t tcp_crr
+
+connect to 192.168.0.28 port 2152 with 60s for test whole request and response, request packet size 10 and response packet size 20
+# netperf -H 192.168.0.28 -l 60 -p 2152 -t tcp_crr -- -r 10,20
+
+3) other parameters
+-s: send buffer size
+-S: remote buffer size
+-D: enable TCP_NODELAY
+
+
+3. web testing
+webbench
+a. create a simple webservice with nginx
+# apt-get install nginx
+# service nginx start
+# echo -n 0 > /usr/share/nginx/html/index.html
+test
+# for i in {1..10}; do curl http://x.x.x.x; done
+0000000000
+b. webbench
+download from website http://home.tiscali.cz/~cz210552/webbench.html
+# tar zxvf webbench-1.5.tar.gz
+# cd webbench-1.5
+# make
+-c: numbers of clinets
+-t: times 
+# ./webbench -c 100 -t 20 http://x.x.x.x/index.html
+peed=425367 pages/min, 1687277 bytes/sec.
+Requests: 141789 susceed, 0 failed.
+
+# ./webbench -c 2000 -t 20 http://x.x.x.x/index.html
+Speed=478434 pages/min, 1879062 bytes/sec.
+Requests: 159478 susceed, 0 failed.
+
+# ./webbench -c 5000 -t 20 http://10.9.32.42/index.html
+Speed=600483 pages/min, 2343286 bytes/sec.
+Requests: 200143 susceed, 18 failed.
+

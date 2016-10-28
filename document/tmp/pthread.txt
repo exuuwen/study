@@ -1,0 +1,31 @@
+13585777034
+Other routines are then used to query/set specific attributes in the thread attribute object. Attributes include:
+Detached or joinable state
+Scheduling inheritance (cpu/core)
+Scheduling policy
+Scheduling parameters
+Scheduling contention scope
+Stack size
+Stack address
+Stack guard (overflow) size
+
+There are several ways in which a thread may be terminated:
+The thread returns normally from its starting routine. It's work is done.
+The thread makes a call to the pthread_exit subroutine - whether its work is done or not.
+The thread is canceled by another thread via the pthread_cancel routine.
+The entire process is terminated due to making a call to either the exec() or exit()
+If main() finishes first, without calling pthread_exit explicitly itself
+
+Discussion on calling pthread_exit() from main():
+There is a definite problem if main() finishes before the threads it spawned if you don't call pthread_exit() explicitly. All of the threads it created will terminate because main() is done and no longer exists to support the threads.
+By having main() explicitly call pthread_exit() as the last thing it does, main() will block and be kept alive to support the threads it created until they are done.
+
+If a thread requires joining, consider explicitly creating it as joinable. This provides portability as not all implementations may create threads as joinable by default. If you know in advance that a thread will never need to join with another thread, consider creating it in a detached state. Some system resources may be able to be freed.
+pthread_mutex_unlock() will unlock a mutex if called by the owning thread. Calling this routine is required after a thread has completed its use of protected data if other threads are to acquire the mutex for their work with the protected data. An error will be returned if:
+If the mutex was already unlocked
+If the mutex is owned by another thread
+
+
+
+
+

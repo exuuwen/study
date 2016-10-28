@@ -1,0 +1,62 @@
+1. openvswith组成
+a. ovsdb-server: 存放openvswitch里面的brdige, port相关的配置信息, 通过ovs-vsctl命令访问
+b. controller: openvswitch的控制器
+c. datapath module: openvswitch的内核态代码, 可以看作是数据流的fast path部分
+d. ovs-vswitchd: openvswitch的主体程序，负责与ovsdb-server, controller, kernel-module打交道. 通过ovs-ofctl可以反问opnevswitch的流表,port等信息
+
+
+2. ovsdb-server
+a. 通过ovs-vsctl增加bridge，以及port。
+ovs-vsctl add-br br0 
+ovs-vsctl add-port br0 eth0
+
+b. 通过ovs-vsctl获取/设置bridge, port, interface的属性。ovs-vsctl list bridge/port/interface
+
+设置bridge跟controller的通信是通过OpenFlow1.3
+ovs-vsctl set brdige br0 protocols='OpenFlow13'
+
+设置bridge的controller
+ovs-vsctl set-controller br0 tcp:127.0.0.1:6633
+
+添加一个内部设备设置openflow port为100
+ovs-vsctl add-port br0 p0 -- set interface type='internal'
+ovs-vsctl set Interface p0 ofport_request=100
+
+c. 理解
+ovs-vsctl命令首先是更改数据库里面的信息，它不会直接产生任何关于bridge, port, interface的操作。然后ovs-vswitchd读取数据更新信息进行操作
+p0设备并不存在，下面命令会成功，数据库里面也有p0的记录，但是ovs-vswitchd操作会失败，ovs-ofctl show br0并没有p0
+ovs-vsctl add-port br0 p0
+
+ip link add p0 type veth peer name ss
+ovs-vsctl --may-exist add-port br0 p0 -- set interface p0 "external-ids:attached-mac=\"52:54:00:D5:5C:AB\""
+这时候就会成功,因为关于p0的数据库记录有更新, 第二句话起作用。如果第一次加的时候设置了第二次的属性，第二次同样不会成功
+
+3. bridge_port
+port类型
+1). netdev: 通用网卡设备 eth0 veth
+接收: 一个nedev在L2收到报文后回直接通过ovs接收函数处理，不会再走传统内核协议栈.
+发送: ovs中的一条流指定从该netdev发出的时候就通过该网卡设备发送
+
+2). internal: 一种虚拟网卡设备
+接收: 当从系统发出的报文路由查找通过该设备发送的时候，就进入ovs接收处理函数
+发送: ovs中的一条流制定从该internal设备发出的时候，该报文被重新注入内核协议栈
+
+3). gre device: gre设备. 不管用户态创建多少个gre tunnel, 在内核态有且只有一个gre设备
+接收: 当系统收到gre报文后，传递给L4层解析gre header, 然后传递给ovs接收处理函数
+发送: ovs中的一条流制定从该gre设备发送, 报文会根据流表规则加上gre头以及外层包裹ip，查找路由发送
+
+
+4. datapath module
+a. 从内核的角度说, 整个ovs是一个datapath. bridge也只是一个vport. 用户态的不同bridge的port都有一个ofport，都会唯一映射到内核态的dp-port.
+b. 内核ovs处理函数对于一条流找到flow table就直接转发,可以看作是ovs的fastpath. 如果并未找到相应的流表就发送miss_upcall给用户态ovs-vswitchd函数
+c. openvswitch的flow table存放于用户态, 但是内核态也有一套flow table. 是ovs-vswitchd根据miss_upcall报文以及用户态flow table下发的一条详细的转发规则. 当在用户态没有查找到对应的flow table, 就会把报文发送给controller, 并且个内核态下发一条该流的send to usersapce的规则. 这样内核态后续相同的流会发送action_upcall给用户态，直到用户态有新的规则下发给内核. 对于内核态的flow table规则通常没有被使用1.5s后会被删除
+
+
+5. controller
+a. ovs-vswitchd收到upcall报文后,并且没查找到相应的flow table规则或者规则action是controller, 会产生packet in消息给controller. 
+b. 没查找到规则的情况，会把报文buffer住. 如果buffer不够了(256), 最老的一个过期了(5s)，就删除最老的一个，buffer新报文. 不然不会buffer数据.
+对于action是controller的packet in是不会buffer数据的
+c. 所以对于controller来说, 收到的packe in带buffer id. 下发flow的时候需要带上该id，这样被缓存的报文会被packet out. 如果收到的packet in没有带buffer id, 对于该报文需要转发的话, 除了下发flow，还需要为该报文产生packet out
+
+
+

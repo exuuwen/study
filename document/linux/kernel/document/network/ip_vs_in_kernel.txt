@@ -1,0 +1,563 @@
+1. 初始化
+int __init ip_vs_init(void)
+{
+	/*初始化src服务ip_vs_svc_table和fwm服务ip_vs_svc_fwm_table*/
+	ip_vs_control_init();
+
+	/*初始化tcp ip_vs_protocol_tcp/udp ip_vs_protocol_udp/sctp协议处理函数 */
+	ip_vs_protocol_init();
+
+	/*初始化connection hash table: ip_vs_conn_tab*/
+	ip_vs_conn_init();
+
+    /*注册ip_vs netfilter钩子函数*/	
+	nf_register_hooks(ip_vs_ops, ARRAY_SIZE(ip_vs_ops));
+
+	/*注册ip_vs_genl用户空间配置接口ip_vs_genl_ops*/
+	ip_vs_register_nl_ioctl();
+}
+
+
+2. 用户空间配置接口ip_vs_genl
+const struct genl_ops ip_vs_genl_ops[] = {
+	{
+		/*添加虚服务, 还有set_service del_sevice*/
+		.cmd	= IPVS_CMD_NEW_SERVICE,
+		.flags	= GENL_ADMIN_PERM,
+		.policy	= ip_vs_cmd_policy,
+		.doit	= ip_vs_genl_set_cmd,
+	},
+	{
+		/*添加真实服务 还有set_service del_sevice*/
+		.cmd	= IPVS_CMD_NEW_DEST,
+		.flags	= GENL_ADMIN_PERM,
+		.policy	= ip_vs_cmd_policy,
+		.doit	= ip_vs_genl_set_cmd,
+	},
+	.......
+};
+
+a. 虚拟服务
+# ipvsadm -A|E -t|u|f virutal-service-address:port [-s scheduler] [-p [timeout]] [-M netmask]
+# ipvsadm -D -t|u|f virtual-service-address
+
+struct ip_vs_service {
+	struct hlist_node	s_list;   /* for normal service table */
+	struct hlist_node	f_list;   /* for fwmark-based service table */
+	atomic_t		refcnt;   /* reference counter */
+
+	u16			af;       /* address family */
+	__u16			protocol; /* which protocol (TCP/UDP) */
+	union nf_inet_addr	addr;	  /* IP address for virtual service */
+	__be16			port;	  /* port number for the service */
+	__u32                   fwmark;   /* firewall mark of the service */
+	unsigned int		flags;	  /* service status flags */
+	unsigned int		timeout;  /* persistent timeout in ticks */
+
+	struct list_head	destinations;  /* real server d-linked list */
+	__u32			num_dests;     /* number of servers */
+
+	/* for scheduling */
+	struct ip_vs_scheduler __rcu *scheduler; /* bound scheduler object */
+};
+
+int ip_vs_genl_parse_service(struct net *net,
+				    struct ip_vs_service_user_kern *usvc,
+				    struct nlattr *nla, int full_entry,
+				    struct ip_vs_service **ret_svc)
+{
+	/* 首先解析服务必须的属性af; protocol,address和port/fwmark */
+	if (nla == NULL ||
+	    nla_parse_nested(attrs, IPVS_SVC_ATTR_MAX, nla, ip_vs_svc_policy))
+		return -EINVAL;
+
+	nla_af		= attrs[IPVS_SVC_ATTR_AF];
+	nla_protocol	= attrs[IPVS_SVC_ATTR_PROTOCOL];
+	nla_addr	= attrs[IPVS_SVC_ATTR_ADDR];
+	nla_port	= attrs[IPVS_SVC_ATTR_PORT];
+	nla_fwmark	= attrs[IPVS_SVC_ATTR_FWMARK];
+
+	if (!(nla_af && (nla_fwmark || (nla_port && nla_protocol && nla_addr))))
+		return -EINVAL;
+
+	if (nla_fwmark) {
+		usvc->protocol = IPPROTO_TCP;
+		usvc->fwmark = nla_get_u32(nla_fwmark);
+	} else {
+		usvc->protocol = nla_get_u16(nla_protocol);
+		nla_memcpy(&usvc->addr, nla_addr, sizeof(usvc->addr));
+		usvc->port = nla_get_be16(nla_port);
+		usvc->fwmark = 0;
+	}
+
+	/*根据配置查找相应服务table是否已存在服务*/
+	if (usvc->fwmark)
+		svc = __ip_vs_svc_fwm_find(net, usvc->af, usvc->fwmark);
+	else
+		svc = __ip_vs_service_find(net, usvc->af, usvc->protocol,
+					   &usvc->addr, usvc->port);
+	*ret_svc = svc;
+
+	/*如果是添加新服务就需要有其他参数, 策略等*/
+	if (full_entry) {
+
+		nla_sched = attrs[IPVS_SVC_ATTR_SCHED_NAME];
+		nla_flags = attrs[IPVS_SVC_ATTR_FLAGS];
+		nla_timeout = attrs[IPVS_SVC_ATTR_TIMEOUT];
+
+
+		/* prefill flags from service if it already exists */
+		if (svc)
+			usvc->flags = svc->flags;
+
+		/* set new flags from userland */
+		usvc->flags = (usvc->flags & ~flags.mask) |
+			      (flags.flags & flags.mask);
+		usvc->sched_name = nla_data(nla_sched);
+		usvc->timeout = nla_get_u32(nla_timeout);
+}
+
+int ip_vs_add_service(struct net *net, struct ip_vs_service_user_kern *u,
+		  struct ip_vs_service **svc_p)
+{
+	/*获取调度策略*/
+	sched = ip_vs_scheduler_get(u->sched_name);
+
+	/*分配服务结构, 初始化*/
+	svc = kzalloc(sizeof(struct ip_vs_service), GFP_KERNEL);
+	atomic_set(&svc->refcnt, 0);
+
+	svc->af = u->af;
+	svc->protocol = u->protocol;
+	ip_vs_addr_copy(svc->af, &svc->addr, &u->addr);
+	svc->port = u->port;
+	svc->fwmark = u->fwmark;
+	svc->flags = u->flags;
+	svc->timeout = u->timeout * HZ;
+	svc->netmask = u->netmask;
+	svc->net = net;
+
+	/*绑定调度*/
+	ip_vs_bind_scheduler(svc, sched);
+	
+	if (svc->af == AF_INET)
+		ipvs->num_services++;
+
+	/*将服务hash进服务table*/
+	ip_vs_svc_hash(svc);
+
+	/*enable服务*/
+	ipvs->enable = 1;
+}
+
+int ip_vs_genl_set_cmd(struct sk_buff *skb, struct genl_info *info)
+{
+	if (cmd == IPVS_CMD_NEW_SERVICE || cmd == IPVS_CMD_SET_SERVICE)
+		need_full_svc = 1;
+
+	/*解析服务*/
+	ip_vs_genl_parse_service(net, &usvc,
+				       info->attrs[IPVS_CMD_ATTR_SERVICE],
+				       need_full_svc, &svc)
+
+	switch (cmd) {
+	case IPVS_CMD_NEW_SERVICE:
+		if (svc == NULL)
+			ret = ip_vs_add_service(net, &usvc, &svc);
+		else
+			ret = -EEXIST;
+		break;
+	........
+	}	
+}
+
+
+b. 真实服务
+# ipvsadm -a|e -t|u|f service-address:port -r real-server-address:port [-g|i|m] [-w weight]
+# ipvsadm -d -t|u|f service-address -r server-address
+
+struct ip_vs_dest {
+	struct list_head	n_list;   /* for the dests in the service */
+	struct hlist_node	d_list;   /* for table with all the dests */
+
+	u16			af;		/* address family */
+	__be16			port;		/* port number of the server */
+	union nf_inet_addr	addr;		/* IP address of the server */
+	volatile unsigned int	flags;		/* dest status flags */
+	atomic_t		conn_flags;	/* flags to copy to conn */
+	atomic_t		weight;		/* server weight */
+
+	atomic_t		refcnt;		/* reference counter */
+
+	/* connection counters and thresholds */
+	atomic_t		activeconns;	/* active connections */
+	atomic_t		inactconns;	/* inactive connections */
+	atomic_t		persistconns;	/* persistent connections */
+
+	/* for virtual service */
+	struct ip_vs_service __rcu *svc;	/* service it belongs to */
+	__u16			protocol;	/* which protocol (TCP/UDP) */
+	__be16			vport;		/* virtual port number */
+	union nf_inet_addr	vaddr;		/* virtual IP address */
+	__u32			vfwmark;	/* firewall mark of service */
+
+};
+
+int ip_vs_genl_parse_dest(struct ip_vs_dest_user_kern *udest,
+				 struct nlattr *nla, int full_entry)
+{
+	/*解析必须属性 addr和port*/
+	if (nla == NULL ||
+	    nla_parse_nested(attrs, IPVS_DEST_ATTR_MAX, nla, ip_vs_dest_policy))
+		return -EINVAL;
+
+	nla_addr	= attrs[IPVS_DEST_ATTR_ADDR];
+	nla_port	= attrs[IPVS_DEST_ATTR_PORT];
+
+	/*解析其他属性 weight和fw mode*/
+	if (full_entry) {
+		nla_fwd		= attrs[IPVS_DEST_ATTR_FWD_METHOD];
+		nla_weight	= attrs[IPVS_DEST_ATTR_WEIGHT];
+	}
+}
+
+
+int ip_vs_add_dest(struct ip_vs_service *svc, struct ip_vs_dest_user_kern *udest)
+{
+	/*根据addr和port查找此svc下的真实服务*/
+	dest = ip_vs_lookup_dest(svc, &daddr, dport);
+
+	if (dest != NULL) {
+		return -EEXIST;
+	}
+	
+	/*分配dest初始化, 连接到svc服务的->destinations list上*/
+	ip_vs_new_dest(svc, udest, &dest);
+}
+
+static int ip_vs_genl_set_cmd(struct sk_buff *skb, struct genl_info *info)
+{
+	/*解析所绑定的虚拟服务, 不需要need_ful_svc*/
+	ret = ip_vs_genl_parse_service(net, &usvc,
+				       info->attrs[IPVS_CMD_ATTR_SERVICE],
+				       need_full_svc, &svc);
+	/*解析真实服务 */
+	if (cmd == IPVS_CMD_NEW_DEST || cmd == IPVS_CMD_SET_DEST ||
+	    cmd == IPVS_CMD_DEL_DEST) {
+		if (cmd != IPVS_CMD_DEL_DEST)
+			need_full_dest = 1;
+
+		ret = ip_vs_genl_parse_dest(&udest,
+					    info->attrs[IPVS_CMD_ATTR_DEST],
+					    need_full_dest);
+	}
+
+	switch (cmd) {
+		case IPVS_CMD_NEW_DEST:
+		ret = ip_vs_add_dest(svc, &udest);
+		.......
+	}
+}
+
+
+3. netfilter钩子
+1) NAT
+a. client--->virtual server--->real server 
+virtual server在LOCAL_IN dnat从client来到的请求报文, 在FORWARD snat从real server回来的报文
+static struct nf_hook_ops ip_vs_ops[] __read_mostly = {
+	/* After packet filtering, forward packet through VS/DR, VS/TUN,
+	 * or VS/NAT(change destination), so that filtering rules can be
+	 * applied to IPVS. */
+	{
+		.hook		= ip_vs_remote_request4,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_IN,
+		.priority	= NF_IP_PRI_NAT_SRC - 1,
+	},
+	{
+		.hook		= ip_vs_reply4,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_FORWARD,
+		.priority	= 100,
+	},
+};
+
+b. client和virtula server在同一机器上--->real server
+virtual server在LOCAL_OUT dnat从client来到的请求报文, 在LOCAL_IN snat从real server回来的报文
+static struct nf_hook_ops ip_vs_ops[] __read_mostly = {
+	/* After mangle, schedule and forward local requests */
+	{
+		.hook		= ip_vs_local_request4,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_OUT,
+		.priority	= NF_IP_PRI_NAT_DST + 2,
+	},
+	/* After packet filtering, change source only for VS/NAT */
+	{
+		.hook		= ip_vs_reply4,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_IN,
+		.priority	= NF_IP_PRI_NAT_SRC - 2,
+	},
+};
+
+c. client--->virtual 和 real server在同一机器上
+virtual server在LOCAL_IN dnat从client来到的请求报文, 在LOCAL_OUT snat从real server回来的报文
+static struct nf_hook_ops ip_vs_ops[] __read_mostly = {
+	/* After packet filtering, forward packet through VS/DR, VS/TUN,
+	 * or VS/NAT(change destination), so that filtering rules can be
+	 * applied to IPVS. */
+	{
+		.hook		= ip_vs_remote_request4,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_IN,
+		.priority	= NF_IP_PRI_NAT_SRC - 1,
+	},
+	/* Before ip_vs_in, change source only for VS/NAT */
+	{
+		.hook		= ip_vs_local_reply4,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_OUT,
+		.priority	= NF_IP_PRI_NAT_DST + 1,
+	},
+};
+
+2) DR
+a. client--->virtual server--->real server 
+virtual server在LOCAL_IN处理从client来到的请求报文,转发到后端服务
+static struct nf_hook_ops ip_vs_ops[] __read_mostly = {
+	/* After packet filtering, forward packet through VS/DR, VS/TUN,
+	 * or VS/NAT(change destination), so that filtering rules can be
+	 * applied to IPVS. */
+	{
+		.hook		= ip_vs_remote_request4,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_IN,
+		.priority	= NF_IP_PRI_NAT_SRC - 1,
+	},
+};
+
+b. client和virtula server在同一机器上--->real server
+virtual server在LOCAL_OUT处理从client来到的请求报文, 然后转发到后端服务 
+tatic struct nf_hook_ops ip_vs_ops[] __read_mostly = {
+	/* After mangle, schedule and forward local requests */
+	{
+		.hook		= ip_vs_local_request4,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_OUT,
+		.priority	= NF_IP_PRI_NAT_DST + 2,
+	}
+};
+c. client--->virtual 和 real server在同一机器上
+virtual server在LOCAL_IN处理从client来到的请求报文, 然后直接交给本地
+static struct nf_hook_ops ip_vs_ops[] __read_mostly = {
+	/* After packet filtering, forward packet through VS/DR, VS/TUN,
+	 * or VS/NAT(change destination), so that filtering rules can be
+	 * applied to IPVS. */
+	{
+		.hook		= ip_vs_remote_request4,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_IN,
+		.priority	= NF_IP_PRI_NAT_SRC - 1,
+	},
+};
+
+分析
+a. 接收请求
+struct ip_vs_protocol ip_vs_protocol_tcp = {
+	.name =			"TCP",
+	.protocol =		IPPROTO_TCP,
+	.conn_schedule =	tcp_conn_schedule,
+	.conn_in_get =		ip_vs_conn_in_get_proto,
+	.conn_out_get =		ip_vs_conn_out_get_proto,
+	.snat_handler =		tcp_snat_handler,
+	.dnat_handler =		tcp_dnat_handler,
+	.....
+};
+
+int ip_vs_conn_in_get_proto(int af, const struct sk_buff *skb,
+			const struct ip_vs_iphdr *iph, int inverse)
+{
+	/*获取连接信息*/
+	ip_vs_conn_fill_param(net, af, iph->protocol, &iph->saddr,
+				      pptr[0], &iph->daddr, pptr[1], p)
+	
+	/*在conn table中去查找该连接*/
+	return ip_vs_conn_in_get(&p);
+}
+
+static inline void ip_vs_bind_xmit(struct ip_vs_conn *cp)
+{
+	switch (IP_VS_FWD_METHOD(cp)) {
+	case IP_VS_CONN_F_MASQ:
+		cp->packet_xmit = ip_vs_nat_xmit;
+		break;
+
+	case IP_VS_CONN_F_TUNNEL:
+		cp->packet_xmit = ip_vs_tunnel_xmit;
+		break;
+
+	case IP_VS_CONN_F_DROUTE:
+		cp->packet_xmit = ip_vs_dr_xmit;
+		break;
+	}
+}
+
+int
+tcp_conn_schedule(int af, struct sk_buff *skb, struct ip_vs_proto_data *pd,
+		  int *verdict, struct ip_vs_conn **cpp,
+		  struct ip_vs_iphdr *iph)
+{
+	th = skb_header_pointer(skb, iph->len, sizeof(_tcph), &_tcph);
+	/*syn报文, 没有rst 在虚拟服务table中查找*/
+	if (th->syn && !th->rst &&
+	    (svc = ip_vs_service_find(net, af, skb->mark, iph->protocol,
+				      &iph->daddr, th->dest))) {
+		/*根据服务调度策略 选择真实服务, 创建conn*/
+		/*填充client src2元信息cport, caddr, 虚服务信息vaddr, vport, 真实服务信息daddr, dport*/
+		/*通过ip_vs_conn_new创建conn, 并通过p_vs_bind_xmit设置conn->ximt_packet根据服务方式nat, dr tunnel*/
+		*cpp = ip_vs_schedule(svc, skb, pd, &ignored, iph);
+	}
+}
+
+static int
+tcp_dnat_handler(struct sk_buff *skb, struct ip_vs_protocol *pp,
+		 struct ip_vs_conn *cp, struct ip_vs_iphdr *iph)
+{
+	/*换目的port*/
+	tcph = (void *)skb_network_header(skb) + tcphoff;
+	tcph->dest = cp->dport;
+
+	/*做tcp chesksum*/
+	......
+}
+
+i). nat:
+int ip_vs_nat_xmit(struct sk_buff *skb, struct ip_vs_conn *cp,
+	       struct ip_vs_protocol *pp, struct ip_vs_iphdr *ipvsh)
+{
+	/*根据真实服务地址找路由*/
+	local = __ip_vs_get_out_rt(skb, cp->dest, cp->daddr.ip,
+				   IP_VS_RT_MODE_LOCAL |
+				   IP_VS_RT_MODE_NON_LOCAL |
+				   IP_VS_RT_MODE_RDR, NULL);
+
+	/* 做src nat 修改daddr以及update checksum*/
+	if (pp->dnat_handler && !pp->dnat_handler(skb, pp, cp, ipvsh))
+		goto tx_error;
+	/*换目的ip*/
+	ip_hdr(skb)->daddr = cp->daddr.ip;
+	ip_send_check(ip_hdr(skb));
+
+	/*如果路由是local就放行位accept(真实服务也可以在虚拟服务器上) 否则放到LOCAL_OUT*/
+	rc = ip_vs_nat_send_or_cont(NFPROTO_IPV4, skb, cp, local);
+}
+
+ii). dr
+int ip_vs_dr_xmit(struct sk_buff *skb, struct ip_vs_conn *cp,
+	      struct ip_vs_protocol *pp, struct ip_vs_iphdr *ipvsh)
+{
+	/*根据真实服务ip 查找路由*/
+	local = __ip_vs_get_out_rt(skb, cp->dest, cp->daddr.ip,
+				   IP_VS_RT_MODE_LOCAL |
+				   IP_VS_RT_MODE_NON_LOCAL |
+				   IP_VS_RT_MODE_KNOWN_NH, NULL);
+	/*real服务在虚服务机器上 直接accept*/
+	if (local) {
+		return ip_vs_send_or_cont(NFPROTO_IPV4, skb, cp, 1);
+	}
+
+	ip_send_check(ip_hdr(skb));
+
+	/*发向LOCAL_OUT*/
+	ip_vs_send_or_cont(NFPROTO_IPV4, skb, cp, 0);
+	return NF_STOLEN;
+}
+
+ip_vs_remote_request4/ip_vs_local_request4--->ip_vs_in(ops->hooknum, skb, AF_INET);
+{
+	/*从报文获取ip信息*/
+	ip_vs_fill_iph_skb(af, skb, &iph);
+
+	/*获取4层处理协议数据 如:ip_vs_protocol_tcp*/
+	pd = ip_vs_proto_data_get(net, iph.protocol);
+
+	/*根据协议数据以及报文获取连接信息*/
+	cp = pp->conn_in_get(af, skb, &iph, 0);	
+
+	
+	if (unlikely(!cp) && !iph.fragoffs) {
+		/* Schedule创建一个连接到&cp */
+		/*根据报文信息找到虚拟服务, 然后根据调度策略选择真实服务*/
+		if (!pp->conn_schedule(af, skb, pd, &v, &cp, &iph))
+			return v;
+	}
+
+	if (cp->packet_xmit)
+		//dr:ip_vs_dr_xmit 
+		//nat:ip_vs_nat_xmit 
+		ret = cp->packet_xmit(skb, cp, pp, &iph);
+}
+
+
+b. 接收回复,只对于NAT才有意义
+
+int ip_vs_conn_out_get_proto(int af, const struct sk_buff *skb,
+			const struct ip_vs_iphdr *iph, int inverse)
+{
+	/*获取连接信息*/
+	ip_vs_conn_fill_param(net, af, iph->protocol, &iph->saddr,
+				      pptr[0], &iph->daddr, pptr[1], p)
+	
+	/*在conn table中去查找该连接 反向比较*/
+	return ip_vs_conn_out_get(&p);
+}
+
+int tcp_snat_handler(struct sk_buff *skb, struct ip_vs_protocol *pp,
+		 struct ip_vs_conn *cp, struct ip_vs_iphdr *iph)
+{
+	/*改src port为vport*/
+	tcph = (void *)skb_network_header(skb) + tcphoff;
+	tcph->source = cp->vport;
+	
+	/*做tcp checksum*/
+	.......
+}
+
+
+unsigned int handle_response(int af, struct sk_buff *skb, struct ip_vs_proto_data *pd,
+		struct ip_vs_conn *cp, struct ip_vs_iphdr *iph)
+{
+	/* mangle the packet */
+	if (pp->snat_handler && !pp->snat_handler(skb, pp, cp, iph))
+		goto drop;
+
+	/*改源ip为vaddr*/
+	ip_hdr(skb)->saddr = cp->vaddr.ip;
+	ip_send_check(ip_hdr(skb));
+	
+	return NF_ACCEPT;
+}
+
+ip_vs_reply4/ip_vs_remote_request4--->ip_vs_out(ops->hooknum, skb, AF_INET);
+{
+	/*从报文获取ip信息*/
+	ip_vs_fill_iph_skb(af, skb, &iph);
+	
+	/*获取4层处理协议数据 如:ip_vs_protocol_tcp*/
+	pd = ip_vs_proto_data_get(net, iph.protocol);
+
+	/*根据协议数据以及报文获取连接信息*/
+	cp = pp->conn_out_get(af, skb, &iph, 0);	
+	if (likely(cp))
+		return handle_response(af, skb, pd, cp, &iph);
+}

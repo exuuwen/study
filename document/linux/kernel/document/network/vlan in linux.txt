@@ -1,0 +1,307 @@
+1. Vlan
+In computer networking, a single layer-2 network may be partitioned to create multiple distinct broadcast domains, which are mutually isolated so that packets can only pass between them via one or more routers; such a domain is referred to as a Virtual Local Area Network, Virtual LAN or VLAN.
+
+VLAN is specified by the IEEE in the IEEE 802.1Q standard.
+Ethernet Packet Format with vlan:
+
+Dst-MAC-addr  Src-MAC-addr  Type(VLAN: 0x8100)  VLAN Tag   User Data
+     6             6                2              4       46 - 1500
+
+The VLAN Ethernet Type is 0x8100.
+
+VLAN Tag(bit):
+Priority  CFI  ID   Ethernet Type/Length
+   3       1   12          16
+ Priority: the user's priority of this packet (ranges from 0 to 7) * Canonical Format Identifier (CFI): seems unusebale in linux - don't know this well, typically 0 * ID: the ID of the VLAN (group) to which this packet belongs.
+
+
+2. Create and delete vlan device
+In linux vlan device is a virtual device that associates with a real device. There only one specific vlan-id vlan device on a signle real device. 
+
+a. Create
+
+int vlan_create(const char *master, unsigned vid)
+{
+    int result = 0;
+
+    int fd = socket(PF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) 
+        return -1;
+
+    struct vlan_ioctl_args v;
+    memset(&v, 0, sizeof v);
+    v.cmd = ADD_VLAN_CMD;
+    strcpy(v.device1, master);
+    v.u.VID = vid;
+
+    result = ioctl(fd, SIOCSIFVLAN, &v);
+    if (result < 0) 
+    {
+        perror("create_vlan:");
+        result = -1;
+    }
+
+    close(fd);
+
+    return result;
+}
+
+static long sock_ioctl(struct file *file, unsigned cmd, unsigned long arg)
+{
+    ......
+    case: SIOCSIFVLAN
+    vlan_ioctl_hook /*vlan_ioctl_set(vlan_ioctl_handler); the hook is set in vlan module init vlan_proto_init*/
+    ......
+}
+
+static int vlan_ioctl_handler(struct net *net, void __user *arg)
+{
+    case ADD_VLAN_CMD:
+    err = -ENODEV;
+    /* get master device*/
+    dev = __dev_get_by_name(net, args.device1);
+    if (!dev)
+        goto out;
+    err = -EPERM;
+    if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+        break;
+    /*register vlan device with master dev and vlan id*/
+    err = register_vlan_device(dev, args.u.VID);
+    break;
+}
+
+static int register_vlan_device(struct net_device *real_dev, u16 vlan_id)
+{
+    /* an validate vlan id*/
+    if (vlan_id >= VLAN_VID_MASK)
+        return -ERANGE;
+
+    /*check whether the master device supports the vlan feature and the vlan_id related vlan device exists */
+    err = vlan_check_real_dev(real_dev, htons(ETH_P_8021Q), vlan_id);
+    if (err < 0)
+        return err;
+    /*allocate network device for this vlan device*/
+    new_dev = alloc_netdev(sizeof(struct vlan_dev_priv), name, vlan_setup);
+
+    /*set some attributes for vlan devices*/
+    new_dev->mtu = real_dev->mtu;
+    vlan_dev_priv(new_dev)->vlan_proto = htons(ETH_P_8021Q);
+    vlan_dev_priv(new_dev)->vlan_id = vlan_id;
+    vlan_dev_priv(new_dev)->real_dev = real_dev;
+    vlan_dev_priv(new_dev)->dent = NULL;
+    vlan_dev_priv(new_dev)->flags = VLAN_FLAG_REORDER_HDR;
+  
+    /*finnaly register the new_dev*/
+    register_vlan_dev(new_dev);
+}
+
+int register_vlan_dev(struct net_device *dev)
+{
+    struct vlan_dev_priv *vlan = vlan_dev_priv(dev);
+    struct net_device *real_dev = vlan->real_dev;
+    /* add vlan id info to master device*/
+    err = vlan_vid_add(real_dev, vlan->vlan_proto, vlan_id);
+    ..........
+    err = register_netdevice(dev);
+    if (err < 0)
+        goto out_upper_dev_unlink;
+
+    /* Account for reference in struct vlan_dev_priv */
+    dev_hold(real_dev);
+}
+
+b. Delete
+int vlan_delete(const char *ifname)
+{
+    int result = 0;
+
+    int fd = socket(PF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) 
+        return -1;
+
+    struct vlan_ioctl_args v;
+    memset(&v, 0, sizeof v);
+    v.cmd = DEL_VLAN_CMD;
+    strcpy(v.device1, ifname);
+
+    result = ioctl(fd, SIOCSIFVLAN, &v);
+    if (result < 0) 
+    {
+        perror("delete_vlan:");
+        result = -1;
+    }
+
+    close(fd);
+
+    return result;
+}
+
+static long sock_ioctl(struct file *file, unsigned cmd, unsigned long arg)
+{
+    ......
+    case: SIOCSIFVLAN
+    vlan_ioctl_hook /*vlan_ioctl_set(vlan_ioctl_handler); the hook is set in vlan module init vlan_proto_init*/
+    ......
+}
+
+static int vlan_ioctl_handler(struct net *net, void __user *arg)
+{
+    case DEL_VLAN_CMD:
+    err = -ENODEV;
+    /* get master device*/
+    dev = __dev_get_by_name(net, args.device1);
+    if (!dev)
+        goto out;
+    err = -EPERM;
+    if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+        break;
+    /*register vlan device with master dev and vlan id*/
+    err = unregister_vlan_device(dev, NULL);
+    break;
+}
+
+void unregister_vlan_dev(struct net_device *dev, struct list_head *head)
+{
+    struct vlan_dev_priv *vlan = vlan_dev_priv(dev);
+    struct net_device *real_dev = vlan->real_dev;
+    struct vlan_info *vlan_info;
+    u16 vlan_id = vlan->vlan_id;
+
+    /*register vlan device*/
+   unregister_netdevice_queue(dev, head);
+   /* delete vlan id info from master device*/
+   if (vlan_id)
+        vlan_vid_del(real_dev, vlan->vlan_proto, vlan_id);
+
+    /* Get rid of the vlan's reference to real_dev */
+    dev_put(real_dev);
+}
+
+c. vconfig
+Create and delete vlan device can through vconfig cmd
+1). install cmd 
+#sudo apt-get install vlan
+2) create vlan device with id 10 on eth0 and eth0.10 is here for the vlan device
+# sudo vconfig add eth0 10
+# ifconfig
+eth0      Link encap:Ethernet  HWaddr 00:0c:29:d7:85:54 
+..........
+eth0.10      Link encap:Ethernet  HWaddr 00:0c:29:d7:85:54 
+..........
+3) delete vlan device
+# sudo vconfig add eth0.10
+# ifconfig
+eth0      Link encap:Ethernet  HWaddr 00:0c:29:d7:85:54 
+..........
+
+3. vlan packet receive
+valn header:
+struct vlan_hdr {
+	__be16	h_vlan_TCI;
+	__be16	h_vlan_encapsulated_proto;
+};
+vlan related member in struct sk_buff;
+vlan_tci: store the first 2 bytes(h_vlan_TCI) in vlan header
+vlan_proto: the vlan protocol type, in linux is ETH_P_8021Q
+priority: the priority bits in the vlan header
+
+int netif_receive_skb(struct sk_buff *skb)
+{
+    /*ethernet header is handled by eth_type_trans, if it is a vlan packet untag it first */
+    if (skb->protocol == cpu_to_be16(ETH_P_8021Q) ||
+	    skb->protocol == cpu_to_be16(ETH_P_8021AD)) {
+		skb = vlan_untag(skb);
+		if (unlikely(!skb))
+			goto unlock;
+    }
+    ...........
+    ...........
+    /*untag success and receive the skb*/
+    if (vlan_tx_tag_present(skb)) {
+	if (vlan_do_receive(&skb))
+		goto another_round;
+	else if (unlikely(!skb))
+		goto unlock;
+    }
+}
+
+
+struct sk_buff *vlan_untag(struct sk_buff *skb)
+{
+    struct vlan_hdr *vhdr;
+
+    vhdr = (struct vlan_hdr *) skb->data;
+    vlan_tci = ntohs(vhdr->h_vlan_TCI);
+    skb->vlan_proto = skb->protocol;
+    skb->vlan_tci = VLAN_TAG_PRESENT | vlan_tci;
+
+    /* pull of the vlan header*/
+    skb_pull_rcsum(skb, VLAN_HLEN);
+    /*set new protocol to skb->protocol that is the last two bytes (h_vlan_encapsulated_proto) in vlan header*/
+    vlan_set_encap_proto(skb, vhdr);
+    /*remove the vlan header in skb*/
+    skb = vlan_reorder_header(skb);
+
+}
+
+bool vlan_do_receive(struct sk_buff **skbp)
+{
+    /* get vlan id through skb->vlan_tci*/
+    u16 vlan_id = vlan_tx_tag_get_id(skb);
+    
+    /*whether the vlan device with vlan id exists in the receive device(master)*/
+    vlan_dev = vlan_find_dev(skb->dev, vlan_proto, vlan_id);
+    if (!vlan_dev)
+        return false;
+    /*set the skb receive from the vlan device*/
+    skb->dev = vlan_dev;
+    /* set the priority through skb->vlan_tci*/
+    skb->priority = vlan_get_ingress_priority(vlan_dev, skb->vlan_tci);
+}
+
+After vlan_untag and vlan_do_receive, the right vlan packet can be receive and pass up procotol layer without vlan header info. the fault vlan packet will be reject by netif_receive_skb.
+
+4. vlan packet send
+/*vlan network device xmit callback*/
+static netdev_tx_t vlan_dev_hard_start_xmit(struct sk_buff *skb,
+					    struct net_device *dev)
+{
+    /*if the packet don't contain the vlan header and add info for skb*/
+    if (veth->h_vlan_proto != vlan->vlan_proto ||
+	vlan->flags & VLAN_FLAG_REORDER_HDR) {
+            u16 vlan_tci;
+            vlan_tci = vlan->vlan_id;
+            vlan_tci |= vlan_dev_get_egress_qos_mask(dev, skb);
+            skb->vlan_proto = vlan_proto;
+            skb->vlan_tci = VLAN_TAG_PRESENT | vlan_tci;
+	}
+    /* send it through the master device*/
+    skb->dev = vlan->real_dev;
+    ret = dev_queue_xmit(skb);
+}
+
+int dev_queue_xmit(struct sk_buff *skb)
+{
+    /*create vlan header through vlan_tci and vlan_proto£¬insert it to the skb*/
+    if (vlan_tx_tag_present(skb) &&
+        !vlan_hw_offload_capable(features, skb->vlan_proto)) {
+            skb = __vlan_put_tag(skb, skb->vlan_proto, vlan_tx_tag_get(skb));
+            if (unlikely(!skb))
+                goto out;
+            skb->vlan_tci = 0;
+     }
+}
+
+1). send vlan packet in kernel
+a. create vlan header and mac header skb mannual and send through a vlan device or it's master.
+skb->dev = real_dev; 
+skb->dev = vlan_dev;
+b. create a skb that doesn't contain vlan header but reserve some space for insert the vlan header later and send it through a vlan device.
+skb->dev = vlan_dev;
+
+2) send vlan packet in usespace
+a. normal inet socket and add a route that the packet dst-ipaddr with the vlan device as output
+b. AP_PACKET socket, send the pakcet through vlan device.
+
+
+

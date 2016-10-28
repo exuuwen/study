@@ -1,0 +1,78 @@
+
+
+static int my_filter_2(const struct sk_buff *skb)
+{
+	
+	struct ethhdr *eth_header = (struct ethhdr*)(skb->data);
+	struct iphdr *ip_header = (struct iphdr *)(skb->data + sizeof(struct ethhdr));
+	struct udphdr *udp_header = (struct udphdr *) (skb->data + sizeof(struct iphdr) + sizeof(struct ethhdr));    
+   
+
+	
+	uint16_t type = ntohs(eth_header->h_proto);
+	if(type != ETH_P_IP)
+		return 65535;
+	
+	unsigned char tp = ip_header->protocol;
+	if( tp != IPPROTO_UDP)
+		return 65535;
+
+	uint16_t frag = ntohs(ip_header->frag_off);
+	if(frag&0x1fff)
+		return 65535;
+
+	uint16_t dest_port = ntohs(udp_header->dest);
+	if( dest_port!= 523 )
+		return 65535;
+	
+	
+
+	frag = ntohs(ip_header->frag_off);
+	if(frag&0x1fff)
+		return 65535;
+
+	return 0;
+}
+
+
+0000000000000e60 <my_filter.clone.25>:
+     e60:	55                   	push   %rbp
+     e61:	48 89 e5             	mov    %rsp,%rbp
+     e64:	e8 00 00 00 00       	callq  e69 <my_filter.clone.25+0x9>
+     e69:	66 83 7f 0c 08       	cmpw   $0x8,0xc(%rdi)
+     e6e:	b8 ff ff 00 00       	mov    $0xffff,%eax
+     e73:	74 0b                	je     e80 <my_filter.clone.25+0x20>
+     e75:	c9                   	leaveq 
+     e76:	c3                   	retq   
+     e77:	66 0f 1f 84 00 00 00 	nopw   0x0(%rax,%rax,1)
+     e7e:	00 00 
+     e80:	80 7f 17 11          	cmpb   $0x11,0x17(%rdi)
+     e84:	75 ef                	jne    e75 <my_filter.clone.25+0x15>
+     e86:	0f b7 57 14          	movzwl 0x14(%rdi),%edx
+     e8a:	66 c1 c2 08          	rol    $0x8,%dx
+     e8e:	81 e2 ff 1f 00 00    	and    $0x1fff,%edx
+     e94:	75 df                	jne    e75 <my_filter.clone.25+0x15>
+     e96:	66 81 7f 24 02 0b    	cmpw   $0xb02,0x24(%rdi)
+     e9c:	c9                   	leaveq 
+     e9d:	0f 44 c2             	cmove  %edx,%eax
+     ea0:	c3                   	retq   
+     ea1:	66 66 66 66 66 66 2e 	data32 data32 data32 data32 data32 nopw %cs:0x0(%rax,%rax,1)
+     ea8:	0f 1f 84 00 00 00 00 
+     eaf:	00
+
+
+
+
+
+[  887.769731] net protocol type[0x800] transport protocol[17].dst PORT[523]
+[  887.769733] the difference 50000000 times is 23, high:4295026216, low:4295026193
+[  888.000314] my_filter_2 res is 0
+[  888.000317] net protocol type[0x800] transport protocol[17].dst PORT[523]
+[  888.000319] the difference 50000000 times is 23, high:4295026239, low:4295026216
+[  888.229719] my_filter_2 res is 0
+[  888.229722] net protocol type[0x800] transport protocol[17].dst PORT[523]
+[  888.229724] the difference 50000000 times is 23, high:4295026262, low:4295026239
+[  888.459422] my_filter_2 res is 0
+[  888.459424] net protocol type[0x800] transport protocol[17].dst PORT[523]
+[  888.459427] the difference 50000000 times is 23, high:4295026285, low:4295026262
+

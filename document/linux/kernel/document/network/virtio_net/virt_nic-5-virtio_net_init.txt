@@ -1,0 +1,185 @@
+1. virtio_net driver probe
+
+static const struct net_device_ops virtnet_netdev = {
+	.ndo_open            = virtnet_open,
+	.ndo_start_xmit      = start_xmit,
+};
+
+/*发送队列*/
+struct send_queue {
+	/* Virtqueue associated with this send _queue */
+	struct virtqueue *vq;
+
+	/* TX: fragments + linear part + virtio header */
+	struct scatterlist sg[MAX_SKB_FRAGS + 2];
+
+	/* Name of the send queue: output.$index */
+	char name[40];
+};
+
+/*接收队列 */
+struct receive_queue {
+	/* Virtqueue associated with this receive_queue */
+	struct virtqueue *vq;
+
+	struct napi_struct napi;
+
+	/* Chain pages by the private ptr. */
+	struct page *pages;
+
+	/* RX: fragments + linear part + virtio header */
+	struct scatterlist sg[MAX_SKB_FRAGS + 2];
+
+	/* Name of this receive queue: input.$index */
+	char name[40];
+};
+
+struct virtnet_info {
+	struct virtio_device *vdev;
+	struct net_device *dev;
+	struct send_queue *sq;
+	struct receive_queue *rq;
+	unsigned int status;
+
+	/* Max # of queue pairs supported by the device */
+	u16 max_queue_pairs;
+
+	/* # of queue pairs currently used by the driver */
+	u16 curr_queue_pairs;
+
+	/* enable config space updates */
+	bool config_enable;
+
+	/* Work struct for config space updates */
+	struct work_struct config_work;
+
+};
+
+static int virtnet_probe(struct virtio_device *vdev)
+{
+	/* Find if host supports multiqueue virtio_net device */
+	err = virtio_cread_feature(vdev, VIRTIO_NET_F_MQ,
+				   struct virtio_net_config,
+				   max_virtqueue_pairs, &max_queue_pairs);
+
+	/*分配网卡net_device*/
+	dev = alloc_etherdev_mq(sizeof(struct virtnet_info), max_queue_pairs);
+	dev->netdev_ops = &virtnet_netdev;
+
+	/* Configuration may specify what MAC to use.  Otherwise random. */
+	if (virtio_has_feature(vdev, VIRTIO_NET_F_MAC))
+		virtio_cread_bytes(vdev,
+				   offsetof(struct virtio_net_config, mac),
+				   dev->dev_addr, dev->addr_len);
+	else
+		eth_hw_addr_random(dev);	
+
+
+	vi = netdev_priv(dev);
+	vi->dev = dev;
+	vi->vdev = vdev;
+	vdev->priv = vi;
+
+	/*enable config*/
+	vi->config_enable = true;
+	INIT_WORK(&vi->config_work, virtnet_config_changed_work);
+
+	dev->needed_headroom = sizeof(struct virtio_net_hdr);
+
+	/* Use single tx/rx queue pair as default */
+	vi->curr_queue_pairs = 1;
+	vi->max_queue_pairs = max_queue_pairs;
+
+	/* Allocate/initialize the rx/tx queues, and invoke find_vqs */
+	err = init_vqs(vi);
+	
+	/*默认起一个队列*/
+	netif_set_real_num_tx_queues(dev, vi->curr_queue_pairs);
+	netif_set_real_num_rx_queues(dev, vi->curr_queue_pairs);
+
+	err = register_netdev(dev);
+
+	/*填充recv 后面详解*/
+	for (i = 0; i < vi->curr_queue_pairs; i++) {
+		try_fill_recv(&vi->rq[i], GFP_KERNEL);
+	}
+}
+
+
+2. virqueue init
+struct virtqueue {
+	void (*callback)(struct virtqueue *vq);
+	const char *name;
+	struct virtio_device *vdev;
+	unsigned int index;
+	void *priv;
+};
+
+struct vring_virtqueue
+{
+	struct virtqueue vq;
+	/* Actual memory layout for this queue */
+	struct vring vring;
+}
+
+static int virtnet_alloc_queues(struct virtnet_info *vi)
+{
+	/*分配rq, sq*/
+	vi->sq = kzalloc(sizeof(*vi->sq) * vi->max_queue_pairs, GFP_KERNEL);
+	vi->rq = kzalloc(sizeof(*vi->rq) * vi->max_queue_pairs, GFP_KERNEL);
+
+	INIT_DELAYED_WORK(&vi->refill, refill_work);
+	for (i = 0; i < vi->max_queue_pairs; i++) {
+		vi->rq[i].pages = NULL;
+		/*设置napi poll*/
+		netif_napi_add(vi->dev, &vi->rq[i].napi, virtnet_poll,
+			       napi_weight);
+	}
+}
+
+
+static int virtnet_find_vqs(struct virtnet_info *vi)
+{
+	struct virtqueue **vqs;
+	total_vqs = vi->max_queue_pairs * 2; 
+
+	/*分配total个virtqueue地址,name 以及callback*/	
+	vqs = kzalloc(total_vqs * sizeof(*vqs), GFP_KERNEL);
+	callbacks = kmalloc(total_vqs * sizeof(*callbacks), GFP_KERNEL);
+	names = kmalloc(total_vqs * sizeof(*names), GFP_KERNEL);
+
+	/*初始化*/
+	for (i = 0; i < vi->max_queue_pairs; i++) {
+		callbacks[rxq2vq(i)] = skb_recv_done;
+		callbacks[txq2vq(i)] = skb_xmit_done;
+		sprintf(vi->rq[i].name, "input.%d", i);
+		sprintf(vi->sq[i].name, "output.%d", i);
+		names[rxq2vq(i)] = vi->rq[i].name;
+		names[txq2vq(i)] = vi->sq[i].name;
+	}
+
+	/*通过config_ops去查找vqs(vp_find_vqs),分配vring_virtqueue给vqs*/
+	ret = vi->vdev->config->find_vqs(vi->vdev, total_vqs, vqs, callbacks, names);
+
+	/*把获得的vqs赋值给每个rq和sq的vq*/
+	for (i = 0; i < vi->max_queue_pairs; i++) {
+		vi->rq[i].vq = vqs[rxq2vq(i)];
+		vi->sq[i].vq = vqs[txq2vq(i)];
+	}	
+}
+
+static int init_vqs(struct virtnet_info *vi)
+{
+	int ret;
+
+	/* Allocate send & receive queues */
+	ret = virtnet_alloc_queues(vi);
+	ret = virtnet_find_vqs(vi);
+	/*设置每个queue的irq的亲和力*/
+	get_online_cpus();
+	virtnet_set_affinity(vi);
+	put_online_cpus();
+
+	return 0;
+}
+

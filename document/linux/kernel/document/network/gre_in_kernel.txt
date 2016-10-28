@@ -1,0 +1,348 @@
+1. gre protocol
+In the most general case, a system has a packet that needs to be encapsulated and delivered to some destination.  We will call this the payload packet.  The payload is first encapsulated in a GRE packet.  The resulting GRE packet can then be encapsulated in some other protocol and then forwarded.  We will call this outer protocol the delivery protocol.
+    ---------------------------------
+    |                               |
+    |       Delivery Header         |
+    |                               |
+    ---------------------------------
+    |                               |
+    |       GRE Header              |
+    |                               |
+    ---------------------------------
+    |                               |
+    |       Payload packet          |
+    |                               |
+    ---------------------------------
+
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |C| |K|S| Reserved0       | Ver |         Protocol Type         |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |      Checksum (optional)      |       Reserved1 (Optional)    |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                         Key (optional)                        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                 Sequence Number (Optional)                    |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+base header
+struct gre_base_hdr {
+	__be16 flags;
+	__be16 protocol;
+};
+flags:
+flags bit 0: with checksum
+flags bit 1: with key
+flags bit 2: with sequence
+
+protocol: the protocol type of higher level packet
+
+
+2. ip tunnel example: gre, the packet packet don't the L2 information 
+a. create two network namesapce
+# ip netns add ns1
+# ip netns add ns2
+
+b. create two veth device for the two network namespace
+# ip link add name vnet1 type veth peer name eth0 netns ns1
+# ip link add name vnet2 type veth peer name eth0 netns ns2
+# ifconfig vnet1 192.168.0.1/24 up
+# ifconfig vnet2 172.168.0.1/24 up
+
+c. in the ns1
+# ip netns exec ns1 bash
+# ifconfig eth0 192.168.0.7/24 up
+# ip route add default via 192.168.0.1 dev eth0
+create the tunnel
+# ip tunnel add gre1 mode gre remote 172.168.0.7 local 192.168.0.7 
+# ifconfig gre1 10.0.0.1/24 up
+
+d. in the ns2
+# ip netns exec ns1 bash
+# ifconfig eth0 172.168.0.7/24 up
+# ip route add default via 172.168.0.1 dev eth0
+create the tunnel
+# ip tunnel add gre1 mode gre remote 192.168.0.7 local 172.168.0.7 
+# ifconfig gre1 10.0.0.2/24 up
+
+e. test it
+enable the forward in the host
+# echo 1 > /proc/sys/net/ipv4/ip_forward
+in the ns1
+# ping 10.0.0.2
+PING 10.0.0.1 (10.0.0.1) 56(84) bytes of data.
+64 bytes from 10.0.0.2: icmp_req=1 ttl=64 time=2.91 ms
+64 bytes from 10.0.0.2: icmp_req=2 ttl=64 time=1.51 ms
+64 bytes from 10.0.0.2: icmp_req=3 ttl=64 time=2.01 ms
+
+
+3. gre in kernel
+a. create a gre device 
+ip tunnel add gre1 mode gre remote xxx [local xxx] [key/ikey/okey xxx] [seq/iseq/oseq] [csum/icsum/ocsum] [dev xxx]
+static struct rtnl_link_ops ipgre_link_ops __read_mostly = {
+	.kind		= "gre",
+        /*private of the net_device*/
+	.priv_size	= sizeof(struct ip_tunnel),
+	.setup		= ipgre_tunnel_setup,
+	.newlink	= ipgre_newlink,
+	.fill_info	= ipgre_fill_info,
+};
+
+1). setup the tunnel
+void ip_tunnel_setup(struct net_device *dev, int net_id)
+{
+	struct ip_tunnel *tunnel = netdev_priv(dev);
+	tunnel->ip_tnl_net_id = net_id;
+}
+static void ipgre_tunnel_setup(struct net_device *dev)
+{
+        /*set the netdev ops*/
+	dev->netdev_ops		= &ipgre_netdev_ops;
+	dev->type		= ARPHRD_IPGRE;
+	ip_tunnel_setup(dev, ipgre_net_id);
+}
+
+2). init and register the new net_device
+struct ip_tunnel_parm {
+	char			name[IFNAMSIZ];
+	int			link;
+	__be16			i_flags;
+	__be16			o_flags;
+	__be32			i_key;
+	__be32			o_key;
+	struct iphdr		iph;
+};
+
+int ip_tunnel_newlink(struct net_device *dev, struct nlattr *tb[],
+		      struct ip_tunnel_parm *p)
+{
+	nt = netdev_priv(dev);
+	itn = net_generic(net, nt->ip_tnl_net_id);
+
+	/*
+          find the same one 
+          local, ikey, remote, type(gre/gretap), dev
+	*/
+	if (ip_tunnel_find(itn, p, dev->type))
+		return -EEXIST;
+
+	nt->net = net;
+	nt->parms = *p;
+	err = register_netdevice(dev);
+	
+	/*set output-dev via parm dev
+	if both remote and dev are setten, the route to remote should via output-dev*/
+	mtu = ip_tunnel_bind_dev(dev);
+
+	/*add the nt to the global hash*/
+	ip_tunnel_add(itn, nt);
+}
+
+static int ipgre_newlink(struct net *src_net, struct net_device *dev,
+			 struct nlattr *tb[], struct nlattr *data[])
+{
+	struct ip_tunnel_parm p;
+
+	/*set the parm through the command ip tunnel add */
+	ipgre_netlink_parms(data, tb, &p);
+	/*register the new one*/
+	return ip_tunnel_newlink(dev, tb, &p);
+} 
+
+
+3). init for net_device and ip tunnel
+static const struct net_device_ops ipgre_netdev_ops = {
+	.ndo_init		= ipgre_tunnel_init,
+	.ndo_start_xmit		= ipgre_xmit,
+};
+static int ipgre_tunnel_init(struct net_device *dev)
+{
+	struct ip_tunnel *tunnel = netdev_priv(dev);
+	struct iphdr *iph = &tunnel->parms.iph;
+
+	__gre_tunnel_init(dev);
+	//tunnel->parms.iph.protocol = IPPROTO_GRE;
+
+	/*NOARP: send with this device don't need the peer mac address*/
+	dev->flags		= IFF_NOARP;
+	dev->priv_flags		&= ~IFF_XMIT_DST_RELEASE;
+	dev->addr_len		= 4;
+
+	return ip_tunnel_init(dev);
+}
+
+b. send the packet via tunnel dev
+because the gre device flag with NOARP so ip_output will deliver the packet to ipgre_xmit directly
+static netdev_tx_t ipgre_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	tnl_params = &tunnel->parms.iph;
+	__gre_xmit(skb, dev, tnl_params, skb->protocol);
+}
+
+static void __gre_xmit()
+{
+	/*get the tunnel flag and key seq*/
+	tpi.flags = tunnel->parms.o_flags;
+	tpi.proto = proto;
+	tpi.key = tunnel->parms.o_key;
+	if (tunnel->parms.o_flags & TUNNEL_SEQ)
+		tunnel->o_seqno++;
+	tpi.seq = htonl(tunnel->o_seqno);
+
+	/*build the gre header with flag*/
+	gre_build_header(struct sk_buff *skb, const struct tnl_ptk_info *tpi, int hdr_len)
+	
+	/*add the deliver ip header and find the route through remote and output-dev*/
+	ip_tunnel_xmit(skb, dev, tnl_params, tnl_params->protocol);
+}	
+
+
+c. receive
+static const struct net_protocol net_gre_protocol = {
+	.handler     = gre_rcv,
+	.err_handler = gre_err,
+	.netns_ok    = 1,
+};
+
+static const struct gre_protocol ipgre_protocol = {
+	.handler     = gre_cisco_rcv,
+	.err_handler = gre_cisco_err,
+};
+gre_init
+{
+	/*register the L4 protocol of GRE to system*/
+	inet_add_protocol(&net_gre_protocol, IPPROTO_GRE);
+
+	/*register a cisco-gre handler in gre handler*/
+	gre_add_protocol(&ipgre_protocol, GREPROTO_CISCO);
+}
+
+gre_rcv---->gre_cisco_rcv(struct sk_buff *skb)
+{
+	/*get the gre header*/
+	if (parse_gre_header(skb, &tpi, &csum_err) < 0)
+	/*deliver it to ipgre_rcv*/
+	ret = proto->handler(skb, &tpi);
+	
+}
+static struct gre_cisco_protocol ipgre_protocol = {
+	.handler        = ipgre_rcv,
+	.err_handler    = ipgre_err,
+	.priority       = 0,
+};
+ipgre_init
+{
+	gre_cisco_register(&ipgre_protocol);
+}
+
+static int ipgre_rcv(struct sk_buff *skb, const struct tnl_ptk_info *tpi)
+{
+	struct net *net = dev_net(skb->dev);
+	struct ip_tunnel_net *itn;
+	const struct iphdr *iph;
+	struct ip_tunnel *tunnel;
+
+	/*ETH_P_TEB is gretap*/
+	if (tpi->proto == htons(ETH_P_TEB))
+		itn = net_generic(net, gre_tap_net_id);
+	else
+		itn = net_generic(net, ipgre_net_id);
+
+	/*get deliver header and find the tunnel*/
+	/*lookup vai the remote and local and output-dev and key
+	if the packet no key, the tunnel should no i_key
+        if the packet has key, the i_key of tunnel should equal it*/
+	iph = ip_hdr(skb);
+	tunnel = ip_tunnel_lookup(itn, skb->dev->ifindex, tpi->flags,
+				  iph->saddr, iph->daddr, tpi->key);
+
+	if (tunnel) {
+		/*reset mac header*/
+		skb_pop_mac_header(skb);
+		ip_tunnel_rcv(tunnel, skb, tpi, log_ecn_error);
+	}
+}
+
+int ip_tunnel_rcv(struct ip_tunnel *tunnel, struct sk_buff *skb,
+		  const struct tnl_ptk_info *tpi, bool log_ecn_error)
+{
+	/* check the csum
+	   if the tunnel flag with CSUM, the gre header must take csum
+	   if the tunnel flag without CSUM, the gre header must not take csum
+	*/
+	if ((!(tpi->flags&TUNNEL_CSUM) &&  (tunnel->parms.i_flags&TUNNEL_CSUM)) ||
+	     ((tpi->flags&TUNNEL_CSUM) && !(tunnel->parms.i_flags&TUNNEL_CSUM))) {
+		tunnel->dev->stats.rx_crc_errors++;
+		tunnel->dev->stats.rx_errors++;
+		goto drop;
+	}
+
+	/* check the seq
+	   if the tunnel flag with SEQ, the gre header must take seq and be bigger than tunnel->i_seqno one
+	*/
+	if (tunnel->parms.i_flags&TUNNEL_SEQ) {
+		if (!(tpi->flags&TUNNEL_SEQ) ||
+		    (tunnel->i_seqno && (s32)(ntohl(tpi->seq) - tunnel->i_seqno) < 0)) {
+			tunnel->dev->stats.rx_fifo_errors++;
+			tunnel->dev->stats.rx_errors++;
+			goto drop;
+		}
+		tunnel->i_seqno = ntohl(tpi->seq) + 1;
+	}
+
+	/*reset the ip header*/
+	skb_reset_network_header(skb);
+
+	if (tunnel->dev->type == ARPHRD_ETHER) {
+		/*gretap getrid of the mac header
+		  data point to ip header
+		*/
+		skb->protocol = eth_type_trans(skb, tunnel->dev);
+		skb_postpull_rcsum(skb, eth_hdr(skb), ETH_HLEN);
+	} else {
+		/*
+		  data point to ip header
+		*/
+		skb->dev = tunnel->dev;
+	}
+
+	gro_cells_receive(&tunnel->gro_cells, skb);
+	//napi_schedule(&cell->napi);--->netif_receive_skb
+
+	return 0;
+}
+
+
+4. gretap: payload packet takes with L2 information
+1). create: ip tunnel add gretap1 mode gretap remote xxx [local xxx] [key/ikey/okey xxx] [seq/iseq/oseq] [csum/icsum/ocsum] [dev xxx]
+static struct rtnl_link_ops ipgre_tap_ops __read_mostly = {
+	.kind		= "gretap",
+	.priv_size	= sizeof(struct ip_tunnel),
+	.setup		= ipgre_tap_setup,
+	.newlink	= ipgre_newlink,
+};
+
+static const struct net_device_ops gre_tap_netdev_ops = {
+	.ndo_init		= gre_tap_init,
+	.ndo_start_xmit		= gre_tap_xmit,
+};
+
+
+/*setup the gretap device to normal ARPHRD_ETHER device. it will do arp*/
+static void ipgre_tap_setup(struct net_device *dev)
+{
+	ether_setup(dev);
+	dev->netdev_ops		= &gre_tap_netdev_ops;
+	ip_tunnel_setup(dev, gre_tap_net_id);
+}
+
+2). send
+static netdev_tx_t gre_tap_xmit(struct sk_buff *skb,
+				struct net_device *dev)
+{
+	/*gre header proto fill with ETH_P_TEB*/
+	__gre_xmit(skb, dev, &tunnel->parms.iph, htons(ETH_P_TEB));
+}
+
+3). receive: see the gre recieve
+

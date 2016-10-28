@@ -1,0 +1,7 @@
+#include"one.h"
+void  main()
+{
+	int i;
+	printf("hello world\n");
+	
+}

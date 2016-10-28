@@ -1,0 +1,30 @@
+1. patch with file
+$ echo new > new
+$ echo old > old
+
+$ diff old new > a.patch
+$ cat a.patch
+1c1
+< old
+---
+> new
+
+$ patch old a.patch
+patching file old
+$ cat old
+new
+$ patch -R new a.patch
+patching file new
+$ cat new
+old
+
+
+2. patch with directory
+diff -uNr oldir newdir > diff.patch
+
+a. in olddir
+patch < diff.patch
+
+b. in newdir
+patch -R < diff.patch
+

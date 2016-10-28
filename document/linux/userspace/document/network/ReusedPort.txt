@@ -1,0 +1,49 @@
+There is a new feature named REUSEDPORT for TCP/UDP server since kernel 3.9. 
+
+In default situation, two socket can't bind with the same ipaddr and port.
+a. default
+  socket A    	  socket B        ok?
+ipaddrA:portA   ipaddrB:portB	  yes
+ipaddrA:portB   ipaddrB:portB	  yes
+ipaddrA:portA   ipaddrA:portB	  yes
+
+ipaddrA:portA   ipaddrA:portA	  no
+ipaddrA:portA   0.0.0.0:portA	  no
+
+b. REUSEADDR
+1. tcp
+1). listen port: only used for the TIME_WAIT issue.
+ipaddrA:portA   ipaddrA:portA(listen/non-listen)	  no
+ipaddrA:portA   0.0.0.0:portA(lisetn/non-listen 	  no
+
+2). no-listen port: can be used for the TIME_WAIT issue.
+can't connect to the same server
+ipaddrA:portA   ipaddrA:portA(non-listen)	  yes
+ipaddrA:portA   0.0.0.0:portA(non-lisetn)	  yes
+
+2. udp
+ipaddrA:portA   ipaddrA:portA	  yes
+ipaddrA:portA   0.0.0.0:portA	  yes
+Only the last socket can recieve the packets
+
+
+c. REUSEPORT
+1. tcp
+1). listen port 
+listen peer: loadbance between two socket to create connection
+ipaddrA:portA   ipaddrA:portA(listen/non-listen)	  yes
+ipaddrA:portA   0.0.0.0:portA(lisetn/non-listen)	  yes
+adbance between two socket to create connection
+but the user of socketA and socketB have the same euid
+
+2). non-listen port
+non-listen peer: can't connect to the same server
+ipaddrA:portA   ipaddrA:portA(listen/non-listen)	  yes
+ipaddrA:portA   0.0.0.0:portA(listen/non-listen)	  yes
+but the user of socketA and socketB have the same euid
+
+2. udp
+ipaddrA:portA   ipaddrA:portA	  yes:  loadbance between two socket to each packet
+ipaddrA:portA   0.0.0.0:portA	  yes
+but the user of socketA and socketB have the same euid
+

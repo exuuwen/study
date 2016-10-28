@@ -1,0 +1,77 @@
+static int my_filter_ip(const struct sk_buff *skb)
+{
+	
+	unsigned char *ethhead = skb->data;
+	unsigned char *iphead = skb->data + 14;
+	
+	uint16_t type = ntohs(ethhead[12] | ethhead[13] << 8);
+	if(type != ETH_P_IP)
+		return 65535;
+	
+	unsigned char tp = iphead[9];
+	if( tp != IPPROTO_UDP)
+		return 65535;
+	uint16_t frag = (ethhead[20] << 8 | ethhead[21]);
+	if(frag&0x1fff)
+		return 65535;
+	
+	unsigned char  iphead_len = (iphead[0]&0xf) << 2;
+	uint16_t port = (iphead[iphead_len + 2] << 8 | iphead[iphead_len + 3]);
+	if( port!= 523 )
+		return 65535;
+		
+	return 0;
+}
+
+
+
+0000000000000e60 <my_filter_ip.clone.26>:
+     e60:	55                   	push   %rbp
+     e61:	48 89 e5             	mov    %rsp,%rbp
+     e64:	e8 00 00 00 00       	callq  e69 <my_filter_ip.clone.26+0x9>
+     e69:	0f b6 47 0d          	movzbl 0xd(%rdi),%eax
+     e6d:	0f b6 57 0c          	movzbl 0xc(%rdi),%edx
+     e71:	c1 e0 08             	shl    $0x8,%eax
+     e74:	09 c2                	or     %eax,%edx
+     e76:	b8 ff ff 00 00       	mov    $0xffff,%eax
+     e7b:	66 83 fa 08          	cmp    $0x8,%dx
+     e7f:	74 07                	je     e88 <my_filter_ip.clone.26+0x28>
+     e81:	c9                   	leaveq 
+     e82:	c3                   	retq   
+     e83:	0f 1f 44 00 00       	nopl   0x0(%rax,%rax,1)
+     e88:	80 7f 17 11          	cmpb   $0x11,0x17(%rdi)
+     e8c:	48 8d 57 0e          	lea    0xe(%rdi),%rdx
+     e90:	75 ef                	jne    e81 <my_filter_ip.clone.26+0x21>
+     e92:	0f b6 4f 14          	movzbl 0x14(%rdi),%ecx
+     e96:	0f b6 77 15          	movzbl 0x15(%rdi),%esi
+     e9a:	c1 e1 08             	shl    $0x8,%ecx
+     e9d:	09 f1                	or     %esi,%ecx
+     e9f:	81 e1 ff 1f 00 00    	and    $0x1fff,%ecx
+     ea5:	75 da                	jne    e81 <my_filter_ip.clone.26+0x21>
+     ea7:	0f b6 77 0e          	movzbl 0xe(%rdi),%esi
+     eab:	48 c1 e6 02          	shl    $0x2,%rsi
+     eaf:	83 e6 3c             	and    $0x3c,%esi
+     eb2:	0f b6 7c 37 10       	movzbl 0x10(%rdi,%rsi,1),%edi
+     eb7:	0f b6 54 32 03       	movzbl 0x3(%rdx,%rsi,1),%edx
+     ebc:	c9                   	leaveq 
+     ebd:	c1 e7 08             	shl    $0x8,%edi
+     ec0:	09 fa                	or     %edi,%edx
+     ec2:	66 81 fa 0b 02       	cmp    $0x20b,%dx
+     ec7:	0f 44 c1             	cmove  %ecx,%eax
+     eca:	c3                   	retq   
+     ecb:	0f 1f 44 00 00       	nopl   0x0(%rax,%rax,1)
+
+
+[  946.218082] net protocol type[0x800] transport protocol[17].dst PORT[523]
+[  946.218084] the difference 50000000 times is 27, high:4295032071, low:4295032044
+[  946.486070] my_filter_3 res is 0
+[  946.486073] net protocol type[0x800] transport protocol[17].dst PORT[523]
+[  946.486075] the difference 50000000 times is 27, high:4295032098, low:4295032071
+[  946.754387] my_filter_3 res is 0
+[  946.754390] net protocol type[0x800] transport protocol[17].dst PORT[523]
+[  946.754392] the difference 50000000 times is 27, high:4295032125, low:4295032098
+[  947.023372] my_filter_3 res is 0
+[  947.023376] net protocol type[0x800] transport protocol[17].dst PORT[523]
+[  947.023378] the difference 50000000 times is 27, high:4295032152, low:4295032125
+
+

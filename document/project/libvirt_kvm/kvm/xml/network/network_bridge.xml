@@ -1,0 +1,11 @@
+<network>
+	<name>bridge</name>
+	<forward mode='nat' dev='eth8'/>
+	<bridge name='inetbr0' />
+    <ip address='192.168.8.3' netmask='255.255.255.0'>
+	    <dhcp>
+		    <range start='192.168.8.4' end='192.168.8.254' />
+		    <host mac='90:e2:ba:00:69:59' ip='192.168.8.4'/>
+		</dhcp>
+	 </ip>
+</network>

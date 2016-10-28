@@ -1,0 +1,62 @@
+Haproxy: AProxy is a free, very fast and reliable solution offering high availability, load balancing, and proxying for TCP and HTTP-based applications.
+a. install
+# apt-get install haproxy
+# vim /etc/default/haproxy
+set ENABLED=1
+
+set the configuration
+# mv  /etc/haproxy/haproxy.cfg /etc/haproxy/haproxy.cfg.bk
+# vim /etc/haproxy/haproxy.cfg
+global
+	log /dev/log	local0
+	log /dev/log	local1 notice
+	chroot /var/lib/haproxy
+	user haproxy
+	group haproxy
+	daemon
+
+	# turn on stats unix socket
+    	stats socket /var/lib/haproxy/stats
+
+defaults
+	log     global
+    	option  dontlognull
+    	retries 3
+   	option redispatch
+    	timeout connect  5000
+    	timeout client  10000
+    	timeout server  10000
+	maxconn         50000
+
+#HTTP_FRONTEND_BEGIN#
+frontend FRONT_74844490-5d35-4dae-a2ed-3c83ade2a691_10.9.22.129 10.9.22.129:8080
+default_backend BACK_74844490-5d35-4dae-a2ed-3c83ade2a691_10.9.22.129
+mode http
+#HTTP_FRONTEND_END#
+#HTTP_BACKEND_BEGIN#
+backend BACK_74844490-5d35-4dae-a2ed-3c83ade2a691_10.9.22.129
+balance roundrobin
+mode http
+server 74844490-112a2bb5 10.9.22.129:80 check
+server 74844490-8bf4c03a 10.9.32.42:80 check
+#HTTP_BACKEND_END#
+
+
+#SSH_FRONTEND_BEGIN#
+frontend FRONT_84844490-5d35-4dae-a2ed-3c83ade2a691_10.9.22.129 10.9.22.129:1022
+default_backend BACK_84844490-5d35-4dae-a2ed-3c83ade2a691_10.9.22.129
+mode tcp
+#SSH_FRONTEND_END#
+#SSH_BACKEND_BEGIN#
+backend BACK_84844490-5d35-4dae-a2ed-3c83ade2a691_10.9.22.129
+balance roundrobin #source
+mode tcp
+server 84844490-112a2bb5 10.9.22.129:22 check
+server 84844490-8bf4c03a 10.9.32.42:22 check
+#HTTP_BACKEND_END#
+
+
+A. when a http service request with 8080 port haproxy it balance to local 80 or 10.9.32.42.80 
+B. when a ssh service request with 1022 port haproxy it balance to local 22 or 10.9.32.42.22 
+
+# service haproxy start

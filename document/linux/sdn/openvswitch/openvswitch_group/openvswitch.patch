@@ -1,0 +1,30 @@
+diff --git a/ofproto/ofproto-dpif-xlate.c b/ofproto/ofproto-dpif-xlate.c
+index 4aedb59..be16092 100644
+--- a/ofproto/ofproto-dpif-xlate.c
++++ b/ofproto/ofproto-dpif-xlate.c
+@@ -2739,10 +2739,24 @@  xlate_select_group(struct xlate_ctx *ctx, struct
+group_dpif *group)
+     struct ofputil_bucket *bucket;
+     uint32_t basis;
+
+-    basis = hash_mac(ctx->xin->flow.dl_dst, 0, 0);
++    /* Hashing based on all L2, L3 and L4 fields
++     */
++    basis = flow_hash_symmetric_l4(&ctx->xin->flow, 0);
+     bucket = group_best_live_bucket(ctx, group, basis);
+     if (bucket) {
++        /* Since flow_hash_symmetric_l4() looks at all fields,
++         * we require matching on all fields used for the hash.
++         */
+         memset(&wc->masks.dl_dst, 0xff, sizeof wc->masks.dl_dst);
++        memset(&wc->masks.dl_src, 0xff, sizeof wc->masks.dl_src);
++        memset(&wc->masks.dl_type, 0xff, sizeof wc->masks.dl_type);
++        memset(&wc->masks.nw_dst, 0xff, sizeof wc->masks.nw_dst);
++        memset(&wc->masks.nw_proto, 0xff, sizeof wc->masks.nw_proto);
++        memset(&wc->masks.nw_src, 0xff, sizeof wc->masks.nw_src);
++        memset(&wc->masks.tp_dst, 0xff, sizeof wc->masks.tp_dst);
++        memset(&wc->masks.tp_src, 0xff, sizeof wc->masks.tp_src);
++        memset(&wc->masks.vlan_tci, 0xff, sizeof wc->masks.vlan_tci);
++
+         xlate_group_bucket(ctx, bucket);
+         xlate_group_stats(ctx, group, bucket);

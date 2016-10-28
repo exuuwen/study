@@ -1,0 +1,52 @@
+1. Scope:
+
+enum rt_scope_t {
+	RT_SCOPE_UNIVERSE=0, /*global type */
+/* User defined values  */
+	RT_SCOPE_SITE=200,
+	RT_SCOPE_LINK=253, /*link type*/
+	RT_SCOPE_HOST=254,  /local type*/
+	RT_SCOPE_NOWHERE=255
+};
+
+
+2. IP ADDR:
+
+RT_SCOPE_UNIVERSE: the addr is used for global(local, link, outside)
+ip addr add 1.2.3.4/24 dev eth0
+
+RT_SCOPE_LINK: the addr is used for link(local, link)
+ip addr add 10.1.2.3/24 dev eth0 scope link
+
+RT_SCOPE_HOST: the addr is used only forlocal
+ip addr add 20.1.2.3/24 dev eth0 scope host
+
+
+In default the 3 kinds of scope no difference in kernel
+
+when arp_ignore = 2 the IP(10.1.2.3) only can replay the arp request from the link level (the same subnet) for it
+when arp_ignore = 3 the host scope IP(20.1.2.3) does't replay the arp request for it
+
+
+when arp_announce = 1, 如果发送报文的src与target是同意网段的就优先使用
+when arp_announce = 2, arp不会选择发送dev上的scope为host和二级地址作为源地址发送，如果没有就选择其他dev上的global主地址
+
+
+
+3. IP ROUTE:
+
+RT_SCOPE_HOST: in the local table, the route is only used for receive the packet to the local
+local 1.2.3.4 dev eth0  proto kernel  scope host  src 1.2.3.4
+local 10.1.2.3 dev eth0  proto kernel  scope host  src 1.2.3.4
+local 20.1.2.3 dev eth0  proto kernel  scope host  src 1.2.3.4
+
+RT_SCOPE_LINK: the packet send out to link peer through this route. It needs the L2 protocol 
+ip route add 1.2.3.0/24 dev eth0
+
+
+RT_SCOPE_UNIVERSE: the packet sent out to out side the Lan via a gatway
+ip addr add default via 1.2.3.10 dev eth0
+rule: the scope for the route to the gate way is near than the universe. the scope of the route to gateway 1.2.3.10 is link, so it is near than the global
+
+
+

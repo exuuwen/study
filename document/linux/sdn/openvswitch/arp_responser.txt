@@ -1,0 +1,39 @@
+不管是云上的虚拟机还是真实主机,网络通信都离不开二层arp的发起. 在大型云环境中, arp的管理尤为重要.
+
+Host1上有一台vm1 192.168.0.1/00:1e:65:15:fc:01连接到ovs-br0上
+Host2上有一台vm2 192.168.0.2/00:1e:65:15:fc:02连接到ovs-br1上
+Host1与host2通过gre tunnel通信
+
+当vm1发起对vm2通信的时候, 首先查看是否有对方mac记录,如果没有或者过期会发送一条arp request.
+通常ovs设置一条arp请求处理, 所有arp请求将packet in到controller斌且没有bufferd
+ovs-ofctl add-flow brname priority=60010,arp,arp_op=1,dl_dst=ff:ff:ff:ff:ff:ff,actions=CONTROLLER -O OpenFlow13
+
+在controller中解析arp请求报文,根据自己的业务策略判断请求是否允许. 如果是允许的就构建arp response报文通过packet out指令发回给inport
+def send_arp(self, arp_opcode, src_mac, dst_mac, src_ip, dst_ip, arp_target_mac, in_port, output, ofproto, datapath, msg, parser):
+        # Generate ARP packet
+        ether_proto = ether.ETH_TYPE_ARP
+        hwtype = 1
+        arp_proto = ether.ETH_TYPE_IP
+        hlen = 6
+        plen = 4
+
+        pkt = packet.Packet()
+        e = ethernet.ethernet(dst_mac, src_mac, ether_proto)
+        a = arp.arp(hwtype, arp_proto, hlen, plen, arp_opcode, src_mac, src_ip, arp_target_mac, dst_ip)
+        pkt.add_protocol(e)
+        pkt.add_protocol(a)
+        pkt.serialize()
+
+        self.logger.info("send arp pkt:\n%s" %(pkt))
+
+        actions = [parser.OFPActionOutput(output, 0)]
+        out = parser.OFPPacketOut(datapath=datapath, buffer_id=settings.UINT32_MAX,
+                        in_port = in_port, actions=actions, data=pkt.data)
+        datapath.send_msg(out)
+
+当有云系统有大量的虚拟主机存在时arp请求有时候会变得比较频繁,每个arp请求都发往controller, 给controller带来额外的负担
+所以在Host主机上保留arp cache有助于减少, arp 请求发往controller.
+当Host上新建一台虚拟机,根据其机器所属region以及业务策略, 添加相应条arp response flow entry
+该条目直接把arp request报文转换为所需的arp response报文(openvswitch2.1.2才开始支持)
+ovs-ofctl add-flow br0 priority=60020,arp,arp_op=1,dl_dst=ff:ff:ff:ff:ff:ff,dl_src=00:1e:65:15:fc:01,nw_dst=192.168.0.2,actions='move:NXM_OF_ETH_SRC[]->NXM_OF_ETH_DST[],mod_dl_src:00:1e:65:15:fc:02,load:0x2->NXM_OF_ARP_OP[],move:NXM_NX_ARP_SHA[]->NXM_NX_ARP_THA[],move:NXM_OF_ARP_SPA[]->NXM_OF_ARP_TPA[],set_field:00:1e:65:15:fc:02->arp_sha,set_field:192.168.0.2->arp_spa,in_port' -O OpenFlow13
+

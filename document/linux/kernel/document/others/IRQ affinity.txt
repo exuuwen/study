@@ -1,0 +1,70 @@
+1. IRQ affinity
+IRQ affinity make IRQ assigned to different cpu
+
+2. using IRQ affinity
+$ cat /proc/interrupts | grep eth0
+	    CPU0       CPU1
+ 19:        220         29   IO-APIC-fasteoi   eth0
+$ cat /proc/interrupts | grep eth0
+ 19:        220         29   IO-APIC-fasteoi   eth0
+$ cat /proc/interrupts | grep eth0
+ 19:        247         29   IO-APIC-fasteoi   eth0
+$ cat /proc/interrupts | grep eth0
+ 19:        254         29   IO-APIC-fasteoi   eth0
+$ cat /proc/interrupts | grep eth0
+ 19:        258         29   IO-APIC-fasteoi   eth0
+$ cat /proc/interrupts | grep eth0
+ 19:        262         29   IO-APIC-fasteoi   eth0
+
+It shows The times of interupt response increases on CPU1 tha means the irq 19 for eth0 is assigned to CPU0
+It can be setten through /proc/irq/19/smp_affinity
+
+$ sudo cat /proc/irq/19/smp_affinity 
+01
+
+smp_affinity significance:
+Binary       Hex 
+CPU 0    00000001         1 
+CPU 1    00000010         2
+CPU 2    00000100         4
+CPU 3    00001000         8
+
+A irq can be assigned to no more than 8 cpus(the bitmask only 8 bits)
+
+Then assigen the irq to CPU1.
+
+$ sudo -s
+# echo 2 > /proc/irq/19/smp_affinity
+# cat /proc/interrupts | grep eth0
+	    CPU0       CPU1
+ 19:        529        158   IO-APIC-fasteoi   eth0
+# cat /proc/interrupts | grep eth0
+ 19:        529        161   IO-APIC-fasteoi   eth0
+# cat /proc/interrupts | grep eth0
+ 19:        529        161   IO-APIC-fasteoi   eth0
+# cat /proc/interrupts | grep eth0
+ 19:        529        164   IO-APIC-fasteoi   eth0
+# cat /proc/interrupts | grep eth0
+ 19:        529        164   IO-APIC-fasteoi   eth0
+# cat /proc/interrupts | grep eth0
+ 19:        529        175   IO-APIC-fasteoi   eth0
+
+Assigned the irq to both CPU0 and CPU1 
+# echo 3 > /proc/irq/19/smp_affinity
+# cat /proc/interrupts | grep eth0
+	    CPU0       CPU1
+ 19:        565        923   IO-APIC-fasteoi   eth0
+# cat /proc/interrupts | grep eth0
+ 19:        570        926   IO-APIC-fasteoi   eth0
+# cat /proc/interrupts | grep eth0
+ 19:        573        927   IO-APIC-fasteoi   eth0
+# cat /proc/interrupts | grep eth0
+ 19:        574        931   IO-APIC-fasteoi   eth0
+# cat /proc/interrupts | grep eth0
+ 19:        578        934   IO-APIC-fasteoi   eth0
+
+The times of interupt response increases on both CPU0 and CPU1 
+
+
+There is a limit for I/O irq. IO-APIC has two work mode logic and physical. In the logic mode the related irq only can be assigned to one cpus. In the physical mode it can be
+assigned to multiple cpus.

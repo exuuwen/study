@@ -1,0 +1,44 @@
+server1: eth0 ip addr 10.9.22.233
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre0 -- set interface gre0 type=gre options:local_ip=10.9.22.233 options:remote_ip=11.9.32.30 options:key=flow
+# ip link add vnet0 type veth peer name local-gre
+# ifconfig vnet0 up
+# ifconfig local-gre 192.168.0.1/24 up 
+# ovs-vsctl add-port br0 vnet0
+# ovs-vsctl set bridge br0 protocols=OpenFlow13
+# ovs-ofctl add-flow br0 'in_port=2,actions=set_field:0x123456->tun_id,output:1' -O OpenFlow13
+# ovs-ofctl add-flow br0 in_port=1,tun_id=0x654321,actions=output:2  -O OpenFlow13
+
+server2: eth0 ip addr 10.9.32.30
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre0 -- set interface gre0 type=gre options:local_ip=10.9.32.30 options:remote_ip=10.9.22.233 options:key=flow
+# ip link add vnet0 type veth peer name local-gre
+# ifconfig vnet0 up
+# ifconfig local-gre 192.168.0.2/24 up 
+# ovs-vsctl add-port br0 vnet0
+# ovs-vsctl set bridge br0 protocols=OpenFlow13
+# ovs-ofctl add-flow br0 'in_port=2,actions=set_field:0x654321->tun_id,output:1' -O OpenFlow13
+# ovs-ofctl add-flow br0 in_port=1,tun_id=0x123456,actions=output:2  -O OpenFlow13
+
+server1 ping 192.168.0.2成功
+server2 ping 192.168.0.1成功
+可以看到内核的flow table
+# ovs-dpctl dump-flows
+skb_priority(0),tunnel(tun_id=0x123456,src=10.9.22.233,dst=10.9.32.30,tos=0x0,ttl=64,flags(key)),in_port(2),skb_mark(0),eth_type(0x0800),ipv4(src=10.0.0.1/0.0.0.0,dst=10.0.0.2/0.0.0.0,proto=1/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:26, bytes:2548, used:0.404s, actions:3
+skb_priority(0),in_port(3),eth_type(0x0800),ipv4(src=10.0.0.2/0.0.0.0,dst=10.0.0.1/0.0.0.0,proto=1/0,tos=0/0x3,ttl=64/0,frag=no/0xff), packets:26, bytes:2548, used:0.404s, actions:set(tunnel(tun_id=0x654321,src=10.9.32.30,dst=10.9.22.233,tos=0x0,ttl=64,flags(df,key))),2
+
+Tunnel Options:
+         options : remote_ip         optional string
+         options : local_ip          optional string
+         options : in_key            optional string
+         options : out_key           optional string
+         options : key               optional string
+         options : tos               optional string
+         options : ttl               optional string
+         options : df_default        optional string, either true or false
+         options : csum           optional string, either true or false
+
+新方式
+$ ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+$ ovs-ofctl add-flow br0 "in_port=LOCAL actions=set_tunnel:1,set_field:192.168.0.1->tun_dst,output:1"
+$ ovs-ofctl add-flow br0 "in_port=1 tun_src=192.168.0.1 tun_id=1 actions=LOCAL"

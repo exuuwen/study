@@ -1,0 +1,14 @@
+when we rebuild the libmy we do not need to rebuild client
+
+#make lib
+#sudo make install
+#make client
+
+#./client
+
+change the lib code but not the all the interface used by clinet in Alcass 
+# make lib 
+#sudo make install
+#./client
+
+

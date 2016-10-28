@@ -1,0 +1,3 @@
+echo -e -n `echo 41 |  sed -r 's/(..)/\\\x\1/g'` > f.bin
+objdump -D -b binary -m i386:x86-64 f.bin
+

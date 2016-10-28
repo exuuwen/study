@@ -1,0 +1,364 @@
+ovs-vsctl add-br br0 会在数据库里面加入新bridge的信息
+ovs-vsctl add-port br0 eth0 会在数据库里面加入新的port信息
+
+void bridge_run(void)
+{
+	//数据库发生变化
+	if (ovsdb_idl_get_seqno(idl) != idl_seqno || vlan_splinters_changed) {
+		idl_seqno = ovsdb_idl_get_seqno(idl);
+        	bridge_reconfigure(cfg ? cfg : &null_cfg);
+	}
+}
+
+struct bridge {
+    struct hmap_node node;      /* In 'all_bridges'. */
+    char *name;                 /* User-specified arbitrary name. */
+    char *type;                 /* Datapath type. */
+    uint8_t ea[ETH_ADDR_LEN];   /* Bridge Ethernet Address. */
+    uint8_t default_ea[ETH_ADDR_LEN]; /* Default MAC. */
+    const struct ovsrec_bridge *cfg;
+
+    /* OpenFlow switch processing. */
+    struct ofproto *ofproto;    /* OpenFlow switch. */
+
+    /* Bridge ports. */
+    struct hmap ports;          /* "struct port"s indexed by name. */
+    struct hmap ifaces;         /* "struct iface"s indexed by ofp_port. */
+}
+
+ofproto代表一个bridge的open flow proto
+struct ofproto {
+    struct hmap_node hmap_node; /* In global 'all_ofprotos' hmap. */
+    /*all the operation fcuntion of the ofproto*/
+    const struct ofproto_class *ofproto_class;
+    char *type;                 /* Datapath type. */
+    char *name;   
+    uint64_t datapath_id;       /* Datapath ID. */
+    struct oftable *tables;    /*flow tables*/
+    int n_tables
+    struct hmap ports;          /* Contains "struct ofport"s. */
+    /* OpenFlow connections. */
+    struct connmgr *connmgr;
+}
+
+struct ofproto_dpif {
+    struct hmap_node all_ofproto_dpifs_node; /* In 'all_ofproto_dpifs'. */
+    struct ofproto up;
+    struct dpif_backer *backer;/*每个ofproto都有相同的dpif_backer, 它代表整个ovs datapath*/
+}
+
+struct dpif_backer {
+    char *type;
+    int refcount;
+    struct dpif *dpif;
+}
+
+/*openvswitch datapath的handler, 负责与内核打交道*/
+struct dpif {
+    const struct dpif_class *dpif_class;
+}
+
+bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
+{
+    /*根据数据库更新信息添加或者删除bridge*/
+    add_del_bridges(ovs_cfg);
+    /*根据数据库更新信息为每个bridge收集新port或者删除port*/
+    HMAP_FOR_EACH (br, node, &all_bridges) {
+ 	/*如果是增加一个bridge,这里还会添加一个internal的local port为新的bridge*/
+        bridge_collect_wanted_ports(br, splinter_vlans, &br->wanted_ports);
+        bridge_del_ports(br, &br->wanted_ports);
+    }
+
+    HMAP_FOR_EACH_SAFE (br, next, node, &all_bridges) {
+        if (!br->ofproto) {
+            /*
+            如果是新加的brdige会分配一个ofproto,实际分配oproto_dpif
+            ofproto =  ofproto_dpif_class->alloc 
+            ofproto->ofproto_class = ofproto_dpif_class
+                 
+            会获取dpif_backer,如果还没有就通过dp_if_create_and_open函数使用OVS_DP_CMD_NEW创建一个ovs-datapath,生成ovs-system设备
+            从内核角度看，整个openvswitch系统就是一个datapath.
+            ofproto->ofproto_class->construct(ofproto)
+            */
+ 
+            ofproto_create(br->name, br->type, &br->ofproto);
+        }
+    }
+
+    HMAP_FOR_EACH (br, node, &all_bridges) {
+        bridge_add_ports(br, &br->wanted_ports);
+        shash_destroy(&br->wanted_ports);
+    }
+}
+
+在内核看来用户态的bridge/datapath都只是整个openvswitch datapath的vport
+只是新的bridge的vport是一个internal, add-port的是netdev, gre等
+struct iface {
+    struct list port_elem;      /* Element in struct port's "ifaces" list. */
+    struct hmap_node ofp_port_node; /* In struct bridge's "ifaces" hmap. 
+    struct port *port;          /* Containing port. */
+    struct netdev *netdev;      /* Network device. */
+    ofp_port_t ofp_port;        /* OpenFlow port number. */
+
+    const struct ovsrec_interface *cfg; /*cfg for interface*/
+};
+
+struct port {
+    struct bridge *bridge;
+    char *name;
+    struct hmap_node hmap_node; /* Element in struct bridge's "ports" hmap. */
+
+    const struct ovsrec_port *cfg /*cfg for port*/
+    /* An ordinary bridge port has 1 interface.
+     * A bridge port for bonding has at least 2 interfaces. */
+    struct list ifaces;         /* List of "struct iface"s. */
+};
+
+bridge_add_ports--->iface_create
+{
+    /*create interface*/
+    iface_do_create(br, iface_cfg, port_cfg, &ofp_port, &netdev);
+    iface->netdev = netdev;
+    hmap_insert(&br->ifaces, &iface->ofp_port_node, hash_ofp_port(ofp_port));
+
+    /*create port*/
+    port = port_create(br, port_cfg)
+    //hmap_insert(&br->ports, &port->hmap_node, hash_string(port->name, 0));
+    list_push_back(&port->ifaces, &iface->port_elem);
+}
+
+struct netdev {
+    /* The following do not change during the lifetime of a struct netdev. */
+    char *name;                         /* Name of network device. */
+    const struct netdev_class *netdev_class; 
+}
+
+struct netdev_linux {
+    struct netdev up;
+}
+
+const struct netdev_class netdev_linux_class =
+    NETDEV_LINUX_CLASS(
+        "system",
+        netdev_linux_construct,
+        netdev_linux_get_stats,
+        NULL,                    /* set_stats */
+        netdev_linux_get_features,
+        netdev_linux_get_status);
+
+const struct netdev_class netdev_internal_class =
+    NETDEV_LINUX_CLASS(
+        "internal",
+        netdev_linux_construct,
+        netdev_internal_get_stats,
+        netdev_internal_set_stats,
+        NULL,                  /* get_features */
+        netdev_internal_get_status);
+}
+
+/*gre*/
+struct netdev_vport {
+    struct netdev up;
+
+    /* Tunnels. */
+    struct netdev_tunnel_config tnl_cfg;
+};
+TUNNEL_CLASS("gre", "gre_system"),
+
+int iface_do_create()
+{
+    /*根据type(internal, netdev, gre)获取interface 的netdev*/
+    netdev_open(iface_cfg->name, iface_get_type(iface_cfg, br->cfg), &netdev);
+    //netdev = rc->class->alloc()实际分配的是netdev_linux, gre是netdev_vport
+    //rc->class->construct(netdev);对于netdev这种设备要存在, internal和gre是后面创建的
+
+    /*设置interface options 只有gre设备才有*/
+    error = iface_set_netdev_config(iface_cfg, netdev);
+
+    ofproto_port_add(br->ofproto, netdev, ofp_portp);
+    /*获取ofport, 并且将ofport与dp_port做映射 ofport_install-->port_construct分配ofport*/
+    update_port(ofproto, netdev_name);
+}
+
+update_port
+{
+    ofport_open(ofproto, &ofproto_port, &pp);
+    /*
+        //allocate the ofport
+        if (ofproto_port->ofp_port == OFPP_NONE) {
+        if (!strcmp(ofproto->name, ofproto_port->name)) {
+            ofproto_port->ofp_port = OFPP_LOCAL;
+        } else {
+            ofproto_port->ofp_port = alloc_ofp_port(ofproto,
+                                                    ofproto_port->name);
+        }
+    }
+    */
+    ofport_install(ofproto, netdev, &pp);
+}
+
+struct ofport {
+    struct hmap_node hmap_node; /* In struct ofproto's "ports" hmap. */
+    struct ofproto *ofproto;    /* The ofproto that contains this port. */
+    struct netdev *netdev;
+    struct ofputil_phy_port pp;
+    ofp_port_t ofp_port;        /* OpenFlow port number. */
+};
+
+struct ofport_dpif {
+    struct hmap_node odp_port_node; /* In dpif_backer's "odp_to_ofport_map". */
+    struct ofport up;
+    /*datapath port*/
+    odp_port_t odp_port;
+}
+
+ofport_install(struct ofproto *p, struct netdev *netdev, const struct ofputil_phy_port *pp)
+{
+    /*实际分配ofport_dpif*/
+    ofport = p->ofproto_class->port_alloc();
+    ofport->ofproto = p;
+    ofport->netdev = netdev;
+    ofport->pp = *pp;
+    ofport->ofp_port = pp->port_no;
+    ofport->created = time_msec();
+
+    /* Add port to 'p'. */
+    hmap_insert(&p->ports, &ofport->hmap_node, hash_ofp_port(ofport->ofp_port));
+    /*map the ofport with dp_port*/
+    error = p->ofproto_class->port_construct(ofport);
+}
+
+ofproto_port_add--->ofproto->ofproto_class->port_add
+port_add
+{
+    /*netdev和internal都是获取的设备名, gre是获取的gre_system, 所以gre设备只会向add_port一次*/
+    dp_port_name = netdev_vport_get_dpif_port(netdev, namebuf, sizeof namebuf);
+    if (!dpif_port_exists(ofproto->backer->dpif, dp_port_name))
+    {
+        /*这里是port_no是openvswitch datapath的port no*/
+        dpif_port_add(ofproto->backer->dpif, netdev, &port_no)
+        //dpif->dpif_class->port_add(dpif, netdev, &port_no);
+    }
+}
+
+dpif_linux_port_add(struct dpif *dpif_, struct netdev *netdev,
+                    odp_port_t *port_nop)
+{
+    使用OVS_VPORT_CMD_NEW创建vport于内核中
+}
+
+///////////////////////////////////
+内核态
+int ovs_vport_cmd_new(struct sk_buff *skb, struct genl_info *info)
+{
+    parms.name = nla_data(a[OVS_VPORT_ATTR_NAME]);
+    parms.type = nla_get_u32(a[OVS_VPORT_ATTR_TYPE]);
+    parms.options = a[OVS_VPORT_ATTR_OPTIONS];
+    parms.dp = dp;
+    parms.port_no = port_no;
+    parms.upcall_portid = nla_get_u32(a[OVS_VPORT_ATTR_UPCALL_PID]);
+
+    vport = new_vport(&parms);--->ovs_vport_add(parms);--->vport_ops->create
+}
+
+//normal netdev: eth0 veth0 
+const struct vport_ops ovs_netdev_vport_ops = {
+	.type		= OVS_VPORT_TYPE_NETDEV,
+	.create		= netdev_create,
+	.destroy	= netdev_destroy,
+	.get_name	= ovs_netdev_get_name,
+	.send		= netdev_send,/*当报文的需要通过该vport发送的处理函数*/
+};
+struct vport *netdev_create(const struct vport_parms *parms)
+{
+     vport = ovs_vport_alloc(sizeof(struct netdev_vport), &ovs_netdev_vport_ops, parms);
+    
+     netdev_vport = netdev_vport_priv(vport);
+     /*find the real dev*/
+     netdev_vport->dev = dev_get_by_name(ovs_dp_get_net(vport->dp), parms->name);
+     /*设置ovs内核处理函数, 使netdev收到的报文不再走传统协议栈*/
+     netdev_rx_handler_register(netdev_vport->dev, netdev_frame_hook, vport)
+}
+
+static int netdev_send(struct vport *vport, struct sk_buff *skb)
+{
+    struct netdev_vport *netdev_vport = netdev_vport_priv(vport);
+    int mtu = netdev_vport->dev->mtu;
+    int len;
+   
+    skb->dev = netdev_vport->dev;
+    len = skb->len;
+    /*直接从该dev发送*/
+    dev_queue_xmit(skb);
+      
+}
+
+//internal: bridge port
+const struct vport_ops ovs_internal_vport_ops = {
+	.type		= OVS_VPORT_TYPE_INTERNAL,
+	.create		= internal_dev_create,
+	.destroy	= internal_dev_destroy,
+	.get_name	= ovs_netdev_get_name,
+	.send		= internal_dev_recv,
+};
+
+truct net_device_ops internal_dev_netdev_ops = {
+	.ndo_start_xmit = internal_dev_xmit,
+};
+
+/*internal net device发送函数就是ovs的处理函数*/
+static int internal_dev_xmit(struct sk_buff *skb, struct net_device *netdev)
+{
+	ovs_vport_receive(internal_dev_priv(netdev)->vport, skb, NULL);
+}
+
+struct vport *internal_dev_create(const struct vport_parms *parms)
+{
+    vport = ovs_vport_alloc(sizeof(struct netdev_vport), &ovs_internal_vport_ops, parms);
+    netdev_vport = netdev_vport_priv(vport);
+
+    /*创建一个ethernet device, netdev->netdev_ops = &internal_dev_netdev_ops;*/
+    netdev_vport->dev = alloc_netdev(sizeof(struct internal_dev), parms->name, do_setup)
+    internal_dev = internal_dev_priv(netdev_vport->dev);
+    internal_dev->vport = vport;
+    
+    err = register_netdevice(netdev_vport->dev);
+}
+/*如果报文指定从internal设备发出, 数据包会重新注入协议栈*/
+int internal_dev_recv(struct vport *vport, struct sk_buff *skb)
+{
+    skb->dev = netdev;
+    skb->pkt_type = PACKET_HOST;
+    skb->protocol = eth_type_trans(skb, netdev);
+    skb_postpull_rcsum(skb, eth_hdr(skb), ETH_HLEN);
+
+    netif_rx(skb);
+}
+
+//gre port
+const struct vport_ops ovs_gre_vport_ops = {
+	.type		= OVS_VPORT_TYPE_GRE,
+	.create		= gre_create,
+	.destroy	= gre_tnl_destroy,
+	.get_name	= gre_get_name,
+	.send		= gre_send,
+};
+
+整个系统只创建一个gre device在内核
+struct vport *gre_create(const struct vport_parms *parms)
+{
+    ovs_net = net_generic(net, ovs_net_id);
+    if (ovsl_dereference(ovs_net->vport_net.gre_vport)) {
+        vport = ERR_PTR(-EEXIST);
+        goto error;
+    }
+
+    vport = ovs_vport_alloc(IFNAMSIZ, &ovs_gre_vport_ops, parms);
+}
+
+发送
+报文通过gre口发送会根据下发具体action规则添加gre header以及deliver header
+int gre_send(struct vport *vport, struct sk_buff *skb)
+
+接收
+当系统收到gre报文,去掉了deliver header获取gre header信息传递给gre_rcv，然后进入ovs处理函数进行处理

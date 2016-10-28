@@ -1,0 +1,48 @@
+1, Get the source code
+get the latest kernel version from git or download the specfic version from kernel.org
+git clone http://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+
+2, Unpack the source code just for a
+# cd /usr/src
+# bunzip2 linux-source-2.6.39.tar.bz2
+# tar xvf linux-source-2.9.39.tar
+
+3, Using the current config file to be the config
+# cd /usr/src/linux-source-2.6.39
+# cp /boot/config-2.6.26 .config 
+# make menuconfig
+To customize the kernel as you wish.
+
+4, Build the kernel in legacy way
+# make -j8
+# make modules_install
+# make install
+
+
+5, In the /boot directory, you can find the following three 2.6.39 files
+debian:/boot# ls
+System.map-2.6.39        config-2.6.26            initrd.img-2.6.26
+config-2.6.39            vmlinuz-2.6.26           grub
+vmlinuz-2.6.39           System.map-2.6.26
+
+6, Make a ram disk boot file.
+
+Use this way to generate the ram disk
+# update-initramfs -v -c -k 2.6.39
+The initrd-2.6.39.img file will be generated under /boot/.
+
+centos:
+# mkinitrd -v /boot/initrd-2.6.39.img 2.6.39
+
+
+
+another way: make rpm
+# cd /usr/src/linux-source-2.6.39
+# cp /boot/config-2.6.26 .config
+# apt-get install rpm
+
+centos
+# yum install rpm-build
+# make rpm
+There will be get three kernel，devel， header rpm packages
+

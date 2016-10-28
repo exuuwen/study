@@ -1,0 +1,145 @@
+1. cpu hotplug
+a. make sure CONFIG_HOTPLUG and CONFIG_HOTPLUG_CPU is set
+# cat /boot/config-x | grep CONFIG_HOTPLUG
+CONFIG_HOTPLUG=y
+CONFIG_HOTPLUG_CPU=y
+
+b. check the cpu numbers
+# cat /proc/cpuinfo 
+processor	: 0
+...................
+
+processor	: 1
+...................
+
+c. cpus status
+cpu_possible_mask: Bitmap of possible CPUs that can ever be available in the system. This is used to allocate some boot 
+time memory for per_cpu variables that aren't designed to grow/shrink as CPUs are made available or removed. Once set 
+during boot time discovery phase, the map is static, i.e no bits are added or removed anytime.  Trimming it accurately for 
+your system needs upfront can save some boot time memory. See below for how we use heuristics in x86_64 case to keep this under check.
+
+cpu_online_mask: Bitmap of all CPUs currently online. Its set in __cpu_up() after a cpu is available for kernel scheduling 
+and ready to receive interrupts from devices. Its cleared when a cpu is brought down using __cpu_disable(), before which 
+all OS services including interrupts are migrated to another target CPU.
+
+cpu_present_mask: Bitmap of CPUs currently present in the system. Not all of them may be online. When physical hotplug is processed by the relevant subsystem (e.g ACPI) can change and new bit either be added or removed from the map depending on the event is hot-add/hot-remove. There are currently no locking rules as of now. Typical usage is to init topology during boot, at which time hotplug is disabled.
+
+# cat /sys/devices/system/cpu/online 
+0-1
+# cat /sys/devices/system/cpu/offline 
+2-7,8-31
+# cat /sys/devices/system/cpu/present 
+0-1
+# cat /sys/devices/system/cpu/possible 
+0-7
+
+d. disable a cpu
+/*CONFIG_BOOTPARAM_HOTPLUG_CPU0 is not set: can't disable CPU0*/
+# cat /boot/config-xxx | grep CONFIG_BOOTPARAM_HOTPLUG_CPU0
+# CONFIG_BOOTPARAM_HOTPLUG_CPU0 is not set
+ls /sys/devices/system/cpu/cpu0/online
+ls: cannot access /sys/devices/system/cpu/cpu0/online: No such file or directory
+
+A cpuX can be removable the file /sys/devices/system/cpu/cpuX/online should exist
+
+# cat  /sys/devices/system/cpu/cpu1/online 
+# echo 0 >  /sys/devices/system/cpu/cpu1/online 
+# cat /sys/devices/system/cpu/possible 
+0-7
+# cat /sys/devices/system/cpu/online 
+0
+# cat /sys/devices/system/cpu/offline 
+1-7,8-31   
+# cat /sys/devices/system/cpu/present 
+0-1
+# cat /proc/cpuinfo 
+processor	: 0
+...................
+
+2.  Iterate over cpus
+#include <linux/cpumask.h>
+for_each_possible_cpu     - Iterate over cpu_possible_mask 
+for_each_online_cpu       - Iterate over cpu_online_mask 
+for_each_present_cpu      - Iterate over cpu_present_mask .
+#include <linux/cpu.h>
+get_online_cpus() and put_online_cpus():   inhibit cpu hotplug operations. when iterte present cpu, the couple of call 
+
+should be called avoid the the online cpus go away or something new add in. 
+    for_each_possible_cpu(i)
+    {
+        printk("cpu %d possible\n", i);
+    }
+
+    printk("\n");
+
+    for_each_present_cpu(i)
+    {
+        printk("cpu %d present\n", i);
+    }
+
+    printk("\n");
+
+    /*get_online_cpus() block online and offline operations for cpus, 
+     if only avoid all the online cpu go away, 
+    use preempt_disable() and preempt_enable()*/
+    get_online_cpus();
+    for_each_online_cpu(i)
+    {
+        printk("cpu %d online\n", i);
+    }
+    put_online_cpus();
+
+3.  hotplug notification: aware of CPU arrival and departure.
+
+static int __cpuinit cpu_hotplug_callback(struct notifier_block *nfb,
+                                            unsigned long action, void *hcpu)
+{
+    unsigned int cpu = (unsigned long)hcpu;
+    switch (action) 
+    {
+    case CPU_ONLINE:
+    case CPU_ONLINE_FROZEN:
+        printk("cpu_hotplug notify %d cpu online\n", cpu);
+        break;
+    case CPU_DEAD:
+    case CPU_DEAD_FROZEN:
+        printk("cpu_hotplug notify  %d cpu offline\n", cpu);
+        break;
+    }
+
+    return NOTIFY_OK;
+}
+static int __init cpu_hotplug_init(void)
+{
+    get_online_cpus();
+    ret = register_hotcpu_notifier(&cpu_hotplug_notifer);
+    put_online_cpus();
+}
+static void __exit cpu_hotplug_exit(void)
+{
+    get_online_cpus();
+    unregister_hotcpu_notifier(&cpu_hotplug_notifer);
+    put_online_cpus();
+}
+
+4. put some work on specific cpus in kernel
+There are two ways.  If your code can be run in interrupt context, use smp_call_function_single(), otherwise use 
+
+work_on_cpu().  Note that work_on_cpu() is slow, and can fail due to out of memory:
+int my_func_on_cpu(int cpu, bool sleep)
+{ 
+    int err;
+    get_online_cpus();
+    if (!cpu_online(cpu)) 
+        err = -EINVAL; 
+    else
+    { 
+        if (sleep)
+            err = work_on_cpu(cpu, __my_func_on_cpu, NULL); 
+        else 
+            err = smp_call_function_single(cpu, __my_func_on_cpu, NULL, true); 
+    }
+    put_online_cpus();
+
+    return err; 
+}

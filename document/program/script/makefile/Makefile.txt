@@ -1,0 +1,310 @@
+你可以使用别的文件名来书写Makefile，比如：“Make.Linux”，“Make.Solaris”，“Make.AIX”等，如果要指定特定的Makefile，
+你可以使用make的“-f”和“--file”参数，如：make -f Make.Linux或make --file Make.AIX
+
+在Makefile使用include关键字可以把别的Makefile包含进来，这很像C语言的#include，被包含的文件会原模原样的放在当前文件的包含位置。
+include的语法是：include filename1 filename2
+
+Makefile文件中的特殊变量“VPATH”就是完成这个功能的，如果没有指明这个变量，make只会在当前的目录中去找寻依赖文件和目标文件。
+如果定义了这个变量，那么，make就会在当当前目录找不到的情况下，到所指定的目录中去找寻文件了。
+VPATH = src:../headers
+
+但是它更为灵活。它可以指定不同的文件在不同的搜索目录中。这是一个很灵活的功能。它的使用方法有三种：
+1、vpath <pattern> <directories>
+为符合模式<pattern>的文件指定搜索目录<directories>。
+2、vpath <pattern>
+清除符合模式<pattern>的文件的搜索目录。
+3、vpath
+清除所有已被设置好了的文件搜索目录。
+
+“%”的意思是匹配零或若干字符，vpath %.h ../headers
+该语句表示，要求make在“../headers”目录下搜索所有以“.h”结尾的文件。
+
+“伪目标”并不是一个文件，只是一个标签，由于“伪目标”不是文件，为了避免和文件重名的这种情况，
+我们可以使用一个特殊的标记“.PHONY”来显示地指明一个目标是“伪目标”，向make说明，不管是否有这个文件，这个目标就是“伪目标”。
+
+如果你的Makefile需要一口气生成若干个可执行文件，但你只想简单地敲一个make完事，并且，
+所有的目标文件都写在一个Makefile中，那么你可以使用“伪目标”这个特性：
+all : prog1 prog2 prog3
+.PHONY : all
+
+随便提一句，从上面的例子我们可以看出，目标也可以成为依赖。所以，伪目标同样也可成为依赖。看下面的例子：
+.PHONY: cleanall cleanobj cleandiff
+cleanall : cleanobj cleandiff
+	rm -f program
+cleanobj :
+	rm -f *.o
+cleandiff :
+	rm -f *.diff
+“make clean”将清除所有要被清除的文件。“cleanobj”和“cleandiff”这两个伪目标有点像“子程序”的意思。
+我们可以输入“make cleanall”和“make cleanobj”和“make cleandiff”命令来达到清除不同种类文件的目的。
+
+而命令中的“$<”和“$@”则是自动化变量，“$<”表示所有的依赖目标集
+“$@”表示目标集
+
+显示命令:当我们用“@”字符在命令行前，那么，这个命令将不被make显示出来
+@echo 正在编译XXX模块......
+当make执行时，会输出“正在编译XXX模块......”字串，但不会输出命令，如果没有“@”，那么，make将输出
+echo 正在编译XXX模块......
+正在编译XXX模块......
+
+
+带入make参数“-n”:其只是显示命令，但不会执行命令
+make参数“-s”则是全面禁止命令的显示。
+给make加上“-i,，Makefile中所有命令都会忽略错误。
+make的参数的是“-k”, ，如果某规则中的命令出错了，那么就终目该规则的执行，但继续执行其它规则。
+在“嵌套执行”中比较有用的参数，“-w”或是会在make的过程中输出一些信息，让你看到目前的工作目录。
+
+
+如果你要让上一条命令的结果应用在下一条命令时，你应该使用分号分隔这两条命令。
+exec:
+cd /home/hchen; pwd #，cd就起作用了，pwd会打印出“/home/hchen”。
+
+
+进入子目录编译makefile
+subsystem:
+$(MAKE) -C subdir
+
+
+如果Makefile中出现一些相同命令序列，那么我们可以为这些相同的命令序列定义一个变量。
+define run-yacc
+yacc $(firstword $^)
+mv y.tab.c $@
+endef
+foo.c : foo.y
+	$(run-yacc)
+
+嵌套执行make
+我们有一个子目录叫subdir，这个目录下有个Makefile文件，来指明了这个目录下文件的编译规则。那么我们总控的Makefile可以这样书写：
+subsystem:
+cd subdir && $(MAKE)
+其等价于：
+subsystem:
+$(MAKE) -C subdir
+定义$(MAKE)宏变量的意思是，也许我们的make需要一些参数，所以定义成一个变量比较利于维护。这两个例子的意思都是先进入“subdir”目录，然后执行make命令。
+
+=右侧是变量的值，右侧变量的值可以定义在文件的任何一处
+y = $(x) bar
+x = foo
+那么，y的值是“foo bar”
+
+:=的变量不能使用后面的变量，只能使用前面已定义好了的变量。
+y := $(x) bar
+x := foo
+那么，y的值是“bar”，而不是“foo bar”
+
+我们可以使用make中的另一种用变量来定义变量的方法。这种方法使用的是“:=”操作符，如：
+x := foo
+y := $(x) bar
+x := later
+
+请先看一个例子，如果我们要定义一个变量，其值是一个空格，那么我们可以这样来：
+nullstring :=
+space := $(nullstring) # end of the line
+
+
+dir := /foo/bar    # directory to put the frobs in
+dir这个变量的值是“/foo/bar”，后面还跟了4个空格，如果我们这样使用这样变量来指定别的目录——“$(dir)/file”那么就完蛋了。
+
+
+FOO ?= bar
+其含义是，如果FOO没有被定义过，那么变量FOO的值就是“bar”，如果FOO先前被定义过，那么这条语将什么也不做
+
+
+foo := a.o b.o c.o
+bar := $(foo:.o=.c)
+这个示例中，我们先定义了一个“$(foo)”变量，而第二行的意思是把“$(foo)”中所有以“.o”字串“结尾”全部替换成“.c”，所以我们的“$(bar)”的值就是“a.c b.c c.c”。
+
+
+
+第二种高级用法是——“把变量的值再当成变量”。先看一个例子：
+x = y
+y = z
+a := $($(x))
+在这个例子中，$(x)的值是“y”，所以$($(x))就是$(y)，于是$(a)的值就是“z”。（注意，是“x=y”，而不是“x=$(y)”）
+
+
+追加变量值
+我们可以使用“+=”操作符给变量追加值，如：
+objects = main.o foo.o bar.o utils.o
+objects += another.o
+
+<targets ...>: <target-pattern>: <prereq-patterns ...>
+    <commands>
+    ... 
+targets 定义了一系列的目标文件,可以有通配符。是目标的一个集合。
+target-parrtern 是指明了 targets 的模式,也就是的目标集模式。
+prereq-parrterns 是目标的依赖模式,它对 target-parrtern 形成的模式再进行一次依赖目标
+的定义。
+如果我们的<target-parrtern>定义成“%.o”,意思是我们的<target>集合中都是以“.o”结尾的,而如果
+我们的<prereq-parrterns>定义成“%.c”,意思是对<target-parrtern>所形成的目标集进行二次
+定义,其计算方法是,取<target-parrtern>模式中的“%”(也就是去掉了[.o]这个结尾),并
+为其加上[.c]这个结尾,形成的新集合。
+objects = foo.o bar.o
+all: $(objects)
+$(objects): %.o: %.c
+    $(CC) -c $(CFLAGS) $< -o $@
+
+
+
+下面的这个示例展示了define的用法：
+define two-lines
+echo foo
+echo $(bar)
+endef
+
+使用条件判断
+下面的例子，判断$(CC)变量是否“gcc”，如果是的话，则使用GNU函数编译目标。
+libs_for_gcc = -lgnu
+normal_libs =
+foo: $(objects)
+ifeq ($(CC),gcc)
+$(CC) -o foo $(objects) $(libs_for_gcc)
+else
+$(CC) -o foo $(objects) $(normal_libs)
+endif
+
+
+这个关键字有四个
+ifeq (<arg1>, <arg2>)
+ifneq (<arg1>, <arg2>)
+ifdef <variable-name>
+ifndef <variable-name>
+在<conditional-directive>这一行上，多余的空格是被允许的，但是不能以[Tab]键做为开始（不然就被认为是命令）。而注释符“#”同样也是安全的。“else”和“endif”也一样，只要不是以[Tab]键开始就行了。
+特别注意的是，make是在读取Makefile时就计算条件表达式的值，并根据条件表达式的值来选择语句，所以，你最好不要把自动化变量（如“$@”等）放入条件表达式中，因为自动化变量是在运行时才有的。
+ 
+
+函数的调用语法
+$(<function> <arguments>)
+
+还是来看一个示例：
+comma:= ,
+empty:=
+space:= $(empty) $(empty)
+foo:= a b c
+bar:= $(subst $(space),$(comma),$(foo))
+在这个示例中，$(comma)的值是一个逗号。$(space)使用了$(empty)定义了一个空格，$(foo)的值是“a b c”，$(bar)的定义用，调用了函数“subst”，这是一个替换函数，这个函数有三个参数，第一个参数是被替换字串，第二个参数是替换字串，第三个参数是替换操作作用的字串。这个函数也就是把$(foo)中的空格替换成逗号，所以$(bar)的值是“a,b,c”
+
+$(subst <from>,<to>,<text>)
+名称：字符串替换函数——subst。
+功能：把字串<text>中的<from>字符串替换成<to>。
+返回：函数返回被替换过后的字符串。
+
+$(patsubst %.c,%.o,x.c.c bar.c)
+把字串“x.c.c bar.c”符合模式[%.c]的单词替换成[%.o]，返回结果是“x.c.o bar.o”
+
+$(strip <string>)
+名称：去空格函数——strip。
+功能：去掉<string>字串中开头和结尾的空字符。
+返回：返回被去掉空格的字符串值。
+示例：
+$(strip a b c )
+把字串“a b c ”去到开头和结尾的空格，结果是“a b c”
+
+$(findstring <find>,<in>)
+名称：查找字符串函数——findstring。
+功能：在字串<in>中查找<find>字串。
+返回：如果找到，那么返回<find>，否则返回空字符串。
+示例：
+$(findstring a,a b c)
+$(findstring a,b c)
+第一个函数返回“a”字符串，第二个返回“”字符串（空字符串）
+
+$(filter <pattern...>,<text>)
+名称：过滤函数——filter。
+功能：以<pattern>模式过滤<text>字符串中的单词，保留符合模式<pattern>的单词。可以有多个模式。
+返回：返回符合模式<pattern>的字串。
+示例：
+sources := foo.c bar.c baz.s ugh.h
+foo: $(sources)
+cc $(filter %.c %.s,$(sources)) -o foo
+$(filter %.c %.s,$(sources))返回的值是“foo.c bar.c baz.s”
+
+$(filter-out <pattern...>,<text>)
+名称：反过滤函数——filter-out。
+功能：以<pattern>模式过滤<text>字符串中的单词，去除符合模式<pattern>的单词。可以有多个模式。
+返回：返回不符合模式<pattern>的字串。
+示例：
+objects=main1.o foo.o main2.o bar.o
+mains=main1.o main2.o
+$(filter-out $(mains),$(objects)) 返回值是“foo.o bar.o”
+
+objects = *.o 
+上面这个例子,表示了,通符同样可以用在变量中。并不是说[*.o]会展开,不!objects
+的值就是“*.o”。Makefile 中的变量其实就是 C/C++中的宏。如果你要让通配符在变量中展
+开,也就是让 objects 的值是所有[.o]的文件名的集合,那么,你可以这样: 
+objects := $(wildcard *.o)
+
+$(var:<pattern>=<replacement>)
+$(sources:.c=.d)”中的“.c=.d”的意思是做一个替换,把变量$(sources)所有[.c]的字串都替换成[.d]
+
+$(sort <list>)名称:排序函数——sort。
+$(sort foo bar lose)返回“bar foo lose” 备注:sort 函数会去掉<list>中相同的单词。
+$(word <n>,<text>)取字符串<text>中第<n>个单词。(从一开始)
+$(word 2, foo bar baz)返回值是“bar”
+$(wordlist <s>,<e>,<text>)从字符串<text>中取从<s>开始到<e>的单词串。<s>和<e>是一个数字。
+$(wordlist 2, 3, foo bar baz)返回值是“bar baz”
+$(words <text>)统计<text>中字符串中的单词个数
+$(words, foo bar baz)返回值是“3”
+$(firstword <text>)首单词函数——firstword。
+
+$(dir src/foo.c hacks)返回值是“src/ ./”
+$(notdir src/foo.c hacks)返回值是“foo.c hacks”
+$(suffix src/foo.c src-1.0/bar.c hacks)返回值是“.c .c”
+$(basename src/foo.c src-1.0/bar.c hacks)返回值是“src/foo src-1.0/bar hacks”。
+$(addsuffix .c,foo bar)返回值是“foo.c bar.c”
+$(addprefix src/,foo bar)返回值是“src/foo src/bar”
+$(join aaa bbb , 111 222 333)返回值是“aaa111 bbb222 333”
+
+
+$(foreach <var>,<list>,<text>)
+names := a b c d
+files := $(foreach n,$(names),$(n).o)
+上面的例子中, $(name)中的单词会被挨个取出,并存到变量“n”中,
+“$(n).o”每次根据“$(n)”
+计算出一个值,这些值以空格分隔,最后作为 foreach 函数的返回,所以, $(files)的值是“a.o
+b.o c.o d.o”。
+注意,foreach 中的<var>参数是一个临时的局部变量,foreach 函数执行完后,参数<var>的
+变量将不在作用,其作用域只在 foreach 函数当中
+
+$(call <expression>,<parm1>,<parm2>,<parm3>...)
+reverse = $(1) $(2)
+foo = $(call reverse,a,b)
+
+contents := $(shell cat foo)
+files := $(shell echo *.c)
+
+$(error <text ...>)
+$(warning <text ...>)
+
+gcc -MM rand.c
+rand.o: rand.c a.h b.h
+
+如果你要传递变量到下级 Makefile 中,那么你可以使用这样的声明:
+export <variable ...>
+如果你不想让某些变量传递到下级 Makefile 中,那么你可以这样声明:
+unexport <variable ...>
+如果你要传递所有的变量,那么,只要一个 export 就行了。后面什么也不用跟,表示传递所有的变量。
+需要注意的是,有两个变量,一个是 SHELL,一个是 MAKEFLAGS,这两个变量不管你是否 export,其总是要传递到下层 Makefile 中
+
+
+如果我们使用“make -w”来执行,那么当进入该目录时,我们会看到:
+make: Entering directory `/home/hchen/gnu/make'.
+而在完成下层 make 后离开目录时,我们会看到:
+make: Leaving directory `/home/hchen/gnu/make'
+当你使用“-C”参数来指定 make 下层 Makefile 时,“-w”会被自动打开的。
+
+
+
+自动化变量
+$@
+表示规则中的目标文件集。在模式规则中，如果有多个目标，那么，"$@"就是匹配于目标中模式定义的集合。
+$%
+仅当目标是函数库文件中，表示规则中的目标成员名。例如，如果一个目标是"foo.a(bar.o)"，
+那么，"$%"就是"bar.o"，"$@"就是"foo.a"。如果目标不是函数库文件（Unix下是[.a]，Windows下是[.lib]），那么，其值为空。
+$<依赖目标中的第一个目标名字。如果依赖目标是以模式（即"%"）定义的，那么"$<"将是符合模式的一系列的文件集。注意，其是一个一个取出来的。
+$?所有比目标新的依赖目标的集合。以空格分隔。
+$^所有的依赖目标的集合。以空格分隔。如果在依赖目标中有多个重复的，那个这个变量会去除重复的依赖目标，只保留一份。
+$+这个变量很像"$^"，也是所有依赖目标的集合。只是它不去除重复的依赖目标。
+$*这个变量表示目标模式中"%"及其之前的部分。如果目标是"dir/a.foo.b"，并且目标的模式是"a.%.b"，那么，"$*"的值就是"dir/a.foo"。
+
+上述加上"D"或是"F"表示目录或者文件部分

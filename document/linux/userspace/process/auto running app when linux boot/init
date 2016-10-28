@@ -1,0 +1,12 @@
+#!/bin/sh
+
+echo  'hahahhahah in the init '
+echo  'hahahhahah in the init '
+echo  'hahahhahah in the init '
+echo  'hahahhahah in the init '
+echo  'hahahhahah in the init '
+echo  'hahahhahah in the init '
+
+cd  /home/CR7/Program/linux_kernel/init_open/
+
+./init_open &

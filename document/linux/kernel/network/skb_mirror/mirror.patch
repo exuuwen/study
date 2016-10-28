@@ -1,0 +1,46 @@
+--- linux-2.6.23-gentoo-r3.org/net/core/dev.c	2007-10-10 04:31:38.000000000 +0800
++++ linux-2.6.23-gentoo-r3/net/core/dev.c	2008-01-24 02:30:37.000000000 +0800
+@@ -1539,6 +1539,10 @@
+  *          --BLG
+  */
+
++//----------------Define mirror module-----
++int (*mirror_launch)(struct sk_buff *, int) = 0;
++//-----------------------------------------
++
+ int dev_queue_xmit(struct sk_buff *skb)
+ {
+ 	struct net_device *dev = skb->dev;
+@@ -1578,6 +1582,10 @@
+ 			if (skb_checksum_help(skb))
+ 				goto out_kfree_skb;
+ 	}
++//---------------Insert mirror module
++if(mirror_launch)
++	mirror_launch(skb, 1);
++//-----------------------------------
+
+ gso:
+ 	spin_lock_prefetch(&dev->queue_lock);
+@@ -1991,7 +1999,10 @@
+ 	skb = handle_macvlan(skb, &pt_prev, &ret, orig_dev);
+ 	if (!skb)
+ 		goto out;
+-
++//-----------Insert mirror module
++if(mirror_launch)
++	mirror_launch(skb, 0);
++//-------------------------------
+ 	type = skb->protocol;
+ 	list_for_each_entry_rcu(ptype, &ptype_base[ntohs(type)&15], list) {
+ 		if (ptype->type == type &&
+@@ -4133,6 +4144,9 @@
+ EXPORT_SYMBOL(net_enable_timestamp);
+ EXPORT_SYMBOL(net_disable_timestamp);
+ EXPORT_SYMBOL(dev_get_flags);
++//--------export mirror_launch
++EXPORT_SYMBOL(mirror_launch);
++//----------------------------
+
+ #if defined(CONFIG_BRIDGE) || defined(CONFIG_BRIDGE_MODULE)
+ EXPORT_SYMBOL(br_handle_frame_hook);

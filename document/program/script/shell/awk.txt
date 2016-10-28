@@ -1,0 +1,150 @@
+awk 'BEGIN{} condition{} END{}'
+
+a. basic variable
+1) position variable
+$0: the whole record
+$1: the first region of the record
+.
+.
+$N: the N region of the record 
+
+2) format variable
+NR: the number of the current record
+NF: the number of regions ub the current record
+
+FS: the delxx for each region
+OFS: the output delxxx for each region
+
+RS: the delxx for each record
+ORS: the output delxx for each record
+ 
+b. BEGIN{}
+BEGIN area is optinal: it used for defining some initail variable, set the format variable and output something
+The position variable and NR, NF is empty in this region
+
+
+c. END{}
+END area is also optinal: it used for output and caculate the initail variable
+The position variable and NR, NF is the last record in this region
+
+
+d. condition{}: cond1||cond2&&cond3
+this region used for filter the record match the condition and output the needed position variable and caculate initial variable
+NF, NR can be changed in this area to jump to a record or decrease the regions of the record
+1). ==, !=
+NR!=1
+$1=="sss"
+2). ~, !~
+$N~/ss/
+$N!~/mm/
+
+//: regexp
+^xx: each record($N) start with xx 
+xx$: each record($N) end with xx
+.: one any single character, except "\n" 
+[xxx]:one of the group character [0-9a-i],[acd]
+[^xxx]:none one of the group character [^0-9],[^acd]
+?: the preceding character only has zero or one times. fe?d can only match fed and fd
++: the preceding character has more than one times. fe+d can match fe...ed and fed
+*: the prceding character has zero or one times, serval times. fe*d can match fe...ed, fed and fd
+(regex1|regex2): group for the two regexs
+
+
+/^$/: empty record
+/xx/,/yy/: when a record match xx then the following records all match until the final one yy matched
+
+
+There is no following regexp in awk
+{n,m}: the prceding character has n to m times. fe{2,3}, fe{2}, fe{2,}
+\<xx: xx is in the beginning of a word. 
+\>xx: xx is in the end of a word.
+
+e. {}
+1). print
+print "$1:"$1, "$2"$2
+printf "$1:%s\n", $1
+
+2). flow control
+if (condition) 
+  xxxx
+else if(confition2)
+  xxxx
+else
+  xxxx
+# switch..case
+
+#do..while
+while(condition)
+{
+  xxxx
+
+  break/continue
+}
+
+
+for(xx;xx;xx)
+{
+}
+
+exit val
+
+
+3) variable and array
+i) var="ss" var=1
+ii) array
+a["s"]=10
+a[2]=10
+
+if(2 in a) .... # okay
+if(a[2]!="") .... # error
+
+
+4).function
+i).num
+sqrt(x),log(x),int(x),exp(x),rand(x)
+ii). string
+tolower(str),toupper(str)
+index(str, find)
+length(str)
+split(str,str2,//)
+match(str, //)#long match
+sub(//, replace, str)
+substr(str, off, len)
+
+
+2. sample
+print the first and fourth region for each record
+$ awk '{print $1, $4}' a.txt
+
+print the whole record with the three region is 0 and the six region is LISETN except the first record
+$ awk '$3==0 && $6=="LISTEN" && NR==1'
+
+print the whole record with the three region start with str
+$ awk ' $3~/^str/ {print $0}' a.txt
+
+cat cal.awk
+#!/bin/awk -f
+
+#befor running
+BEGIN {
+math = 0
+english = 0
+computer = 0
+printf "NAME NO. MATH ENGLISH COMPUTER TOTAL\n"
+printf "---------------------------------------------\n"
+}
+
+#running
+NR!=1{ 
+math+=$3
+english+=$4
+computer+=$5
+printf "%-6s %-6s %4d %8d %8d %8d\n", $1, $2, $3,$4,$5, $3+$4+$5
+}
+
+#after running
+END {
+printf "---------------------------------------------\n"
+printf " TOTAL:%10d %8d %8d \n", math, english, computer
+printf "AVERAGE:%10.2f %8.2f %8.2f\n", math/NR, english/NR, computer/NR
+}

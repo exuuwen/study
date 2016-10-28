@@ -1,0 +1,487 @@
+NAT的实现是由 ip_conntrack, iptable_nat组成
+1. IP conntrack
+a. init
+struct nf_conntrack_l3proto nf_conntrack_l3proto_ipv4 __read_mostly = {
+	.l3proto	 = PF_INET,
+	.name		 = "ipv4",
+	.pkt_to_tuple	 = ipv4_pkt_to_tuple,
+	.invert_tuple	 = ipv4_invert_tuple,
+	.print_tuple	 = ipv4_print_tuple,
+	.get_l4proto	 = ipv4_get_l4proto
+};
+struct nf_conntrack_l4proto nf_conntrack_l4proto_tcp4 __read_mostly =
+{
+	.l3proto		= PF_INET,
+	.l4proto 		= IPPROTO_TCP,
+	.name 			= "tcp",
+	.pkt_to_tuple 		= tcp_pkt_to_tuple,
+	.invert_tuple 		= tcp_invert_tuple,
+	.print_tuple 		= tcp_print_tuple,
+	.print_conntrack 	= tcp_print_conntrack,
+	.packet 		= tcp_packet,
+	.get_timeouts		= tcp_get_timeouts,
+	.new 			= tcp_new,
+	.error			= tcp_error,
+};
+struct nf_conntrack_l4proto nf_conntrack_l4proto_udp6 __read_mostly =
+{
+	.l3proto		= PF_INET6,
+	.l4proto		= IPPROTO_UDP,
+	.name			= "udp",
+	.pkt_to_tuple		= udp_pkt_to_tuple,
+	.invert_tuple		= udp_invert_tuple,
+	.print_tuple		= udp_print_tuple,
+	.packet			= udp_packet,
+	.get_timeouts		= udp_get_timeouts,
+	.new			= udp_new,
+	.error			= udp_error,
+};
+struct nf_conntrack_l4proto nf_conntrack_l4proto_icmp __read_mostly =
+{
+	.l3proto		= PF_INET,
+	.l4proto		= IPPROTO_ICMP,
+	.name			= "icmp",
+	.pkt_to_tuple		= icmp_pkt_to_tuple,
+	.invert_tuple		= icmp_invert_tuple,
+	.print_tuple		= icmp_print_tuple,
+	.packet			= icmp_packet,
+	.get_timeouts		= icmp_get_timeouts,
+	.new			= icmp_new,
+	.error			= icmp_error,
+};
+
+int nf_conntrack_l3proto_ipv4_init(void)
+{
+	/*register ipv4 tcp handler*/
+	ret = nf_ct_l4proto_register(&nf_conntrack_l4proto_tcp4);
+
+	/*register ipv4 udp handler*/
+	ret = nf_ct_l4proto_register(&nf_conntrack_l4proto_udp4);
+
+	/*register ipv4 icmp handler*/
+	ret = nf_ct_l4proto_register(&nf_conntrack_l4proto_icmp);
+
+	/*register ipv4 handler*/
+	ret = nf_ct_l3proto_register(&nf_conntrack_l3proto_ipv4);	
+}
+
+b. hooks
+enum nf_ip_hook_priorities {
+	NF_IP_PRI_FIRST = INT_MIN,
+	NF_IP_PRI_CONNTRACK_DEFRAG = -400,
+	NF_IP_PRI_RAW = -300,
+	NF_IP_PRI_SELINUX_FIRST = -225,
+	NF_IP_PRI_CONNTRACK = -200,
+	NF_IP_PRI_MANGLE = -150,
+	NF_IP_PRI_NAT_DST = -100,
+	NF_IP_PRI_FILTER = 0,
+	NF_IP_PRI_SECURITY = 50,
+	NF_IP_PRI_NAT_SRC = 100,
+	NF_IP_PRI_SELINUX_LAST = 225,
+	NF_IP_PRI_CONNTRACK_HELPER = 300,
+	NF_IP_PRI_CONNTRACK_CONFIRM = INT_MAX,
+	NF_IP_PRI_LAST = INT_MAX,
+};
+NF_IP_PRI_CONNTRACK:优先级通常很高,在RAW后面
+static struct nf_hook_ops ipv4_conntrack_ops[] __read_mostly = {
+	{
+		.hook		= ipv4_conntrack_in,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_PRE_ROUTING,
+		.priority	= NF_IP_PRI_CONNTRACK,
+	},
+	{
+		.hook		= ipv4_conntrack_local,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_OUT,
+		.priority	= NF_IP_PRI_CONNTRACK,
+	},
+	......
+
+};
+
+
+报文的跟踪从IP报文的起始点开始
+1. 外来报文PRE_ROUTING
+2. 本地报文LOCAL_OUT
+
+struct nf_conn {
+	struct nf_conntrack ct_general;
+	/*restore the tuple for each direction*/
+	struct nf_conntrack_tuple_hash tuplehash[IP_CT_DIR_MAX];
+	....
+};
+
+ipv4_conntrack_local/in--->nf_conntrack_in(net, PF_INET, ops->hooknum, skb);
+{
+	/*get l3 proto handler(nf_conntrack_l3proto_ipv4) through PF_INET*/
+	struct nf_conntrack_l3proto *l3proto = __nf_ct_l3proto_find(pf);
+
+	/*get l4 proto(tcp, udp, icmp..) through ipv4_get_l4proto*/
+	ret = l3proto->get_l4proto(skb, skb_network_offset(skb), &dataoff, &protonum);
+		//*dataoff = nhoff + (iph->ihl << 2);
+		//*protonum = iph->protocol;
+
+	/*get l4 proto handler(nf_conntrack_l4proto_udp4/tcp4/icmp) through PF_INET and protonum*/
+	struct nf_conntrack_l4proto *l4proto = __nf_ct_l4proto_find(pf, protonum);
+
+	/*resolve the conntrack*/
+	struct nf_conn *ct = resolve_normal_ct(net, tmpl, skb, dataoff, pf, protonum,
+			       l3proto, l4proto, &set_reply, &ctinfo);
+
+	/*set rely if the packet is the reply one*/
+	if (set_reply && !test_and_set_bit(IPS_SEEN_REPLY_BIT, &ct->status))
+		nf_conntrack_event_cache(IPCT_REPLY, ct);
+
+}
+
+union nf_conntrack_man_proto {
+	/* Add other protocols here. */
+	__be16 all;
+
+	struct {
+		__be16 port;
+	} tcp;
+	struct {
+		__be16 port;
+	} udp;
+	struct {
+		__be16 id;
+	} icmp;
+};
+
+struct nf_conntrack_man {
+	union nf_inet_addr u3;
+	union nf_conntrack_man_proto u;
+	/* Layer 3 protocol */
+	u_int16_t l3num;
+};
+
+/* This contains the information to distinguish a connection. */
+struct nf_conntrack_tuple {
+	struct nf_conntrack_man src;
+
+	/* These are the parts of the tuple which are fixed. */
+	struct {
+		union nf_inet_addr u3;
+		union {
+			struct {
+				__be16 port;
+			} tcp;
+			struct {
+				__be16 port;
+			} udp;
+			struct {
+				u_int8_t type, code;
+			} icmp;
+		} u;
+
+		/* The protocol. */
+		u_int8_t protonum;
+
+		/* The direction (for tuplehash) */
+		u_int8_t dir;
+	} dst;
+};
+
+int resolve_normal_ct
+{
+	/* get the conntrack tuple from the skb
+	   src/dst ip
+	   src/dst port for tcp/udp
+	   id, type, code for icmp
+	*/
+	nf_ct_get_tuple(skb, skb_network_offset(skb),
+			     dataoff, l3num, protonum, &tuple, l3proto,
+			     l4proto);
+		//tuple->src.l3num = l3num;
+		/*ipv4_pkt_to_tuple: get the src/dst ip*/
+		//l3proto->pkt_to_tuple(skb, nhoff, tuple) == 0)
+		//tuple->dst.protonum = protonum;
+		//tuple->dst.dir = IP_CT_DIR_ORIGINAL		
+		/*get the tcp/udp/icmp entry*/
+		//l4proto->pkt_to_tuple(skb, dataoff, tuple);
+
+	/*get the hash from the tuple and get the conntract hash info
+	  both the orignal and reply dirction have the same hash and 
+	  store in the same nf_conn.
+	*/
+	hash = hash_conntrack_raw(&tuple, zone);
+	h = __nf_conntrack_find_get(net, zone, &tuple, hash);
+	if (!h) {
+		/*if there is no hash info so it's the first packet 
+		allocate a nf_conn and store the tuple to the orignal hash tuple 
+		get the inverse tuple and store to the inverse hash tuple
+		*/	
+		h = init_conntrack(net, tmpl, &tuple, l3proto, l4proto,
+				   skb, dataoff, hash);
+	}
+
+	/*get the nf_conn through the hash tuple*/
+	ct = nf_ct_tuplehash_to_ctrack(h)
+
+	/*if the hash tuple is reply one so esatblished_reply
+	  if the hash tuple is orignal but the set the reply bit in status,  established
+	  if the hash tuple is orignal the first time or no rely, so NEW
+	*/
+	if (NF_CT_DIRECTION(h) == IP_CT_DIR_REPLY) {
+		*ctinfo = IP_CT_ESTABLISHED_REPLY;
+		/* Please set reply bit if this packet OK */
+		*set_reply = 1;
+	} else {
+		/* Once we've had two way comms, always ESTABLISHED. */
+		if (test_bit(IPS_SEEN_REPLY_BIT, &ct->status)) {
+			*ctinfo = IP_CT_ESTABLISHED;
+		} else {
+		/*the first packet or the orignal direction packet with no relpy*/
+			*ctinfo = IP_CT_NEW;
+		}
+		*set_reply = 0;
+	}
+	skb->nfct = &ct->ct_general;
+	skb->nfctinfo = *ctinfo;
+	return ct;
+}
+
+总的来说NF_IP_PRI_CONNTRACK做的事就是
+1). 第一个报文 分配nf_conn,存储原和反方向的hash tuple. skb记录ctinfo和nf_conn
+2). 获取hash tuple, skb记录ctinfo和nf_conn
+
+2. NAT
+static struct nf_hook_ops nf_nat_ipv4_ops[] __read_mostly = {
+	/* Before packet filtering, change destination */
+	{
+		.hook		= nf_nat_ipv4_in,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_PRE_ROUTING,
+		.priority	= NF_IP_PRI_NAT_DST,
+	},
+	/* After packet filtering, change source */
+	{
+		.hook		= nf_nat_ipv4_out,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_POST_ROUTING,
+		.priority	= NF_IP_PRI_NAT_SRC,
+	},
+	/* Before packet filtering, change destination */
+	{
+		.hook		= nf_nat_ipv4_local_fn,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_OUT,
+		.priority	= NF_IP_PRI_NAT_DST,
+	},
+	/* After packet filtering, change source */
+	{
+		.hook		= nf_nat_ipv4_fn,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_IN,
+		.priority	= NF_IP_PRI_NAT_SRC,
+	},
+};
+
+a.Dst NAT: 在路由和filter前
+1).对于外来的报文PRE_ROUTING
+2).对于本地外出报文LOCAL_OUT
+
+b.SRC NAT: 在路由和filter之后
+1).对于外出的报文POST_ROUTING
+2).对于进本地报文LOCAL_IN
+
+unsigned int
+nf_nat_ipv4_fn(const struct nf_hook_ops *ops,
+	       struct sk_buff *skb,
+	       const struct net_device *in,
+	       const struct net_device *out,
+	       int (*okfn)(struct sk_buff *))
+{
+	/*get hooks type (src/dst nat)*/
+	enum nf_nat_manip_type maniptype = HOOK2MANIP(ops->hooknum);
+	/*get ctinfo and nf_conn*/
+	struct nf_conn *ct = nf_ct_get(skb, &ctinfo);
+
+	if (!ct)
+		return NF_ACCEPT;
+
+	/* Don't try to NAT if this packet is not conntracked, 
+	   untracked can be set through iptable raw
+	*/
+	if (nf_ct_is_untracked(ct))
+		return NF_ACCEPT;
+
+	switch (ctinfo) {
+	case IP_CT_NEW:
+		/*the first packet or the orginal dirction packet and no relpy
+		  the first one should not be initialized and lookup the nat table
+		*/
+		if (!nf_nat_initialized(ct, maniptype)) {
+			unsigned int ret;
+
+			ret = nf_nat_rule_find(skb, ops->hooknum, in, out, ct);
+			if (ret != NF_ACCEPT)
+				return ret;
+		} else {
+			pr_debug("Already setup manip %s for ct %p\n",
+				 maniptype == NF_NAT_MANIP_SRC ? "SRC" : "DST",
+				 ct);
+		}
+		break;
+
+	default:
+		/* ESTABLISHED */
+		NF_CT_ASSERT(ctinfo == IP_CT_ESTABLISHED ||
+			     ctinfo == IP_CT_ESTABLISHED_REPLY);
+	}
+
+	return nf_nat_packet(ct, ctinfo, ops->hooknum, skb);	
+}
+
+对于第一个报文查找nat table,做nat替换。并且替换nf_conn反向hash tuple
+struct nf_nat_range {
+	unsigned int			flags;
+	union nf_inet_addr		min_addr;
+	union nf_inet_addr		max_addr;
+	union nf_conntrack_man_proto	min_proto;
+	union nf_conntrack_man_proto	max_proto;
+};
+nf_nat_rule_find->xt_snat/dnat_target_v1
+xt_snat_target_v1(struct sk_buff *skb, const struct xt_action_param *par)
+{
+	const struct nf_nat_range *range = par->targinfo;
+
+	ct = nf_ct_get(skb, &ctinfo);
+
+	return nf_nat_setup_info(ct, range, NF_NAT_MANIP_SRC);
+}
+
+static unsigned int
+xt_dnat_target_v1(struct sk_buff *skb, const struct xt_action_param *par)
+{
+	const struct nf_nat_range *range = par->targinfo;
+
+	ct = nf_ct_get(skb, &ctinfo);
+
+	return nf_nat_setup_info(ct, range, NF_NAT_MANIP_DST);
+}
+
+
+int
+nf_nat_setup_info(struct nf_conn *ct,
+		  const struct nf_nat_range *range,
+		  enum nf_nat_manip_type maniptype)
+{
+	/*主要将ct->tuplehash[IP_CT_DIR_REPLY].tuple换成rang里面的数据
+    	  dst nat换tuple src字段(reply报文做src nat)
+	  src nat换tuple dst字段(reply报文做dst nat)	
+	*/
+	nf_ct_invert_tuplepr(&curr_tuple,
+			     &ct->tuplehash[IP_CT_DIR_REPLY].tuple);
+
+	get_unique_tuple(&new_tuple, &curr_tuple, range, ct, maniptype);
+
+	if (!nf_ct_tuple_equal(&new_tuple, &curr_tuple)) {
+		struct nf_conntrack_tuple reply;
+
+		/* Alter conntrack table so will recognize replies. */
+		nf_ct_invert_tuplepr(&reply, &new_tuple);
+		nf_conntrack_alter_reply(ct, &reply);
+
+		/*set the nf_conn need src/dst nat*/
+		if (maniptype == NF_NAT_MANIP_SRC)
+			ct->status |= IPS_SRC_NAT;
+		else
+			ct->status |= IPS_DST_NAT;
+	}
+
+	/*at last init the nf_conn*/
+	if (maniptype == NF_NAT_MANIP_DST)
+		ct->status |= IPS_DST_NAT_DONE;
+	else
+		ct->status |= IPS_SRC_NAT_DONE;
+}
+
+
+最后在nf_nat_packet中替换报文
+nf_nat_packet(ct, ctinfo, ops->hooknum, skb)
+{
+	if (mtype == NF_NAT_MANIP_SRC)
+		statusbit = IPS_SRC_NAT;
+	else
+		statusbit = IPS_DST_NAT;
+
+	/* if the ct->status is SRC NAT, the reply one should did DST NAT */
+	/* if the ct->status is DST NAT, the reply one should did SRC NAT */
+	/* Invert if this is reply dir. */
+	if (dir == IP_CT_DIR_REPLY)
+		statusbit ^= IPS_NAT_MASK;
+
+	if (ct->status & statusbit) {
+		struct nf_conntrack_tuple target;
+
+		/* inverse the tuple of other direction. and replace the packet*/
+		nf_ct_invert_tuplepr(&target, &ct->tuplehash[!dir].tuple);
+
+		l3proto = __nf_nat_l3proto_find(target.src.l3num);
+		l4proto = __nf_nat_l4proto_find(target.src.l3num,
+						target.dst.protonum);
+		if (!l3proto->manip_pkt(skb, 0, l4proto, &target, mtype))
+			return NF_DROP;
+	}
+	return NF_ACCEPT;
+}
+
+
+3. IP conntrack confirm
+将第一个报文的hash tuple加入到全局hash表中
+1).对于外出的报文POST_ROUTING
+2).对于进本地报文LOCAL_IN
+	{
+		.hook		= ipv4_confirm,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_POST_ROUTING,
+		.priority	= NF_IP_PRI_CONNTRACK_CONFIRM,
+	},
+	{
+		.hook		= ipv4_confirm,
+		.owner		= THIS_MODULE,
+		.pf		= NFPROTO_IPV4,
+		.hooknum	= NF_INET_LOCAL_IN,
+		.priority	= NF_IP_PRI_CONNTRACK_CONFIRM,
+	}
+
+ipv4_confirm-->nf_conntrack_confirm
+{
+	/*usually the first packet is not confirmed*/
+	if (!nf_ct_is_confirmed(ct))
+			ret = __nf_conntrack_confirm(skb)
+}
+
+__nf_conntrack_confirm(skb)
+{
+	ct = nf_ct_get(skb, &ctinfo);
+
+	/*only the orignal dirction*/
+	if (CTINFO2DIR(ctinfo) != IP_CT_DIR_ORIGINAL)
+		return NF_ACCEPT;
+	do {
+		sequence = read_seqcount_begin(&net->ct.generation);
+		/* reuse the hash saved before */
+		hash = *(unsigned long *)&ct->tuplehash[IP_CT_DIR_REPLY].hnnode.pprev;
+		hash = hash_bucket(hash, net);
+		reply_hash = hash_conntrack(net, zone,
+					   &ct->tuplehash[IP_CT_DIR_REPLY].tuple);
+
+	} while (nf_conntrack_double_lock(net, hash, reply_hash, sequence))
+
+	/*insert the hash and reply hash tuple*/
+	__nf_conntrack_hash_insert(ct, hash, reply_hash);
+
+	/*confirm it*/
+	ct->status |= IPS_CONFIRMED;
+}

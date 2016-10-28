@@ -1,0 +1,220 @@
+1. 接收
+a. 初始化
+1). 创建SOCK_DGRAM socket
+2). bind multicast addr
+int inet_bind()
+{
+	/*设置inet_rcv_saddr为multicast address, inet_saddr为0*/
+	inet->inet_rcv_saddr = inet->inet_saddr = addr->sin_addr.s_addr;
+	if (chk_addr_ret == RTN_MULTICAST || chk_addr_ret == RTN_BROADCAST)
+		inet->inet_saddr = 0;  /* Use device */
+}
+
+3) IP_ADD_MEMBERSHIP
+/*将multicast address以及所绑定的dev(传递本地ip地址表示绑定该ip地址的dev)告诉给内核*/
+struct ip_mc_socklist {
+	struct ip_mc_socklist __rcu *next_rcu;
+	struct ip_mreqn		multi;
+	.....
+};
+
+struct ip_mc_list {
+	struct in_device	*interface;
+	__be32			multiaddr
+};
+
+int ip_mc_join_group()
+{
+	/*imr_ifindex或者imr_address找dev*/
+	in_dev = ip_mc_find_dev(net, imr);
+	
+	/*检查是否已经有相同的绑定到这个socket上, 一个socket可以加多个multicast组*/
+	err = -EADDRINUSE;
+	ifindex = imr->imr_ifindex;
+	for_each_pmc_rtnl(inet, i) {
+		if (i->multi.imr_multiaddr.s_addr == addr &&
+		    i->multi.imr_ifindex == ifindex)
+			goto done;
+		count++;
+	}
+
+	/*创建一个新的*/
+	iml = sock_kmalloc(sk, sizeof(*iml), GFP_KERNEL);
+	/*放到inet->mc_list上*/
+	memcpy(&iml->multi, imr, sizeof(*imr));
+	iml->next_rcu = inet->mc_list;
+	rcu_assign_pointer(inet->mc_list, iml);
+
+	/*multicast加入到in_dev->mc_list, 设备上的全局multicast list*/
+	/*创建ip_mc_list加入到in_dev->mac_list*/
+	ip_mc_inc_group(in_dev, addr);
+}
+
+b. 收报文
+1) route
+int ip_route_input_noref()
+{
+	if (ipv4_is_multicast(daddr)) {
+		struct in_device *in_dev = __in_dev_get_rcu(dev);
+		if (in_dev) {
+			/*查看in_dev->mc_list上是否有地址位daddr的multicast address*/
+			int our = ip_check_mc_rcu(in_dev, daddr, saddr,
+						  ip_hdr(skb)->protocol);
+			if (our) {
+				/*设置rth->dst.input = ip_local_deliver;*/
+				/*rt->rt_flags = RTCF_MULTICAST*/
+				int res = ip_route_input_mc(skb, daddr, saddr,
+							    tos, dev, our);
+			}
+		}
+	}	
+}
+
+2) socket
+int udp_rcv()
+{
+	if (rt->rt_flags & (RTCF_BROADCAST|RTCF_MULTICAST))
+			return __udp4_lib_mcast_deliver(net, skb, uh,
+					saddr, daddr, udptable);
+}
+
+
+struct sock *udp_v4_mcast_next()
+{
+	/*比较src port 以及 rcv_saddr*/
+	if (udp_sk(sk)->udp_port_hash != hnum) ||
+	 (inet->inet_rcv_saddr && inet->inet_rcv_saddr != loc_addr)
+		|| (sk->sk_bound_dev_if && sk->sk_bound_dev_if != dif))
+		return false;
+
+	/*查看sk->inet->mc_list上收否有这个multicast address
+	如果没有但是inet->mc_all(默认是开启的)被设置了也是允许接收的*/
+	/*
+	一个scoket可以bind到一个multicast addr, 不IP_ADD_MEMBER. 
+	但是有其他socket IP_ADD_MEMBER了这个multicast地址. 所以这个socket是
+	可以收到这个multicast报文的. 可以通过IP_MULTICAST_ALL设置inet->mc_all
+	*/
+	if (!ip_mc_sf_allow(sk, loc_addr, rmt_addr, dif))
+		return false;
+	return true;
+}
+
+/*查找所有udp sk->inet->mc_list*/
+int __udp4_lib_mcast_deliver()
+{
+	sk = sk_nulls_head(&hslot->head);
+	dif = skb->dev->ifindex;
+	
+	sk = udp_v4_mcast_next(net, sk, uh->dest, daddr, uh->source, saddr, dif);
+	while (sk) {
+		sk = udp_v4_mcast_next(net, sk_nulls_next(sk), uh->dest,
+				       daddr, uh->source, saddr, dif)
+	}
+
+	if (count) {
+		/*将skb 扔给各个sock的udp_queue_rcv_skb*/
+		flush_stack(stack, count, skb, count - 1)
+	}
+}
+
+2. 发送
+a. 初始化
+1) 创建SOCK_DGRAM socket
+发送multicast报文不需要去查找路由表,但是需要有效src ip或者发送dev
+2) bind 非ANY/multicast ip或者SO_BINDTODEVICE或者设置IP_MULTICAST_IF
+i. bind会给socket选取src ip
+ii. SO_BINDTODEVICE会给socket选取路由dev
+iii. IP_MULTICAST_IF(设置src ip 以及发送dev)可以在没bind情况下选取src ip, dev必须要和SO_BINDTODEVICE的一致
+{
+	case:IP_MULTICAST_IF:
+	{ 
+	err = -EINVAL;
+	if (sk->sk_bound_dev_if &&
+	    mreq.imr_ifindex != sk->sk_bound_dev_if)
+		break;
+
+	inet->mc_index = mreq.imr_ifindex;
+	inet->mc_addr  = mreq.imr_address.s_addr;
+	}
+}
+
+b. 发报文
+int udp_sendmsg()
+{
+	/*选择oif和addr*/	
+	ipc.addr = inet->saddr;
+	ipc.oif = sk->sk_bound_dev_if;	
+
+	if (ipv4_is_multicast(daddr)) {
+		if (!ipc.oif)
+			ipc.oif = inet->mc_index;
+		if (!saddr)
+			saddr = inet->mc_addr;
+	}
+	
+	/*根据选择的oif saddr去找路由*/
+	err = ip_route_output_flow(net, &rt, &fl, sk, 1);
+}
+
+
+struct rtable *ip_route_output_flow()
+{
+	if (fl4->saddr) {
+		/*发multicast报文 有src addr 如果oif为空 就选择saddr上的dev发送*/
+		if (fl4->flowi4_oif == 0 &&
+		    (ipv4_is_multicast(fl4->daddr) {
+			dev_out = __ip_dev_find(net, fl4->saddr, false);
+	
+			fl4->flowi4_oif = dev_out->ifindex;
+			goto make_route;
+		}
+	}
+
+	/*如果有oif*/
+	if (fl4->flowi4_oif) {
+		dev_out = dev_get_by_index_rcu(net, fl4->flowi4_oif);
+
+		/* RACE: Check return value of inet_select_addr instead. */
+		if (!(dev_out->flags & IFF_UP) || !__in_dev_get_rcu(dev_out)) {
+			rth = ERR_PTR(-ENETUNREACH);
+			goto out;
+		}
+		/*发送multicst报文 如果没有src addr就选择dev上的*/
+		if (ipv4_is_local_multicast(fl4->daddr)) {
+			if (!fl4->saddr)
+				fl4->saddr = inet_select_addr(dev_out, 0,
+							      RT_SCOPE_LINK);
+			goto make_route;
+		}	
+
+make_route:
+	/*设置rth->dst.output = ip_mc_output;*/
+	rth = __mkroute_output(&res, fl4, orig_oif, dev_out, flags);
+}
+
+int ip_mc_output(struct sock *sk, struct sk_buff *skb)
+{
+	struct net_device *dev = rt->dst.dev;
+	skb->dev = dev;
+	skb->protocol = htons(ETH_P_IP);
+
+	if (rt->rt_flags&RTCF_MULTICAST) {
+		/*如果inet->mc_loop开着(默认是开启的) 这个报文通过loop发回本地但是 dev不改, 本地socket可以IP_ADD_MEMBER接收这个报文*/
+		/*可以通过IP_MULTICAST_LOOP设置*/
+		if (sk_mc_loop(sk))
+		{
+			struct sk_buff *newskb = skb_clone(skb, GFP_ATOMIC);
+			if (newskb)
+				NF_HOOK(NFPROTO_IPV4, NF_INET_POST_ROUTING,
+					newskb, NULL, newskb->dev,
+					dev_loopback_xmit);
+		}
+	}
+	
+	/*最后发送出ip层*/
+	return NF_HOOK_COND(NFPROTO_IPV4, NF_INET_POST_ROUTING, skb, NULL,
+			    skb->dev, ip_finish_output,
+			    !(IPCB(skb)->flags & IPSKB_REROUTED));
+}
+
+

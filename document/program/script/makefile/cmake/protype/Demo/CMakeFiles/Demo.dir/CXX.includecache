@@ -1,0 +1,14 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/cr7/tmp/protype/Demo/demo.cxx
+hello.h
+/home/cr7/tmp/protype/Demo/hello.h
+
+Hello/hello.h
+

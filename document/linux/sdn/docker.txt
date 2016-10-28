@@ -1,0 +1,146 @@
+1. 安装
+a. install
+[ -e /usr/lib/apt/methods/https ] || {
+  apt-get update
+  apt-get install apt-transport-https
+}
+# apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 36A1D7869245C8950F966E92D8576A8BA88D21E9
+# sh -c "echo deb https://get.docker.io/ubuntu docker main\
+> /etc/apt/sources.list.d/docker.list"
+# apt-get update
+# apt-get instal  lxc-docker
+
+b. 启动
+服务启动后会有docker的deamon程序,程序启动参数配置可在/etc/default/docker里设置
+root      5199     1  0 17:31 ?        00:00:00 /usr/bin/docker -d --dns 8.8.8.8 --dns 8.8.4.4
+# vim /etc/default/docker
+DOCKER_OPTS="--dns 8.8.8.8 --dns 8.8.4.4"
+
+c. 服务
+安装启动后系统会有docker0的网桥, 所有虚拟机连接在该桥上
+# ifconfig docker0 
+docker0   Link encap:Ethernet  HWaddr 56:84:7a:fe:97:99  
+          inet addr:172.17.42.1  Bcast:0.0.0.0  Mask:255.255.0.0
+          UP BROADCAST MULTICAST  MTU:1500  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0 
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+为所有虚拟机做src nat
+# iptables -t nat -L POSTROUTING -v
+Chain POSTROUTING (policy ACCEPT 89 packets, 5675 bytes)
+ pkts bytes target     prot opt in     out     source               destination         
+    5   550 MASQUERADE  all  --  *      *       172.17.0.0/16       !172.17.0.0/16  
+
+
+2. 使用
+a. 命令会去上游拉去最新ubuntu镜像
+# docker run -i -t ubuntu /bin/bash
+root@d356185d0828:/# ifconfig eth0
+eth0      Link encap:Ethernet  HWaddr 82:d4:62:8a:e2:48  
+          inet addr:172.17.0.2  Bcast:0.0.0.0  Mask:255.255.0.0
+          inet6 addr: fe80::80d4:62ff:fe8a:e248/64 Scope:Link
+          UP BROADCAST RUNNING  MTU:1500  Metric:1
+          RX packets:39 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:8 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000 
+          RX bytes:6463 (6.4 KB)  TX bytes:648 (648.0 B)
+
+在host中会有一个vethx的device作为container的peer端, 并且连接到docker0上
+exit 后会自动stop 该container
+root@d356185d0828:/#  exit
+
+b. 查看所起虚拟机
+# docker ps
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
+d356185d0828        ubuntu:latest       /bin/bash           3 minutes ago       Up 3 minutes                            compassionate_albattani
+
+
+3. docker自管理
+a. wsh: container启动程序, 使用unix socket连接进container
+# git clone https://github.com/chenyf/wsh
+# cd wsh
+# mkdir /share/lxc1
+# cp wsh/wshd /share/lxc1
+启动一个container作为deamon, 设置无网络, dns设置为10.0.0.1
+# docker run -d -v /share/lxc1:/share --privileged=true --net=none --dns=10.0.0.1 -t ubuntu /share/wshd --run /share
+45f38c798fe7ff61082646f63c17bf0e2a8e76b4e02fb9cf71db3970ca64534f
+# ./wsh --socket /share/lxc1/wshd.sock
+root@45f38c798fe7:~# ifconfig
+lo        Link encap:Local Loopback  
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          inet6 addr: ::1/128 Scope:Host
+          UP LOOPBACK RUNNING  MTU:1500  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0 
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+
+b. pipework: container的网络管理程序
+创建一个br0, 并创建veth设备对. 一个在host连接到br0 10.0.0.1上，一个在container里面作为eth0 10.0.0.7. container时间设置默认网关为10.0.0.1
+# pipework br0 -i eth0 10.0.0.7/24@10.0.0.1
+
+root@45f38c798fe7:~# ifconfig eth0
+eth0      Link encap:Ethernet  HWaddr 82:d4:62:8a:e2:49
+          inet addr:10.0.0.7  Bcast:0.0.0.0  Mask:255.255.255.0
+          inet6 addr: fe80::80d4:62ff:fe8a:e248/64 Scope:Link
+          UP BROADCAST RUNNING  MTU:1500  Metric:1
+          RX packets:39 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:8 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:6463 (6.4 KB)  TX bytes:648 (648.0 B)
+
+这时候只需要添加src nat规则，虚拟机就能上网啦
+
+container必须在host进行stop才能停止
+# docker ps
+CONTAINER ID        IMAGE               COMMAND                CREATED             STATUS              PORTS               NAMES
+45f38c798fe7        ubuntu:latest       /share/wshd --run /s   8 minutes ago       Up 8 minutes                            kickass_franklin    
+# docker stop  45f38c798fe7
+45f38c798fe7
+
+
+4. 网络高级管理
+设置docker deamon启动参数为无网络(没有docker0), 重启服务
+# vim /etc/default/docker
+DOCKER_OPTS="-b=none"  #non network
+# service docker restart
+
+启动container
+# mkdir /share/lxc2
+# cp wsh/wshd /share/lxc2
+# docker run -d -v /share/lxc2:/share --privileged=true --dns=10.0.0.1 -t ubuntu /share/wshd --run /share
+b32a541f4c183469c6469586551387088e90a6d03940a2b1676d0d1945997c06
+# ./wsh --socket /share/lxc2/wshd.sock
+
+root@b32a541f4c18:~# ifconfig
+lo        Link encap:Local Loopback  
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          inet6 addr: ::1/128 Scope:Host
+          UP LOOPBACK RUNNING  MTU:1500  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0 
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+
+# docker inspect -f '{{.State.Pid}}'  b32a541f4c18
+5685
+创建动态 netns
+# ln -s /proc/5685/ns/net /var/run/netns/container0
+自添加veth设置
+# ip link add vnet0 type veth peer name eth0 netns container0
+# rm /var/run/netns/container0
+
+root@b32a541f4c18:~# ifconfig eth0
+eth0      Link encap:Ethernet  HWaddr 82:d4:62:8a:e2:49
+          UP BROADCAST RUNNING  MTU:1500  Metric:1
+          RX packets:39 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:8 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000
+          RX bytes:6463 (6.4 KB)  TX bytes:648 (648.0 B)
+
+
+

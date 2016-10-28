@@ -1,0 +1,48 @@
+1. string
+使用string做域名匹配
+iptables -t raw -N DOM-IP-HTTP
+iptables -t raw -N DOM-IP-HTTP-A
+iptables -t raw -I PREROUTING -d 14.18.203.3 -p tcp -m tcp --dport 80 -j DOM-IP-HTTP
+//http
+iptables -t raw -A DOM-IP-HTTP -m string --hex-string "|202f20485454502f312e300d0a|" --algo bm --from 40 --to 1000 -j DOM-IP-HTTP-A
+/http1.1
+iptables -t raw -A DOM-IP-HTTP -m string --hex-string "|202f20485454502f312e310d0a|" --algo bm --from 40 --to 1000 -j DOM-IP-HTTP-A
+iptables -t raw -A DOM-IP-HTTP-A -m string --string “test.com” --algo bm --from 40 --to 1000 -j DROP
+
+2. recent
+-A UCD-IP-C10.10.184.56-O -m recent --rcheck --seconds 10 --name S10.10.184.56 --rsource -j RETURN 
+-A UCD-IP-C10.10.184.56-O -m recent --set --name S10.10.184.56 --rsource -j LOG --log-prefix "FLOODOUT " --log-level 7 
+--rcheck --seconds --hitcount
+--update --seconds --hitcount
+--set 
+--remove
+
+3. hashlimit
+iptables -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW -m hashlimit --hashlimit-name SuperUser --hashlimit-above 5/minute --hashlimit-mode srcip -j DROP
+
+4. limit
+-A UCD-IP-C172.24.1.11-O -m conntrack --ctstate NEW -m limit --limit  5000/sec --limit-burst  5000 -j RETURN
+-A UCD-IP-C172.24.1.11-O -j DROP
+
+5. ipset
+-A UCD-IP-C10.10.184.56-22A -j SET --add-set BF-10.10.184.56-22 src 
+-A UCD-IP-C10.10.184.56-22B -p tcp -m set --match-set BF-10.10.184.56-22 src -j REJECT --reject-with tcp-reset
+
+6. TCPMSS
+[!] --tcp-flags mask comp
+              Match when the TCP flags are as specified.  The first argument mask is the flags which we should  examine,  written
+              as  a  comma-separated  list,  and  the  second argument comp is a comma-separated list of flags which must be set.
+              Flags are: SYN ACK FIN RST URG PSH ALL NONE.  Hence the command
+               iptables -A FORWARD -p tcp --tcp-flags SYN,ACK,FIN,RST SYN
+              will only match packets with the SYN flag set, and the ACK, FIN and RST flags unset.
+iptables -t mangle -A FORWARD -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j TCPMSS --set-mss 1400
+iptables -t mangle -A FORWARD -p tcp -m tcp --tcp-flags FIN,RST,SYN,ACK SYN,ACK -j TCPMSS --set-mss 1400
+
+7. rateest
+-A UCD-IP-C172.24.1.11-R -j RATEEST --rateest-name 172.24.1.11-RATE --rateest-interval 500ms --rateest-ewma 1s
+-A UCD-IP-C172.24.1.11-R -m recent --rcheck --seconds 10 --name R172.24.1.11 --rsource -j RETURN
+-A UCD-IP-C172.24.1.11-R -m rateest --rateest 172.24.1.11-RATE --rateest-gt --rateest-pps 100000  -m recent --set --name R172.24.1.11 --rsource -j LOG --log-prefix "DDos_PPS " --log-level 4
+-A UCD-IP-C172.24.1.11-R -m rateest --rateest 172.24.1.11-RATE --rateest-gt --rateest-bps 800mbit -m recent --set --name R172.24.1.11 --rsource -j LOG --log-prefix "DDos_BPS " --log-level 4
+
+
+

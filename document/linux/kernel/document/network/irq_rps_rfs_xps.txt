@@ -1,0 +1,268 @@
+1. interrupt affinity
+cat /proc/interrupt
+33:    2311184          0          0          0          0          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-0
+34:    1069064          0          0          0          0          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-1
+35:     842981          0          0          0          0          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-2
+36:     876959          0          0          0          0          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-3
+37:     811865          0          0          0          0          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-4
+38:     832291          0          0          0          0          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-5
+39:     836879          0          0          0          0          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-6
+40:     817637          0          0          0          0          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-7
+
+
+echo 1 >  /proc/irq/33/smp_affinity
+echo 2 >  /proc/irq/34/smp_affinity
+echo 4 >  /proc/irq/35/smp_affinity
+echo 8 >  /proc/irq/36/smp_affinity
+echo 10 >  /proc/irq/37/smp_affinity
+echo 20 >  /proc/irq/38/smp_affinity
+echo 40 >  /proc/irq/39/smp_affinity
+echo 90 >  /proc/irq/40/smp_affinity
+
+cat /proc/interrupt
+ 33:    2311301          0          0          0          0          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-0
+ 34:    1069064        218          0          0          0          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-1
+ 35:     842981          0        202          0          0          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-2
+ 36:     876959          0          0        190          0          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-3
+ 37:     811865          0          0          0        184          0          0          0  IR-PCI-MSI-edge      eth0-TxRx-4
+ 38:     832291          0          0          0          0        147          0          0  IR-PCI-MSI-edge      eth0-TxRx-5
+ 39:     836879          0          0          0          0          0        144          0  IR-PCI-MSI-edge      eth0-TxRx-6
+ 40:     817637          0          0          0          0          0          0        140  IR-PCI-MSI-edge      eth0-TxRx-7
+
+2. rps: 将软中断loadbalance到指定的cpu
+默认通常软中断分配给当前cpu 就是产生中断的cpu上，可以通过rps将从某个queue(在多队列网卡中通常一个queue就一有一个中断号)收到的报文也定向到指定cpus上做软中断，对于napi模式的驱动，原来收到中断的cpu总会收到软中断，因为poll是在当前cpu的软中断上进行的。
+
+eth0上queue0上软中断定向到1和2cpus
+echo 3 > /sys/class/net/eth0/queues/rx-0/rps_cpus
+
+例子: 2 cpus, 1 queue
+cat /proc/irq/50/smp_affinity
+1
+
+
+echo 1 > /sys/class/net/eth0/queues/rx-0/rps_cpus 
+cat /proc/softirqs  | grep NET_RX
+      NET_RX:      20688        767
+cat /proc/softirqs  | grep NET_RX
+      NET_RX:      20670        767
+cat /proc/softirqs  | grep NET_RX
+      NET_RX:      20681        767
+
+
+echo 2 > /sys/class/net/eth0/queues/rx-0/rps_cpus 
+cat /proc/softirqs  | grep NET_RX
+      NET_RX:      23634        900
+cat /proc/softirqs  | grep NET_RX
+      NET_RX:      23655        909
+cat /proc/softirqs  | grep NET_RX
+      NET_RX:      23677        918
+
+
+echo 3 > /sys/class/net/eth0/queues/rx-0/rps_cpus 
+cat /proc/softirqs  | grep NET_RX
+      NET_RX:      33275       1726
+cat /proc/softirqs  | grep NET_RX
+      NET_RX:      33282       1728
+cat /proc/softirqs  | grep NET_RX
+      NET_RX:      33427       1764
+
+3. rps源码分析
+开启CONFIG_RPS, 不管是napi模式(netif_receive_skb)驱动还是非napi模式(netif_rx)的驱动都会进入rps调度. 
+对于非napi模式的驱动，如果开启rps，就把报文加入到指定的cpu的软中断backlog上， 否则将报文加入到当前cpu的软中断backlog上
+int netif_rx()
+{
+#ifdef CONFIG_RPS
+	cpu = get_rps_cpu(skb->dev, skb, &rflow);
+	if (cpu < 0)
+		cpu = smp_processor_id();
+
+	ret = enqueue_to_backlog(skb, cpu, &rflow->last_qtail);
+	return ret;
+#endif
+	{
+		ret = enqueue_to_backlog(skb, get_cpu(), &qtail);
+	}
+	return ret
+}
+
+对于napi模式的驱动首先poll在当前cpu的软中断，如果开启了rps，并且根据rps找到指定cpu，会将报文重新注入指定cpu的backlog进行处理, 否则就直接调入协议栈处理报文。 
+int netif_receive_skb()
+{
+#ifdef CONFIG_RPS
+	cpu = get_rps_cpu(skb->dev, skb, &rflow);
+	if ( cpu >= 0) {
+		ret = enqueue_to_backlog(skb, cpu, &rflow->last_qtail);
+		return ret;
+	}
+#endif
+	return __netif_receive_skb(skb);
+}
+
+
+4. xps
+int get_rps_cpu(struct net_device *dev, struct sk_buff *skb,
+		       struct rps_dev_flow **rflowp)
+{
+	int cpu = -1;
+
+	/*queue number在驱动通过skb_record_rx_queue设置*/
+	if (skb_rx_queue_recorded(skb)) {
+		u16 index = skb_get_rx_queue(skb);
+		rxqueue = dev->_rx + index;
+	} else
+		rxqueue = dev->_rx;
+
+	/*获取queue上rps表: /sys/class/net/eth0/queues/rx-0/rps_cpus的值*/
+	map = rcu_dereference(rxqueue->rps_map);
+	if (map) {
+		/*就一个mask值(一个cpu), 并且没有设置rfs, 如果这个cpu online就选择它*/
+		if (map->len == 1 &&
+		    !rcu_access_pointer(rxqueue->rps_flow_table)) {
+			tcpu = map->cpus[0];
+			if (cpu_online(tcpu))
+				cpu = tcpu;
+			goto done;
+		}
+	} else if (!rcu_access_pointer(rxqueue->rps_flow_table)) {
+		/*没有rps值也没有rfs*/
+		goto done;
+	}
+
+	/*获得skb hash值(L4 hash)， 如果网卡硬件支持, 就直接获取skb->hash, 否则就软件算*/
+	hash = skb_get_hash(skb);
+	if (!hash)
+		goto done;
+	/**
+	 ******
+	 ******
+	 rfs handle
+	 ******
+	 ******
+	**/
+
+	/*有多个指定cpu的时候根据hash来计算*/
+	if (map) {
+		tcpu = map->cpus[((u64) hash * map->len) >> 32];
+
+		if (cpu_online(tcpu)) {
+			cpu = tcpu;
+			goto done;
+		}
+	}
+}
+
+
+4. rfs:为了克服rps的不足让同一flow走到相同cpu的软中断上去
+echo 4096 > /sys/class/net/eth0/queues/rx-0/rps_flow_cnt 
+echo 4096 > /sys/class/net/eth0/queues/rx-1/rps_flow_cnt 
+
+echo 4096*num_rxqueue > /proc/sys/net/core/rps_sock_flow_entries
+
+代码分析
+rfs handle:
+	/*获取queue和系统sock的flow table， 必须都要存在*/
+	flow_table = rcu_dereference(rxqueue->rps_flow_table);
+	sock_flow_table = rcu_dereference(rps_sock_flow_table);
+	if (flow_table && sock_flow_table) {
+		u16 next_cpu;
+		struct rps_dev_flow *rflow;
+		/*根据hash找到rfs table相应的flow指定的cpu*/
+		rflow = &flow_table->flows[hash & flow_table->mask];
+		tcpu = rflow->cpu;
+
+		/*根据hash找到sock table相应的flow指定的cpu*/
+		/*sock table的设置实在tcp/udp的connect/accept， sendmsg/rcvmsg, poll里面通过sock_rps_record_flow更新设置的*/
+		next_cpu = sock_flow_table->ents[hash & sock_flow_table->mask];
+
+		/*如果sock表中很rfs表中cpu不通， rps上的cpu没有或者offline，或者上次处理的同一flow在该软中断上已经处理完
+		 就deliver到新的cpu软中断上，并设置更新rps table的flow cpu
+		*/
+		if (unlikely(tcpu != next_cpu) &&
+		    (tcpu == RPS_NO_CPU || !cpu_online(tcpu) ||
+		     ((int)(per_cpu(softnet_data, tcpu).input_queue_head -
+		      rflow->last_qtail)) >= 0)) {
+			tcpu = next_cpu;
+			rflow = set_rps_cpu(dev, skb, rflow, next_cpu);
+		}
+
+		if (tcpu != RPS_NO_CPU && cpu_online(tcpu)) {
+			*rflowp = rflow;
+			cpu = tcpu;
+			goto done;
+		}
+	}
+
+
+5. xps:把cpu n上的报文通过指定queue发送 
+cat /sys/class/net/eth0/queues/tx-0/xps_cpus
+
+int dev_queue_xmit--->netdev_pick_tx
+{
+	if (dev->real_num_tx_queues != 1) {
+		const struct net_device_ops *ops = dev->netdev_ops;
+		if (ops->ndo_select_queue)
+			/*网卡硬件支持选择queue， 没选中调用__netdev_pick_tx*/
+			queue_index = ops->ndo_select_queue(dev, skb, accel_priv,
+							    __netdev_pick_tx);
+		else
+			queue_index = __netdev_pick_tx(dev, skb);
+
+	}
+
+	skb_set_queue_mapping(skb, queue_index);
+	return netdev_get_tx_queue(dev, queue_index);
+}
+
+int __netdev_pick_tx()
+{
+	/*根据sk->sk_tx_queue_mapping选择*/
+	int queue_index = sk_tx_queue_get(sk);
+
+	if (queue_index < 0 || queue_index >= dev->real_num_tx_queues) {
+		/*没选中 跟绝xps选择*/
+		int new_index = get_xps_queue(dev, skb);
+		/*最后根据hash选择*/
+		if (new_index < 0)
+			new_index = skb_tx_hash(dev, skb);
+
+		if (queue_index != new_index && sk &&)
+			/*设置sk->sk_tx_queue_mapping*/
+			sk_tx_queue_set(sk, new_index);
+
+		queue_index = new_index;
+	}
+
+	return queue_index;	
+}
+
+
+static inline int get_xps_queue(struct net_device *dev, struct sk_buff *skb)
+{
+#ifdef CONFIG_XP
+	/*获取总的maps*/
+	dev_maps = rcu_dereference(dev->xps_maps);
+	if (dev_maps) {
+		map = rcu_dereference(
+		/*获取当前cpu的maps*/
+		    dev_maps->cpu_map[raw_smp_processor_id()]);
+		if (map) {
+			/*只有一个queue值， 就选择该queue*/
+			if (map->len == 1)
+				queue_index = map->queues[0];
+		else {
+			if (skb->sk && skb->sk->sk_hash)
+				hash = skb->sk->sk_hash;
+			else
+				hash = (__force u16) skb->protocol ^
+					    skb->hash;
+			/*根据hash选择queue*/	
+			queue_index = map->queues[
+				    ((u64)hash * map->len) >> 32];
+		}
+	}
+	
+	return queue_index;
+#else
+	return -1;
+#endif
+}

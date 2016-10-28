@@ -1,0 +1,42 @@
+Keepalived is a routing software written in C. The main goal of this project is to provide simple and robust facilities for loadbalancing and high-availability to Linux system and Linux based infrastructures. 
+
+1. virtual ip migration
+slave:
+# apt-get install keepalived
+# vim /etc/keepalived/keepalived.conf
+vrrp_instance VI_1 {
+    state BACKUP
+    #interface: which interface sends the multicast message
+    interface eth2 # gretap1 / eth0
+    virtual_router_id 51
+    priority 90
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass 1111
+    }
+    virtual_ipaddress {
+        10.9.13.23 dev eth0 # the virtual ip sets on eth0
+    }
+}
+# service keepalive start
+
+master:
+# vim /etc/keepalived/keepalived.conf
+vrrp_instance VI_1 {
+    state MASTER
+    interface eth2 # gretap1/ eth0
+    virtual_router_id 51
+    priority 100 # bigger than slave one
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass 1111
+    }
+    virtual_ipaddress {
+        10.9.13.23 dev eth0
+    }
+}
+# service keepalive start
+
+2. lvs

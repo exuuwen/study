@@ -1,0 +1,33 @@
+problem: 
+local network environment
+eth0:
+192.168.60.7/24
+default route: 
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         192.168.60.1     0.0.0.0         UG    0      0        0  eth0 
+So local host can access the internet through eth0 via gateway 192.168.60.1
+
+But when I add some bridge operations as follow, it will fail to access the internet
+# brctl addbr br0
+# ifconfig br0 192.168.60.10/24 up
+# brctl addif br0 eth0
+
+why:
+ARP fail
+Address                  HWtype  HWaddress           Flags Mask            Iface
+192.168.0.1              ether    (incomplete)          C                    eth0
+
+Tcpdump can capture the arp response from 192.168.0.3, but kernel don't update the arp table
+a. skb->dev is changed to br0 in br_handle_frame(skb->dev->rx_handler)
+b. arp_rcv: update the arp_tlb entry with dev is br0, but the ordinary one is eth0. 
+So the update fails.
+
+
+resolution:
+# ip route add default via 192.160.60.1/24 dev br0
+# arp -n
+Address                  HWtype  HWaddress           Flags Mask            Iface
+192.168.0.1              ether    X:X:X:X:X:X           C                   br0
+
+
+

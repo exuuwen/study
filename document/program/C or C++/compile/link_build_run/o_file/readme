@@ -1,0 +1,191 @@
+cr7@cr7-virtual-machine:~/pro/link_build/o_file$ readelf -h test.o 
+ELF Header:
+  Magic:   7f 45 4c 46 01 01 01 00 00 00 00 00 00 00 00 00 
+  Class:                             ELF32
+  Data:                              2's complement, little endian
+  Version:                           1 (current)
+  OS/ABI:                            UNIX - System V
+  ABI Version:                       0
+  Type:                              REL (Relocatable file)
+  Machine:                           Intel 80386
+  Version:                           0x1
+  Entry point address:               0x0
+  Start of program headers:          0 (bytes into file)
+  Start of section headers:          256 (bytes into file)
+  Flags:                             0x0
+  Size of this header:               52 (bytes)
+  Size of program headers:           0 (bytes)
+  Number of program headers:         0
+  Size of section headers:           40 (bytes)
+  Number of section headers:         11
+  Section header string table index: 8
+
+
+
+
+
+cr7@cr7-virtual-machine:~/pro/link_build/o_file$ readelf -S test.o 
+There are 11 section headers, starting at offset 0x100:
+
+Section Headers:
+  [Nr] Name              Type            Addr     Off    Size   ES Flg Lk Inf Al
+  [ 0]                   NULL            00000000 000000 000000 00      0   0  0
+  [ 1] .text             PROGBITS        00000000 000034 00003f 00  AX  0   0  4
+  [ 2] .rel.text         REL             00000000 000410 000018 08      9   1  4
+  [ 3] .data             PROGBITS        00000000 000074 000008 00  WA  0   0  4
+  [ 4] .bss              NOBITS          00000000 00007c 000004 00  WA  0   0  4
+  [ 5] .rodata           PROGBITS        00000000 00007c 000004 00   A  0   0  1
+  [ 6] .comment          PROGBITS        00000000 000080 00002c 01  MS  0   0  1
+  [ 7] .note.GNU-stack   PROGBITS        00000000 0000ac 000000 00      0   0  1
+  [ 8] .shstrtab         STRTAB          00000000 0000ac 000051 00      0   0  1
+  [ 9] .symtab           SYMTAB          00000000 0002b8 0000f0 10     10  10  4
+  [10] .strtab           STRTAB          00000000 0003a8 000067 00      0   0  1
+Key to Flags:
+  W (write), A (alloc), X (execute), M (merge), S (strings)
+  I (info), L (link order), G (group), T (TLS), E (exclude), x (unknown)
+  O (extra OS processing required) o (OS specific), p (processor specific)
+
+
+
+
+
+
+
+cr7@cr7-virtual-machine:~/pro/link_build/o_file$ readelf -s test.o 
+
+Symbol table '.symtab' contains 15 entries:
+   Num:    Value  Size Type    Bind   Vis      Ndx Name
+     0: 00000000     0 NOTYPE  LOCAL  DEFAULT  UND 
+     1: 00000000     0 FILE    LOCAL  DEFAULT  ABS test.c
+     2: 00000000     0 SECTION LOCAL  DEFAULT    1 
+     3: 00000000     0 SECTION LOCAL  DEFAULT    3 
+     4: 00000000     0 SECTION LOCAL  DEFAULT    4 
+     5: 00000000     0 SECTION LOCAL  DEFAULT    5 
+     6: 00000000     4 OBJECT  LOCAL  DEFAULT    4 static_uninit_var.1255
+     7: 00000004     4 OBJECT  LOCAL  DEFAULT    3 static_init_var.1254
+     8: 00000000     0 SECTION LOCAL  DEFAULT    7 
+     9: 00000000     0 SECTION LOCAL  DEFAULT    6 
+
+
+
+
+
+   
+
+
+cr7@cr7-virtual-machine:~/pro/link_build/o_file$  objdump -s -d -x  test.o
+
+test.o:     file format elf32-i386
+test.o
+architecture: i386, flags 0x00000011:
+HAS_RELOC, HAS_SYMS
+start address 0x00000000
+
+Sections:
+Idx Name          Size      VMA       LMA       File off  Algn
+  0 .text         0000003f  00000000  00000000  00000034  2**2
+                  CONTENTS, ALLOC, LOAD, RELOC, READONLY, CODE
+  1 .data         00000008  00000000  00000000  00000074  2**2
+                  CONTENTS, ALLOC, LOAD, DATA
+  2 .bss          00000004  00000000  00000000  0000007c  2**2
+                  ALLOC
+  3 .rodata       00000004  00000000  00000000  0000007c  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+  4 .comment      0000002c  00000000  00000000  00000080  2**0
+                  CONTENTS, READONLY
+  5 .note.GNU-stack 00000000  00000000  00000000  000000ac  2**0
+                  CONTENTS, READONLY
+SYMBOL TABLE:
+00000000 l    df *ABS*	00000000 test.c
+00000000 l    d  .text	00000000 .text
+00000000 l    d  .data	00000000 .data
+00000000 l    d  .bss	00000000 .bss
+00000000 l    d  .rodata	00000000 .rodata
+00000000 l     O .bss	00000004 static_uninit_var.1255
+00000004 l     O .data	00000004 static_init_var.1254
+00000000 l    d  .note.GNU-stack	00000000 .note.GNU-stack
+00000000 l    d  .comment	00000000 .comment
+00000000 g     O .data	00000004 global_init_var
+00000004       O *COM*	00000004 global_uninit_var
+00000000 g     F .text	0000001b func
+00000000         *UND*	00000000 printf
+0000001b g     F .text	00000024 main
+
+
+Contents of section .text:
+ 0000 5589e583 ec188b45 08894424 04c70424  U......E..D$...$
+ 0010 00000000 e8fcffff ffc9c355 89e583e4  ...........U....
+ 0020 f083ec20 c744241c 02000000 8b44241c  ... .D$......D$.
+ 0030 890424e8 fcffffff b8000000 00c9c3    ..$............ 
+Contents of section .data:
+ 0000 01000000 07000000                    ........        
+Contents of section .rodata:
+ 0000 25640a00                             %d..            
+Contents of section .comment:
+ 0000 00474343 3a202855 62756e74 752f4c69  .GCC: (Ubuntu/Li
+ 0010 6e61726f 20342e34 2e342d31 34756275  naro 4.4.4-14ubu
+ 0020 6e747535 2920342e 342e3500           ntu5) 4.4.5.    
+
+Disassembly of section .text:
+
+00000000 <func>:
+   0:	55                   	push   %ebp
+   1:	89 e5                	mov    %esp,%ebp
+   3:	83 ec 18             	sub    $0x18,%esp
+   6:	8b 45 08             	mov    0x8(%ebp),%eax
+   9:	89 44 24 04          	mov    %eax,0x4(%esp)
+   d:	c7 04 24 00 00 00 00 	movl   $0x0,(%esp)
+			10: R_386_32	.rodata
+  14:	e8 fc ff ff ff       	call   15 <func+0x15>
+			15: R_386_PC32	printf
+  19:	c9                   	leave  
+  1a:	c3                   	ret    
+
+0000001b <main>:
+  1b:	55                   	push   %ebp
+  1c:	89 e5                	mov    %esp,%ebp
+  1e:	83 e4 f0             	and    $0xfffffff0,%esp
+  21:	83 ec 20             	sub    $0x20,%esp
+  24:	c7 44 24 1c 02 00 00 	movl   $0x2,0x1c(%esp)
+  2b:	00 
+  2c:	8b 44 24 1c          	mov    0x1c(%esp),%eax
+  30:	89 04 24             	mov    %eax,(%esp)
+  33:	e8 fc ff ff ff       	call   34 <main+0x19>
+			34: R_386_PC32	func
+  38:	b8 00 00 00 00       	mov    $0x0,%eax
+  3d:	c9                   	leave  
+  3e:	c3                   	ret    
+
+
+
+
+
+cr7@cr7-virtual-machine:~/pro/link_build/o_file$ objdump -r test.o
+
+test.o:     file format elf32-i386
+
+RELOCATION RECORDS FOR [.text]:
+OFFSET   TYPE              VALUE 
+00000010 R_386_32          .rodata
+00000015 R_386_PC32        printf
+00000034 R_386_PC32        func
+
+
+
+
+cr7@cr7-virtual-machine:~/pro/link_build/o_file$ nm test.o 
+00000000 T func
+00000000 D global_init_var
+00000004 C global_uninit_var
+0000001b T main
+         U printf
+00000004 d static_init_var.1254
+00000000 b static_uninit_var.1255
+
+
+
+
+
+ 
+
+

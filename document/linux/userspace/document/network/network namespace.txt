@@ -1,0 +1,75 @@
+Using clone to create a new network space with CLONE_NEWNET. The new process and all the descendant processes are in the new network space. The new enviorment only has 
+
+the lo device. 
+child_pid = clone(childFunc, child_stack + STACK_SIZE, CLONE_NEWNET | SIGCHLD, NULL);
+
+But how to communcate with the host network space in the new one.
+
+1. L3 communication
+
+eth0 192.168.130.7/24
+gw: 192.168.130.2/24
+
+a. enable the ip forward and arp_proxy in the host 
+# echo 1 > /proc/sys/net/ipv4/ip_forward
+# echo 1 > /proc/sys/net/ipv4/conf/all/proxy_arp
+or echo 1 > /proc/sys/net/ipv4/conf/eth0/proxy_arp
+or arp -sD 10.0.0.10  eth0 pub
+
+b. create a veth in the host space(father process) and assign the peer one to the new network space with the child_pid
+system("ip link add name veth0 type veth peer name eth0 setns child_pid");
+
+c. enable and up the veth1 with 10.0.0.7/24 in the host spcae(father process)
+system("ifconfig veth1 10.0.0.7/24 up");
+
+d. enable and up the eth0 with 10.0.0.10/24 in the new spcae(child process)
+system("ifconfig eth0 10.0.0.10/24 up");
+
+e. add default route in the new space(child process)
+system("ip route add default via 10.0.0.7 dev eth0");
+
+f. enable sshd in the new space(child process)
+system("/usr/sbin/sshd");
+
+finally you can login in the new network space and communicate with the host and outside.
+ssh -X 10.0.0.10
+In this case the new network space communicate with host through L3 switch.
+The new network space can communicate with outside(internet) through the host(router).
+
+
+2. L2 communication
+
+a. enable the ip forward and arp_proxy in the host and create bridge on host
+eth0 192.168.130.7/24
+gw: 192.168.130.2/24
+
+# brctl addbr br0
+# ifconfig br0 192.168.130.111/24 up
+# brctl addif br0 eth0
+# ip route add 192.168.130.2 dev br0
+# ip route add default via 192.168.130.2 dev br0
+
+
+b. create a veth in the host space(father process) and assign the peer one to the new network space with the child_pid
+system("ip link add name veth0 type veth peer name eth0 setns child_pid");
+
+c. enable and up the veth1 in the host spcae(father process) and assign it to br0
+system("ifconfig veth1 up");
+system("brctl addif br0 veth1");
+
+d. enable and up the eth0 with 192.168.130.10/24 in the new spcae(child process)
+system("ifconfig eth0 192.168.130.10/24 up");
+
+e. add link route in the new space(child process)
+system("ip route add 192.168.130.2 dev eth0");
+
+f. add default route in the new space(child process)
+system("ip route add default via 192.168.130.2 dev eth0");
+
+g. enable sshd in the new space(child process)
+system("/usr/sbin/sshd");
+
+finally you can login in the new network space and communication with the host and outside.
+ssh -X 192.168.130.10
+In this case the new network space communicate with host through L2 switch. 
+The new network space can communicate with outside(internet) through the br0.

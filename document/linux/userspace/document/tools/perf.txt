@@ -1,0 +1,98 @@
+1. install Perf
+apt-get install build-essential
+apt-get install libelf-dev
+apt-get install libaudit-de
+apt-get install  libunwind7-dev
+apt-get install  libslang2-dev
+apt-get install binutils-dev
+apt-get install libdw-dev
+apt-get install libnuma-dev
+
+cd kernel-dir/tools/perf/
+make 
+make install
+
+2. how
+a. hardware event: cycles, cache miss, branch miss
+b. softwre event: page fault, context-sitch, cpu/task clock
+c. trace point: syscall and xxxx. must be root
+
+3. command
+perf list:  list for the events
+List of pre-defined events (to be used in -e):
+  stalled-cycles-frontend OR idle-cycles-frontend    [Hardware event]
+  stalled-cycles-backend OR idle-cycles-backend      [Hardware event]
+  ref-cycles                                         [Hardware event]
+
+  cpu-clock                                          [Software event]
+  task-clock                                         [Software event]
+  page-faults OR faults                              [Software event]
+  context-switches OR cs                             [Software event]
+  cpu-migrations OR migrations                       [Software event]
+  minor-faults                                       [Software event]
+  major-faults                                       [Software event]
+  alignment-faults                                   [Software event]
+  emulation-faults                                   [Software event]
+  dummy                                              [Software event]
+
+  L1-dcache-loads                                    [Hardware cache event]
+  L1-dcache-load-misses                              [Hardware cache event]
+  L1-dcache-stores                                   [Hardware cache event]
+  L1-dcache-store-misses                             [Hardware cache event]
+  L1-dcache-prefetch-misses                          [Hardware cache event]
+  L1-icache-load-misses                              [Hardware cache event]
+  LLC-loads                                          [Hardware cache event]
+  LLC-stores                                         [Hardware cache event]
+  LLC-prefetches                                     [Hardware cache event]
+  dTLB-loads                                         [Hardware cache event]
+  dTLB-load-misses                                   [Hardware cache event]
+  dTLB-stores                                        [Hardware cache event]
+  dTLB-store-misses                                  [Hardware cache event]
+  iTLB-loads                                         [Hardware cache event]
+  iTLB-load-misses                                   [Hardware cache event]
+  branch-loads                                       [Hardware cache event]
+  branch-load-misses                                 [Hardware cache event]
+
+  mem-loads OR cpu/mem-loads/                        [Kernel PMU event]
+  mem-stores OR cpu/mem-stores/                      [Kernel PMU event]
+
+
+perf stat  [-e xxx.event]  xxx.exe
+show the whole/xxxevent performance of the exe
+
+perf stat ./test
+-2,2,-2
+0x0
+
+ Performance counter stats for './test':
+
+          1.721389 task-clock (msec)         #    0.324 CPUs utilized          
+                 4 context-switches          #    0.002 M/sec                  
+                 0 cpu-migrations            #    0.000 K/sec                  
+               132 page-faults               #    0.077 M/sec                  
+   <not supported> cycles                  
+                 0 stalled-cycles-frontend   #    0.00% frontend cycles idle   
+                 0 stalled-cycles-backend    #    0.00% backend  cycles idle   
+   <not supported> instructions            
+   <not supported> branches                
+   <not supported> branch-misses           
+
+       0.005319159 seconds time elapsed
+
+$ perf stat -e branch-loads  ./test
+-2,2,-2
+0x0
+
+ Performance counter stats for './test':
+
+                 0 branch-loads                                                
+
+       0.012947113 seconds time elapsed
+
+
+perf top [-e xxx.event]
+top the  cycles/xxxevent for the whole system
+
+perf record [ -e  xxx.event]   xxx.exe
+perf report
+analyse the cpu/xxxevent for the exe then report it

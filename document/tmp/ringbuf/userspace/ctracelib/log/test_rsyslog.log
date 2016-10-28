@@ -1,0 +1,66 @@
+Jul 25 16:11:33 ubuntu test_rsyslogDevice: DEBUG   rsyslog_test: func 1 hahah debug
+Jul 25 16:11:33 ubuntu test_rsyslogDevice: DEBUG   rsyslog_test: func 2 hahah debug
+Jul 25 16:11:33 ubuntu test_rsyslogDevice: INFO    rsyslog_test: func 2 hahah info
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: DEBUG   rsyslog_test: first main hahah debug
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: INFO    rsyslog_test: first main hahah info
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: NOTICE  rsyslog_test: first main hahah notice
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: WARNING rsyslog_test: first main hahah warning
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: ERROR   rsyslog_test: first main hahah error
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: NOTICE  rsyslog_test: func 2 hahah notice
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: WARNING rsyslog_test: func 2 hahah warning
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: ERROR   rsyslog_test: func 2 hahah error
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: INFO    rsyslog_test: func 1 hahah info
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: NOTICE  rsyslog_test: func 1 hahah notice
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: WARNING rsyslog_test: func 1 hahah warning
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: ERROR   rsyslog_test: func 1 hahah error
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: DEBUG3  rsyslog_test: test_rsyslogDevice.cpp 70: main hahah debug3
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: DEBUG2  rsyslog_test: test_rsyslogDevice.cpp 71: main hahah debug2
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: DEBUG   rsyslog_test: test_rsyslogDevice.cpp 72: main hahah debug
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: INFO    rsyslog_test: test_rsyslogDevice.cpp 73: main hahah info
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: NOTICE  rsyslog_test: test_rsyslogDevice.cpp 74: main hahah notice
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: WARNING rsyslog_test: test_rsyslogDevice.cpp 75: main hahah warning
+Jul 25 16:11:34 ubuntu test_rsyslogDevice: ERROR   rsyslog_test: test_rsyslogDevice.cpp 76: main hahah error
+Jul 25 16:14:25 ubuntu test_rsyslogDevice: DEBUG   rsyslog_test: func 2 hahah debug
+Jul 25 16:14:25 ubuntu test_rsyslogDevice: INFO    rsyslog_test: func 2 hahah info
+Jul 25 16:14:25 ubuntu test_rsyslogDevice: DEBUG   rsyslog_test: func 1 hahah debug
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: DEBUG   rsyslog_test: first main hahah debug
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: INFO    rsyslog_test: first main hahah info
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: NOTICE  rsyslog_test: first main hahah notice
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: WARNING rsyslog_test: first main hahah warning
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: ERROR   rsyslog_test: first main hahah error
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: INFO    rsyslog_test: func 1 hahah info
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: NOTICE  rsyslog_test: func 1 hahah notice
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: WARNING rsyslog_test: func 1 hahah warning
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: ERROR   rsyslog_test: func 1 hahah error
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: NOTICE  rsyslog_test: func 2 hahah notice
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: WARNING rsyslog_test: func 2 hahah warning
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: ERROR   rsyslog_test: func 2 hahah error
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: DEBUG3  rsyslog_test: test_rsyslogDevice.cpp 70: main hahah debug3
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: DEBUG2  rsyslog_test: test_rsyslogDevice.cpp 71: main hahah debug2
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: DEBUG   rsyslog_test: test_rsyslogDevice.cpp 72: main hahah debug
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: INFO    rsyslog_test: test_rsyslogDevice.cpp 73: main hahah info
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: NOTICE  rsyslog_test: test_rsyslogDevice.cpp 74: main hahah notice
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: WARNING rsyslog_test: test_rsyslogDevice.cpp 75: main hahah warning
+Jul 25 16:14:26 ubuntu test_rsyslogDevice: ERROR   rsyslog_test: test_rsyslogDevice.cpp 76: main hahah error
+2013-07-26 10:09:23 test_rsyslogDevice: rsyslog_test DEBUG  : func 1 hahah debug
+2013-07-26 10:09:23 test_rsyslogDevice: rsyslog_test DEBUG  : func 2 hahah debug
+2013-07-26 10:09:23 test_rsyslogDevice: rsyslog_test INFO   : func 2 hahah info
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test DEBUG  : first main hahah debug
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test INFO   : first main hahah info
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test NOTICE : first main hahah notice
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test WARNING: first main hahah warning
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test ERROR  : first main hahah error
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test INFO   : func 1 hahah info
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test NOTICE : func 1 hahah notice
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test WARNING: func 1 hahah warning
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test ERROR  : func 1 hahah error
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test NOTICE : func 2 hahah notice
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test WARNING: func 2 hahah warning
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test ERROR  : func 2 hahah error
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test DEBUG3 : test_rsyslogDevice.cpp 70: main hahah debug3
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test DEBUG2 : test_rsyslogDevice.cpp 71: main hahah debug2
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test DEBUG  : test_rsyslogDevice.cpp 72: main hahah debug
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test INFO   : test_rsyslogDevice.cpp 73: main hahah info
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test NOTICE : test_rsyslogDevice.cpp 74: main hahah notice
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test WARNING: test_rsyslogDevice.cpp 75: main hahah warning
+2013-07-26 10:09:24 test_rsyslogDevice: rsyslog_test ERROR  : test_rsyslogDevice.cpp 76: main hahah error

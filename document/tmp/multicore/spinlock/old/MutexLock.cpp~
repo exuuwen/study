@@ -1,0 +1,33 @@
+#include "MutexLock.h"
+#include <assert.h>
+#include <stdio.h>
+
+Mutex::Mutex()
+{
+
+	if (pthread_spinlock_init(&mutex_, 0) != 0)
+	{
+	    	perror("PThreadMutex create failed\n");
+		assert(0);
+	}
+}
+
+Mutex::~Mutex()
+{
+	pthread_spinlock_destroy(&mutex_);
+}
+
+int Mutex::lock()
+{
+	return pthread_spinlock_lock(&mutex_);
+}
+
+int Mutex::unlock()
+{
+	return pthread_spinlock_unlock(&mutex_);
+}
+
+
+
+
+	

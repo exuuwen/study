@@ -1,0 +1,44 @@
+[2013-07-25 08:05:13 (GMT) ]DEBUG   test_filedevice: test_fileDevice.cpp 36: func 2 hahah debug
+[2013-07-25 08:05:13 (GMT) ]INFO    test_filedevice: test_fileDevice.cpp 37: func 2 hahah info
+[2013-07-25 08:05:13 (GMT) ]DEBUG   test_filedevice: test_fileDevice.cpp 23: func 1 hahah debug
+[2013-07-25 08:05:14 (GMT) ]DEBUG   test_filedevice: test_fileDevice.cpp 58: first main hahah debug
+[2013-07-25 08:05:14 (GMT) ]INFO    test_filedevice: test_fileDevice.cpp 59: first main hahah info
+[2013-07-25 08:05:14 (GMT) ]NOTICE  test_filedevice: test_fileDevice.cpp 60: first main hahah notice
+[2013-07-25 08:05:14 (GMT) ]WARNING test_filedevice: test_fileDevice.cpp 61: first main hahah warning
+[2013-07-25 08:05:14 (GMT) ]ERROR   test_filedevice: test_fileDevice.cpp 62: first main hahah error
+[2013-07-25 08:05:14 (GMT) ]NOTICE  test_filedevice: test_fileDevice.cpp 39: func 2 hahah notice
+[2013-07-25 08:05:14 (GMT) ]WARNING test_filedevice: test_fileDevice.cpp 40: func 2 hahah warning
+[2013-07-25 08:05:14 (GMT) ]ERROR   test_filedevice: test_fileDevice.cpp 41: func 2 hahah error
+[2013-07-25 08:05:14 (GMT) ]INFO    test_filedevice: test_fileDevice.cpp 25: func 1 hahah info
+[2013-07-25 08:05:14 (GMT) ]NOTICE  test_filedevice: test_fileDevice.cpp 26: func 1 hahah notice
+[2013-07-25 08:05:14 (GMT) ]WARNING test_filedevice: test_fileDevice.cpp 27: func 1 hahah warning
+[2013-07-25 08:05:14 (GMT) ]ERROR   test_filedevice: test_fileDevice.cpp 28: func 1 hahah error
+[2013-07-25 08:05:14 (GMT) ]DEBUG3  test_filedevice: main hahah debug3
+[2013-07-25 08:05:14 (GMT) ]DEBUG2  test_filedevice: main hahah debug2
+[2013-07-25 08:05:14 (GMT) ]DEBUG   test_filedevice: main hahah debug
+[2013-07-25 08:05:14 (GMT) ]INFO    test_filedevice: main hahah info
+[2013-07-25 08:05:14 (GMT) ]NOTICE  test_filedevice: main hahah notice
+[2013-07-25 08:05:14 (GMT) ]WARNING test_filedevice: main hahah warning
+[2013-07-25 08:05:14 (GMT) ]ERROR   test_filedevice: main hahah error
+[2013-07-25 08:07:00 (GMT) test]DEBUG   test_filedevice: test_fileDevice.cpp 36: func 2 hahah debug
+[2013-07-25 08:07:00 (GMT) test]INFO    test_filedevice: test_fileDevice.cpp 37: func 2 hahah info
+[2013-07-25 08:07:00 (GMT) test]DEBUG   test_filedevice: test_fileDevice.cpp 23: func 1 hahah debug
+[2013-07-25 08:07:01 (GMT) test]DEBUG   test_filedevice: test_fileDevice.cpp 58: first main hahah debug
+[2013-07-25 08:07:01 (GMT) test]INFO    test_filedevice: test_fileDevice.cpp 59: first main hahah info
+[2013-07-25 08:07:01 (GMT) test]NOTICE  test_filedevice: test_fileDevice.cpp 60: first main hahah notice
+[2013-07-25 08:07:01 (GMT) test]WARNING test_filedevice: test_fileDevice.cpp 61: first main hahah warning
+[2013-07-25 08:07:01 (GMT) test]ERROR   test_filedevice: test_fileDevice.cpp 62: first main hahah error
+[2013-07-25 08:07:01 (GMT) test]NOTICE  test_filedevice: test_fileDevice.cpp 39: func 2 hahah notice
+[2013-07-25 08:07:01 (GMT) test]WARNING test_filedevice: test_fileDevice.cpp 40: func 2 hahah warning
+[2013-07-25 08:07:01 (GMT) test]ERROR   test_filedevice: test_fileDevice.cpp 41: func 2 hahah error
+[2013-07-25 08:07:01 (GMT) test]INFO    test_filedevice: test_fileDevice.cpp 25: func 1 hahah info
+[2013-07-25 08:07:01 (GMT) test]NOTICE  test_filedevice: test_fileDevice.cpp 26: func 1 hahah notice
+[2013-07-25 08:07:01 (GMT) test]WARNING test_filedevice: test_fileDevice.cpp 27: func 1 hahah warning
+[2013-07-25 08:07:01 (GMT) test]ERROR   test_filedevice: test_fileDevice.cpp 28: func 1 hahah error
+[2013-07-25 08:07:01 (GMT) ]DEBUG3  test_filedevice: main hahah debug3
+[2013-07-25 08:07:01 (GMT) ]DEBUG2  test_filedevice: main hahah debug2
+[2013-07-25 08:07:01 (GMT) ]DEBUG   test_filedevice: main hahah debug
+[2013-07-25 08:07:01 (GMT) ]INFO    test_filedevice: main hahah info
+[2013-07-25 08:07:01 (GMT) ]NOTICE  test_filedevice: main hahah notice
+[2013-07-25 08:07:01 (GMT) ]WARNING test_filedevice: main hahah warning
+[2013-07-25 08:07:01 (GMT) ]ERROR   test_filedevice: main hahah error

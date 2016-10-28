@@ -1,0 +1,169 @@
+1. client a
+a. config
+# vim /etc/quagga/daemons
+zebra=yes
+bgpd=yes
+ospfd=no
+ospf6d=no
+ripd=no
+ripngd=no
+isisd=no
+babeld=no
+
+#vim /etc/quagga/bgpd.conf
+! -*- bgp -*-
+!
+! BGPd sample configuratin file
+!
+! $Id: bgpd.conf.sample,v 1.1 2002/12/13 20:15:29 paul Exp $
+!
+hostname bgpd
+password zebra
+!enable password please-set-at-here
+!
+!bgp mulitple-instance
+!
+router bgp 7675
+  bgp router-id 192.168.31.41
+  network 172.168.1.0/24
+  neighbor 192.168.31.65 remote-as 7675
+!
+! access-list all permit any
+!
+!log file bgpd.log
+!
+log stdout
+
+b. ip set
+# ip addr list dev lo
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default 
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet 172.168.1.2/32 scope global lo
+       valid_lft forever preferred_lft forever
+
+
+2. client b
+a. config
+# vim /etc/quagga/daemons
+zebra=yes
+bgpd=yes
+ospfd=no
+ospf6d=no
+ripd=no
+ripngd=no
+isisd=no
+babeld=no
+
+# vim /etc/quagga/bgpd.conf
+! -*- bgp -*-
+!
+! BGPd sample configuratin file
+!
+! $Id: bgpd.conf.sample,v 1.1 2002/12/13 20:15:29 paul Exp $
+!
+hostname bgpd
+password zebra
+!enable password please-set-at-here
+!
+!bgp mulitple-instance
+!
+router bgp 7675
+  bgp router-id 192.168.31.41
+  network 172.168.1.0/24
+  neighbor 192.168.31.65 remote-as 7675
+!
+! access-list all permit any
+!
+!log file bgpd.log
+!
+log stdout
+
+b. ip set
+# ip addr list dev lo
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet 172.168.1.2/32 scope global lo
+       valid_lft forever preferred_lft forever
+
+
+3. server
+a. config
+# vim /etc/quagga/daemons
+zebra=yes
+bgpd=yes
+ospfd=no
+ospf6d=no
+ripd=no
+ripngd=no
+isisd=no
+babeld=no
+
+# vim /etc/quagga/bgpd.conf
+stname bgpd
+password zebra
+!enable password please-set-at-here
+!
+!bgp mulitple-instance
+!
+router bgp 7675
+  bgp router-id 192.168.31.65
+  neighbor 192.168.31.41 remote-as 7675
+  neighbor 192.168.31.103 remote-as 7675
+  maximum-paths 4
+  maximum-paths ibgp 4
+!
+! access-list all permit any
+!
+!
+!log file bgpd.log
+!
+log stdout
+
+b. show ip route
+# ip route
+default via 192.168.31.1 dev virbr0 
+10.42.0.0/24 dev wlan0  proto kernel  scope link  src 10.42.0.1  metric 9 
+172.168.1.0/24  proto zebra 
+	nexthop via 192.168.31.41  dev virbr0 weight 1
+	nexthop via 192.168.31.103  dev virbr0 weight 1
+192.168.31.0/24 dev virbr0  proto kernel  scope link  src 192.168.31.65 
+
+
+4. test
+server 
+# ping 172.168.1.2
+PING 172.168.1.2 (172.168.1.2) 56(84) bytes of data.
+64 bytes from 172.168.1.2: icmp_seq=1 ttl=64 time=0.318 ms
+64 bytes from 172.168.1.2: icmp_seq=2 ttl=64 time=0.334 ms
+64 bytes from 172.168.1.2: icmp_seq=3 ttl=64 time=0.356 ms
+64 bytes from 172.168.1.2: icmp_seq=4 ttl=64 time=0.342 ms
+64 bytes from 172.168.1.2: icmp_seq=5 ttl=64 time=0.325 ms
+64 bytes from 172.168.1.2: icmp_seq=6 ttl=64 time=0.275 ms
+64 bytes from 172.168.1.2: icmp_seq=7 ttl=64 time=0.315 ms
+
+client 1
+# tcpdump -i eth0 icmp -nnn
+tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
+listening on eth0, link-type EN10MB (Ethernet), capture size 65535 bytes
+14:42:10.659679 IP 192.168.31.65 > 172.168.1.2: ICMP echo request, id 4151, seq 1, length 64
+14:42:10.659725 IP 172.168.1.2 > 192.168.31.65: ICMP echo reply, id 4151, seq 1, length 64
+14:42:12.660133 IP 192.168.31.65 > 172.168.1.2: ICMP echo request, id 4151, seq 3, length 64
+14:42:12.660199 IP 172.168.1.2 > 192.168.31.65: ICMP echo reply, id 4151, seq 3, length 64
+14:42:14.660331 IP 192.168.31.65 > 172.168.1.2: ICMP echo request, id 4151, seq 5, length 64
+14:42:14.660402 IP 172.168.1.2 > 192.168.31.65: ICMP echo reply, id 4151, seq 5, length 64
+
+client 2
+# tcpdump -i eth0 -nnn icmp
+tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
+listening on eth0, link-type EN10MB (Ethernet), capture size 65535 bytes
+14:41:44.740693 IP 192.168.31.65 > 172.168.1.2: ICMP echo request, id 4151, seq 2, length 64
+14:41:44.740741 IP 172.168.1.2 > 192.168.31.65: ICMP echo reply, id 4151, seq 2, length 64
+14:41:46.740621 IP 192.168.31.65 > 172.168.1.2: ICMP echo request, id 4151, seq 4, length 64
+14:41:46.740667 IP 172.168.1.2 > 192.168.31.65: ICMP echo reply, id 4151, seq 4, length 64
+14:41:48.740587 IP 192.168.31.65 > 172.168.1.2: ICMP echo request, id 4151, seq 6, length 64
+14:41:48.740634 IP 172.168.1.2 > 192.168.31.65: ICMP echo reply, id 4151, seq 6, length 64
+

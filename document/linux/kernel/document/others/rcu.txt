@@ -1,0 +1,105 @@
+1. API
+rcu_read_lock():Begin an RCU critical section.
+rcu_read_unlock():Complete an RCU critical section.
+synchronize_rcu():Wait for existing RCU critical sections to complete.
+
+call_rcu(callback, arguments...):Call the callback when existing RCU critical sections complete.
+rcu_dereference(pointer):Signal the intent to deference a pointer in an RCU critical section.
+rcu_assign_pointer(pointer_addr, pointer):Assign a value to a pointer that is read in RCU critical sections.
+
+2. Why rcu
+RCU provides higher performance than traditional read-write locking and can make it easier to reason about dead-lock.
+Another reason to choose RCU instead of a read-write lock is deadlock immunity. The only way for RCU to deadlock is if a thread blocks waiting for synchronize_rcu in a RCU critical section.
+
+3. example
+1) pointer protect
+syscall_t *table;
+spinlock_t table_lock;
+
+int invoke_syscall(int number, void *args...)
+{
+	syscall_t *local_table;
+	int r = -1;
+
+	rcu_read_lock();
+	local_table = rcu_deference(table);
+	if (local_table != NULL)
+		r = local_table[number](args);
+	rcu_read_unlock();
+	return r;
+}
+
+void retract_table()
+{
+	syscall_t *local_table;
+
+	//spinlock to protect the other writer
+	spin_lock(&table_lock);
+	local_table = table;
+	rcu_assign_pointer(&table, NULL);
+	spin_unlock(&table_lock);
+
+	synchronize_rcu();
+	kfree(local_table);
+}
+
+2) list protect
+rcu_list_t nmi_list;
+spinlock_t nmi_list_lock;
+
+void handle_nmi()
+{
+	rcu_read_lock();
+	rcu_list_for_each(&nmi_list, handler_t cb)
+		cb();
+	rcu_read_unlock();
+}
+
+void register_nmi_handler(handler_t cb)
+{
+	spin_lock(&nmi_list_lock);
+	rcu_list_add(&nmi_list, cb);
+	spin_unlock(&nmi_list_lock);
+}
+
+void unregister_nmi_handler(handler_t cb)
+{
+	spin_lock(&nmi_list_lock);
+	rcu_list_remove(cb);
+	spin_unlock(&nmi_list_lock);
+
+	synchronize_rcu();
+}
+
+3) call_rcu
+id_table_entry_t pid_table[];
+process_t *pid_lookup(int pid)
+{
+	process_t *p
+
+	rcu_read_lock();
+	p = pid_table[pid_hash(pid)].process;
+	if (p)
+	atomic_inc(&p->ref);
+	rcu_read_unlock();
+	return p;
+}
+
+void pid_free(process *p)
+{
+	if (atomic_dec(&p->ref))
+		free(p);
+}
+
+void pid_remove(int pid)
+{
+	process_t **p;
+
+	spin_lock(&pid_table[pid_hash(pid)].lock);
+	p = &pid_table[pid_hash(pid)].process;
+	rcu_assign_pointer(p, NULL);
+	spin_unlock(&pid_table[pid_hash(pid)].lock);
+	if (*p)
+		call_rcu(pid_free, *p);
+}
+

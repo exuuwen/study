@@ -1,0 +1,457 @@
+﻿基本
+1 const变量： const int var = 1;//必须初始化const变量的 表示可读，默认为局部变量非extern
+
+2 reference引用：对象的另一个名字（主要用于函数形参），定义的时候必须初始化；引用必须用该引用同类型对象（不能常量)，或类似的来对其初始化，引用只是别名。
+
+int val = 10;
+double dd = 2.0；
+const int val_two = 3;
+string  test；
+int &val_ref = val;  //ok
+int &val_rf = 10;  //error 非同类型
+int &val_rf；  //error  没有初始
+int &val_rf = dd  //error  非同类型
+int &val_rf = val_two；  //error  非同类型  const
+int &val_rf = test；  //error 完全不同类型的
+
+3 const引用
+int val = 10;
+double dd = 2.0；
+const int val_two;
+string  test；
+const int &val_ref = val;  //ok  当非const传给const引用时 引用不能改值，但是原始数据可以改，那么引用也跟着改
+const int &val_rf = 10;  //ok 类似的
+const int &val_rf；  //error  没有初始
+const int &val_rf = dd  //ok  类似的
+const int &val_rf = test；  //error 完全不同类型的
+const int &val_rf = val_two；  //ok  同类型 
+
+
+4 指针与const
+const int* one;指向const int类型的指针，指针指向的对象只读
+int const* one;指向const int类型的指针，指针指向的对象只读
+int* const one;指向int类型的const指针，指针指只读
+int const* const one;指向const int类型的const指针，指针指向的对象只读,指针只读.
+
+typedef  string *pstring
+const  pstring  pst； 等同于 string * const pst；
+
+
+
+5 动态数组分配
+int *pg;
+int n;
+pg = new int[n];//数组new分配不能初始化，所以不支持默认构造函数的不能动态分配数组。或者pg = new int[n]();
+delete [] pg;
+
+int *p = new int;//为0
+int *p = new int(123);//为123
+int *p = new int();  //为0
+delete p;
+const  *p_const = new const int(24);//为24  对象指针都为const
+
+
+6 相同类的结构作成员函数的形参，在函数中可以访问该形参的private成员，其他类的不可以
+class A
+{
+public:
+	A(int val):a(val){}
+	A(A& x):a(x.a)
+	{
+
+	}
+	void copy_a(A& m)
+	{
+		a = m.a;
+	}
+	int get_a() const
+	{
+		return a;
+	}
+private:
+	int a;
+};  
+
+7 重载：参数类型或者个数不同的同名函数。
+const type 与 type参数不构成重载
+void func(int a);
+void func(const int a); //redefine func
+
+const 引用(指针) type 与 引用(指针) type参数构成重载
+void func(int& a);
+void func(const int& a); //构成重载
+
+
+8 默认参数
+Sale_item(int pri = 2):price(pri),sold_num(0),ave_price(0.0){}
+能与 Sale_item one(2),two; match
+
+Sale_item(int pri):price(pri),sold_num(0),ave_price(0.0){}
+只能与 Sale_item one(2); match
+
+Sale_item(int pri=2, int num = 0):price(pri),sold_num(num),ave_price(0.0){}
+函数有默认参数 那么默认参数都应该在右边
+
+
+ 
+类
+1 inline可以在类内部声明或者或者定义处声明，如果成员函数在类内部实现定义 则默认为inline函数
+
+2 只有当类定义过后才能使用 使用只声明过类会出现不完全类型错误，但是可以使用该类的指针和引用，或者是static类型也可以。因而类不能具有自身类型的数据成员，但是有其指针和引用，static变量
+
+3 在非const成员函数中this是一个不能改变其地址 但是能改变其对象的指针，在const成员函数里面this都不能改变
+
+4 基于const的成员函数重载,通常返回其*this或者内部对象的时候起到作用 const成员 调用const版本返回依然是const，非const调用非const版本返回为非const
+const A& func() const;
+A& func();
+
+5 在类的函数局部数据（参数），类成员数据，全局数据，作用域为首先函数局部数据(参数)，类数据成员，全局数据。如果出现相同名字的数据，在成员函数类调用的是函数参数，可以通过this来访问类成员数据，通过::访问全局数据
+
+6 构造函数 分为初始化列表和计算赋值阶段，成员的初始化最好在初始化列表中做掉. 如果没有进行显示初始化的数据成员，编译器会生成合成构造代码段：对于类成员用其默认构造函数初始化，对于内置和符合类型的非静态成员不做任何操作，静态则初始化为0.
+
+7 构造函数中必须在列表初始化中进行初始化：const成员， 引用成员，没有默认构造函数(但是有其他构造函数)的类成员 都需要在初始化列表中显示初始化
+
+8 构造函数成员的初始化顺序跟初始化列表顺序没关系，与声明顺序有关。因而初始化列表应该与声明一致
+
+9 合成默认构造函数： 1. 只要class定义了一个非默认的构造函数， 编译器都不会产生合成构造函数。 其初始化规则见6
+
+10 除非有明显利用想要定义隐式转换，否则单形参构造函数应该为explicit
+
+11 static成员函数 只能访问static 成员数据，没有this指针 而且不能定义为const。static关键字只能用于声明内部，不能用于定义处
+
+
+复制控制
+1 合成复制构造（操作）函数：没有复制构造（操作）函数系统将合成，有复制构造函数后就不会生产，以及插入任何未复制成员的代码。编译器将现有对象的每个非static成员，一次复制到正创建对象。他能完成类类型和内置成员复制（除指针外）
+
+2 复制构造函数的形参通常是一个const引用
+
+3 禁止复制构造函数，把复制构造函数申明为private，只申明不定义。
+
+4 三法则，当类需要析构函数的时候，那么它必然也需要复制构造函数，和复制控制函数
+
+5 系统总是合成一个析构函数，他按照声明中逆序撤销成员，不过对指针不能产生作用
+
+
+重载与转换
+1 重载操作符后优先级，结核性保持不变。但是不再具备短路性，所以重载&&，||，逗号不是个好办法，重载&也不是一个好方法
+
+2 一般算数和关系运算符，<<,>>，为非成员函数(友元)，而将赋值运算符，下标[],指针->,调用()，解引用*，自加，自减定义为成员函数
+
+3 作为类成员的重载函数，其形参看似比操作数少一，作为类成员的操作符隐含了一个this形参。
+
+4 <<,>>输出输入操作符重载，第一个参数应为ostream&， 第二个为类的对象引用，返回ostreams&，在输出重载函数中最好不要有换行符。
+
+5 注意，为了与内置操作符保持一致，加号重载符返回一个右值，而不是引用
+
+6 关系操作符中常常 == 和 < 非常有用
+
+7 赋值操作符必须为成员函数，而且必须返回（*this）引用
+
+8 解引用*和下标[]重载符都为成员函数，都需要const和非const版本，以免基础类对象被改变
+
+9 注意重载-> 他只是一个表达式，不是一个计算试，它必须返回指向类型的指针，或者定义了箭头操作的类的类对象类型
+point->action()
+
+a  如果point是个指针，那么指向成员名为ation的 对象：调用对象的ation成员。
+
+b  如果point是个类，实现了operator->()操作，就理解为point.operator->()->action；
+
+c  否则报错
+
+10 定义前缀++和后缀++ ，前operator++(), 后operator++(int);
+
+11 调用操作符(), 将类转换为函数 xxx operator()(xxx...)。例子：P450
+
+12 转换操作符 operator type(), 必须为成员函数，常常为const成员函数。类类型转换之后不能再跟另外一个类转换（不能多次迭代转换）
+
+13 转换有两种 1)单参数构造函数的参数类型向类类型转化。 2)operator type()显示转换。如果上述2个产生同样的转换就会引起二义性。
+	SmallInt(int i = 0):val(i)//covert int to SmallInt
+	{
+		if(i < 0 || i >255)
+		{
+			cout<<"WARING!!!!,the i is not 0<i<255,we chage it to 0"<<endl;
+			val = 0;
+		}
+		cout<<"in the SmallInt int"<<endl;
+	}
+	SmallInt(double i = 0):val(i)//covert double to SmallInt
+	{
+		if(i < 0 || i >255)
+		{
+			cout<<"WARING!!!!,the double i is not 0<i<255,we chage it to 0"<<endl;
+			val = 0;
+		}
+		cout<<"in the SmallInt double"<<endl;
+	}
+	operator int() const //convert SmallInt to int
+	{
+		cout<<"in the operator i nt() "<<endl;
+		return val;
+	}
+	operator double() const //convert SmallInt to double  ,define more operator() is not good, you qi yi
+	{
+		cout<<"in the operator double() "<<endl;
+		return val;
+	}   
+
+
+
+
+继承
+1 c++中通过基类的引用或者指针调用虚函数，发生动态绑定。除了构造函数外所有非static函数都可以是虚函数
+
+2 protected 成员可以被自身类和派生类访问不能为其它类访问。派生类只能通过派生类对象访问基类的protected成员，不能通过基类对象访问
+class father
+{
+protected int one;
+}
+class child: public father 
+{
+}
+派生类的成员函数
+ void func(father& f, child& c)
+{
+	f.one = 1; //error
+	c.one = 1; //ok
+	one = 1; //ok  this->one
+}
+
+3 一旦在类里声明为了虚函数，派生类中他永远是虚函数。派生类的虚函数必须与基类定义的完全匹配，但是返回基类引用或指针的虚函数，派生类该函数可以返回该派生类的引用和指针。
+
+4 一个类必须定义了才能作为基类，仅仅声明不行，发生动态绑定条件 1.函数为虚函数. 2.调用成员函数的对象必须是基类指针或者引用
+
+5 覆盖机制：有时候派生类希望调用基类的虚函数版本，可以显示调用p->F::vitfunc();
+
+6 类里面默认继承是私有继承，默认成员是私有成员。友元关系不能继承，如果基类定义了static成员，那么整个派生类层次中只有这样一个实例
+
+7 可以将派生类引用或者指针转换为基类引用或者指针，将派生类对象转换到基类对象会发生切割。从基类到派生类对象的自动转换是不存在的，从基类到派生类指针或引用的转换（如果正确），需要dynamic_cast.
+
+8 派生类的构找函数中只能直接初始化基类成员。在构造函数和析构函数中，调用虚函数，调用的是自身类版本
+
+9 与基类成员同名的派生类成员将屏蔽对基类成员的直接访问，如果派生类定义了成员函数重载，那么派生类只能访问派生类中 重定义 那些成员函数
+class Base
+{
+	int func(int );
+}
+class Child
+{
+	int func();
+}
+
+Base b;
+child c;
+b.func(1);  //ok
+c.func()//ok
+c.func(1)//error  被隐藏base类中
+c.Base::func(1)//ok
+
+10 即使虚构函数没有工作要做，继承层次的根类也应该定义一个虚析构函数。
+
+
+大型程序工具
+
+1 当抛出一个表达式的时候，被抛出对象的静态编译时类型将决定异常对象的类型
+
+2 栈展开期间，释放局部对象所用的内存并调用析构函数
+
+3 析构函数不应该抛出异常，会产生abort函数使程序终止
+
+4 catch句子的异常说明符后面跟一个可选形参名的类型名，必须为内置类型或者已定义的类
+
+5 catch类似函数，参数匹配的时候必须相同类型，只能从非const到const，派生类到基类，数组向指针，函数向函数指针转换。不允许算数转换盒类定义转换
+
+6 catch所有异常 catch(...) {}
+
+7 如果一个函数没有指定异常说明，则该函数可以抛出任意类型的异常。但是如果设定为void func() throw(), 则表示没有任何异常，如果函数抛出异常 则会导致程序终止
+
+8 命名空间不已分号结束，可以是不连续的。未命名空间namespace {} 只属于特定文件，从不跨多个文件，用作取代静态什么。如果头文件包含了未命名空间，那么在每个包含该头文件中有不同的实体。
+
+9 using声明：一次只引入一个命名空间成员(using std::string)。using指示: 使指定的整个命名空间提升 using namespace std;
+
+10 using声明与重载：只能using NS::print(不能具体某个print), 指定函数名所以所有print函数都能使用,
+
+11 派生类有可能从2个或多个基类继承同名成员，不加限制使用会产生二义性。通过直接调用指定使用哪个类可以解决二义性。
+
+12 public virtual： 虚继承构造函数 先依次构造层次中的虚基类，再依次构造其他非基类
+
+
+特殊工具与技术
+1 运行时类型识别: 1)dynamic_cast:把基类指针转换为继承类指针，如果不能转换返回0指针，如果是引用的话，转换失败抛出bad_cast
+				  2)typeid:用于比较2个表达式的类型。 typeid(*baseptr) == typeid(Derived),只有当操作数时代虚函数的类类型对象的时候，不能是指针。
+2 类成员指针
+class A
+{
+public:
+	int get(){ return data;}
+private:
+	int data;
+	string s;
+};
+
+1) 数据成员指针 string A::*p = &A::s;
+2) 函数成员指针 int (A::*f) = A::get;
+3) 使用成员函数指针  A a； (a.*f)(); // equal a.get  
+					 A *a = new A(); (a->*f)() //equal a->get()
+4) 使用成员指针  	 A a； a.*s; // equal a.s  
+					 A *a = new A(); a->*s //equal a->s
+
+3 匿名union在类中必须是public成员，可以直接通过类访问union内部成员
+class Token
+{
+public:
+	union
+	{
+		char a;
+		int s;
+	}
+};
+Token t;
+t.a = 2;
+
+4 C++调用c程序 单个extern "c" void func(){}; 复合extern "c"{ xxxx； xxxx；}. C语言不支持重载，所以不能同时extern "c"2个同名函数
+5 用extern "c"定义的函数 在声明的时候也必须加上相同的链接指示
+
+
+more
+C++的static
+静态数据成员
+　　在类中，静态成员可以实现多个对象之间的数据共享，并且使用静态数据成员还不会破坏隐藏的原则，即保证了安全性。因此，静态成员是类的所有对象中共享的成员，而不是某个对象的成员。
+　　使用静态数据成员可以节省内存，因为它是所有对象所公有的，因此，对多个对象来说，静态数据成员只存储一处，供所有对象共用。静态数据成员的值对每个对象都是一样，但它的值是可以更新的。只要对静态数据成员的值更新一次，保证所有对象存取更新后的相同的值，这样可以提高时间效率。
+
+静态成员函数
+　　静态成员函数和静态数据成员一样，它们都属于类的静态成员，它们都不是对象成员。因此，对静态成员的引用不需要用对象名。
+　　在静态成员函数的实现中不能直接引用类中说明的非静态成员，可以引用类中说明的静态成员。如果静态成员函数中要引用非静态成员时，可通过对象来引用。
+
+
+
+c++ 重载 覆盖 隐藏的区别和执行方式
+成员函数被重载的特征
+（1）相同的范围（在同一个类中）；
+（2）函数名字相同；
+（3）参数不同；
+（4）virtual 关键字可有可无。
+覆盖是指派生类函数覆盖基类函数，特征是
+（1）不同的范围（分别位于派生类与基类）；
+（2）函数名字相同；
+（3）参数相同，返回相同；
+（4）基类函数必须有virtual 关键字。
+“隐藏”是指派生类的函数屏蔽了与其同名的基类函数，规则如下
+（1）如果派生类的函数与基类的函数同名，但是参数不同。此时，不论有无virtual关键字，基类的函数将被隐藏（注意别与重载混淆）。
+（2）如果派生类的函数与基类的函数同名，并且参数也相同，但是基类函数没有virtual 关键字。此时，基类的函数被隐藏（注意别与覆盖混淆） 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+template
+
+类模板的类成员函数 只有被使用的时候才会被实例化
+
+类模板的非类型形参的实参必须是常量表达式
+
+非模板类和函数可以是模板类的友元
+
+
+类模板的static成员，每个实例都有一个自己的static成员
+
+int a= foo<int>::count();  ok
+
+foo<2> qi;
+a =qi.count();   ok
+
+a = foo::count()  error
+
+
+
+成员模板：任意类拥有模板类或者模板函数的成员，该成员叫模板成员。该类不能为虚.
+
+
+函数模板  typename和class是等效的
+template <typename T>//template + 模板形参列表(不能为空,T为类型形参必须跟在typename或者class后面,这里class和typename都一样)
+int compare(const T &v1, const T &v2)//模板形参 可以使类型形参和非类型形参，类型形参 跟在在typename或者class后面
+{					//T模板形参的名字 不能再模板内重用，每个模板形参前面 都必须带上typename或者class
+}
+使用
+compare（1,2）;
+compare("aaa","bbb");
+
+
+inline函数模板
+
+template <typename/*class*/ T > inline//template + 模板形参列表(不能为空)
+int compare(const T &v1, const T &v2)
+{}
+
+类模板
+templat <class Type> class Queue
+{
+public:
+	Queue();
+privated:	
+}
+使用
+Queue<int> qi;
+Queue<string> qs;
+
+非类型形参
+template <class T, size_t N> void array_init(T (&parm)[N])//第二个形参为非类型
+{
+	for(szie_t i = 0; i < N; i++)
+		parm[i] = 0;
+}
+
+int x[42];
+array_init(x);//array_init<int, 42>
+
+编写泛型代码的2个重要原则
+1模板中的形参是const引用
+2函数体中测试只用<
+
+
+模板形参转换
+const： 形参是const  无论传入的是const或者非 都转为const，形参是非const，无论传入的是const或者非 都转为非const
+数组或函数到指针的转换：如果形参不是引用类型那么数组会函数转换为相应的指针 ，否则不能转换出现error
+
+template <class type> type sum(type a&, int b);
+{}
+double d=2.3;
+string one("ss");
+
+sum(102, d) //ok隐式转换double(d) -> int  sum(int, int) 
+sum(one, one)//error can not convert string to int
+
+模板实例与函数指针
+template <class T> com(const T &a, const T &b)
+{}
+
+int (*p)(const int&, const int&) = com;//p 必须制定形参类型
+
+
+
+函数模板的显示实参
+
+template<class A, class B, class C> C sum(const &A, const &B)
+{}
+
+long val3 = sum<long, int, long>(inta, longb);
+
+
+模板的编译
+a 声明放于头文件中 定义放于原文件中
+b定义放于头文件中加上  在使用处export
+
+
+
+
+
+

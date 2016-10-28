@@ -1,0 +1,36 @@
+cr7@cr7-virtual-machine:~/pro/link_build/build$gcc -static test.c -o test
+
+cr7@cr7-virtual-machine:~/pro/link_build/build$ ./test &
+[1] 11021
+cr7@cr7-virtual-machine:~/pro/link_build/build$ cat /proc/11021/maps 
+00309000-0030a000 r-xp 00000000 00:00 0          [vdso]
+08048000-080ce000 r-xp 00000000 08:01 1577461    /home/cr7/pro/link_build/build/test
+080ce000-080d0000 rw-p 00085000 08:01 1577461    /home/cr7/pro/link_build/build/test
+080d0000-080d2000 rw-p 00000000 00:00 0 
+08ce6000-08d08000 rw-p 00000000 00:00 0          [heap]
+bff6e000-bff8f000 rw-p 00000000 00:00 0          [stack]
+
+cr7@cr7-virtual-machine:~/pro/link_build/build$ readelf -l test
+
+Elf file type is EXEC (Executable file)
+Entry point 0x80481e0
+There are 6 program headers, starting at offset 52
+
+Program Headers:
+  Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
+  LOAD           0x000000 0x08048000 0x08048000 0x85296 0x85296 R E 0x1000
+  LOAD           0x085f8c 0x080cef8c 0x080cef8c 0x007d4 0x02388 RW  0x1000
+  NOTE           0x0000f4 0x080480f4 0x080480f4 0x00044 0x00044 R   0x4
+  TLS            0x085f8c 0x080cef8c 0x080cef8c 0x00010 0x00028 R   0x4
+  GNU_STACK      0x000000 0x00000000 0x00000000 0x00000 0x00000 RW  0x4
+  GNU_RELRO      0x085f8c 0x080cef8c 0x080cef8c 0x00074 0x00074 R   0x1
+
+ Section to Segment mapping:
+  Segment Sections...
+   00     .note.ABI-tag .note.gnu.build-id .rel.plt .init .plt .text __libc_freeres_fn .fini .rodata __libc_subfreeres __libc_atexit .eh_frame .gcc_except_table 
+   01     .tdata .ctors .dtors .jcr .data.rel.ro .got .got.plt .data .bss __libc_freeres_ptrs 
+   02     .note.ABI-tag .note.gnu.build-id 
+   03     .tdata .tbss 
+   04     
+   05     .tdata .ctors .dtors .jcr .data.rel.ro .got 
+

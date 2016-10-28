@@ -1,0 +1,5 @@
+gcc -o rtnetlink_route_test rtnetlink_route_test.c rtnetlink_route.c rtnetlink.c if_ops.c
+gcc -o rtnetlink_addr_test rtnetlink_addr.c rtnetlink_addr_test.c  rtnetlink.c if_ops.c
+gcc -o rtnetlink_neigh_test  rtnetlink_neigh.c rtnetlink_neigh_test.c rtnetlink.c if_ops.c
+gcc -o rtnetlink_link_vlan  rtnetlink_link_vlan.c rtnetlink.c
+gcc -o rtnetlink_link_veth  rtnetlink_link_veth.c rtnetlink.c

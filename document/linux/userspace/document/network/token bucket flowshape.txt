@@ -1,0 +1,47 @@
+﻿ 
+tap device上 tc ingress进行带宽控制
+# tc qdisc add dev vnet1 handle ffff: ingress
+# tc filter add dev vnet1 parent ffff: protocol ip prio 40 u32 match ip dst 192.168.0.0/24 police rate 150mbit burst 15mb mtu 64k drop flowid ffff:
+
+
+带宽,包量控制基于token bucket算法实现
+
+有两种实现方法
+a. 每一ns就是一token
+tokens_cost for len = time_in_ns = (NSEC_PER_SEC * len) / rate_bps
+在内核中一个ns算一个token， 上面的公式就代表一个len长度的包，在rate_bps下所需要的token数
+
+burst: bucket size
+
+init:
+tokens = f(burst)
+
+来一个packet
+tokens += time_now - time_last;
+store time_last
+if (tokens > f(burst))
+	tokens = f(burst)
+tokens -= (NSEC_PER_SEC * len) / rate_bps
+
+if (tokens < 0)
+	drop packet
+
+
+b. 每发送1个packet需要n token
+tokens_get in x(ms) = rate_pps*n/MSEC_PER_SEC 
+init:
+tokens = f(burst)
+
+来一个packet
+if (tokens > n)
+	tokens -= n;
+else
+	token +=  rate_pps*n/MSEC_PER_SEC * (time_now - time_last)
+	if (tokens > f(burst))
+		tokens = f(burst)
+	tokens -= n;
+
+if (tokens < 0)
+	drop packet
+
+

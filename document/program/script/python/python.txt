@@ -1,0 +1,809 @@
+1. const number
+	interger: 2, 3
+	decimals: 2.1, 3.2e-2
+	
+2. const string
+	a. double quotation marks: it contains a string in a line and can escape single quotation marks 
+	"wsss"
+	b. single quotation marks: it contains a string in a line and can escape double quotation marks 
+	'wwsss'
+	c. three quotation marks: it contains a string in multiple line and can escape single and double quotation marks 
+	'''wsss
+	   ssdd
+	   www'''
+	d. escape character: it can escape single and double quotation marks or next line
+	1). 'what\'s your name'
+	2). 'sssss \
+	    sse'
+3. each physical line can have serveral logic line, but each logic line should end with semicolon. But the better way is each logic line is in a physical line without semicolon.
+   i=5; print i
+   or
+   i=5
+   print i
+   
+4. operators: the same as C except the followings
+	+(addition): number+number and string+strings 2+3 is 5, "ad"+'ss' is 'adss'
+	*(multiply): number*number and number*string 2*2 is 4, 'as'*2 is 'asas'
+	//(divide for aliquot part): 3//2 is 1 
+	**(pow) number**number 2**3 is 8
+	not: a=1; not a; the result is false
+	or: a=1; b=0; a or b; the result is 1
+	and: a=1; b=0; a and b; result is 0
+	in:  a='a'; b="ssws"; a in b # a is the member of the container b
+	not in: a='a'; b="ssws" a not in b #  a is not the member of the container b
+	is: identity. the two object bind to the same one
+	is not: 
+	a = ['a', 'b']
+	b = ['a', 'b']
+	a is b
+	False
+	a = b[:]
+	a is b
+	False
+	a = b
+	a is b
+	True
+
+	
+5. flow comultiple ntrol
+        a. assignment
+	>>> a, b, c = 1, 2, 3
+	>>> a,b,c
+	(1, 2, 3)
+
+	>>> a, b = b, a #xchg
+	>>> a,b,c
+	(2, 1, 3)
+
+	b. True False 
+	>>> bool(42)
+	True
+
+	c. if 
+	if a==b:
+	  xxxx
+	  xxxx
+	[elif a>b:
+	  xxxx
+	else:
+	  xxxx]
+
+	d. while
+	while xxxx:
+	  xxxx
+	  xxxx
+	[else:
+	  xxxx]
+
+	e. for
+	for in xxx:
+	  xxxx
+	  xxxx
+	[else:
+	  xxxx]
+
+	f. continue and break for loop
+	g. pass : an empty operation to avoid empty line
+
+6. function
+	a. def: define a function
+	def func(a, b=0, c=10):
+	  print "a is", a, "b is", b, "c is", c
+	  return a+b+c # can without return value
+		
+	print "func(1, 2, 3)", func(1, 2, 3)
+	print "func(25, c=3)", func(25, c=3)
+	print "func(b=2, a=1)", func(b=2, a=1)
+	
+	b. global: using global value
+	def func1():
+  	  global x
+  	  print "x", x
+  	  x=2
+
+	x=0
+	func1()
+	print "x chang to", x
+
+	c. variable parameter
+	def varable_param(pos, *args):
+          print "pos is %d" %pos
+          for option in args:
+            print option
+	varable_param(10, "a", "b", "se", 2)
+
+	d. pair parameter
+	def special_param(*args, **keypar):
+          print args
+          print keypar
+	  print "%(name)d, %(job)s" %keypar
+
+	>>> special_param(1, 2, 3, name=1, job='sss')
+	(1, 2, 3)
+	{'job': 'sss', 'name': 1}
+	1, sss
+
+	>>> lis = ('a', 'b')
+	>>> test = {'name': 2, 'job': 'www'}
+	>>> special_param(*lis, **test)
+	('a', 'b')
+	{'job': 'www', 'name': 2}
+	2, www
+
+7. some function
+	1) exec: executaion a command in string 
+	com = 'print "hello"'
+	exec com
+	
+	scope = {}
+	exec 'sqrt = 1' in scope
+	scope[sqrt]
+	1
+	
+	2) eval£º calculate a expression from string 
+	alg = '2*3'
+	print alg, '=', eval(alg)
+
+	3)assert
+	assert True
+
+	4)`` or repr: chang a definition to a string
+	a = 50
+	`a` and repr(a) are "50"
+
+/////////////////////////////////////////////////////////////
+
+8. module
+	a. import
+	$ vim mymodule.py
+	#!/usr/bin/python
+    	if __name__ == '__main__':
+      	  print 'The mymodule program is being run by itself'
+    	else:
+      	  print 'The mymodule program has been imported from another module'
+   
+	def sayhi():
+      	  print "hi, this my python module"
+ 
+	version = '0.1'
+
+	$ vim import1.py
+	#!/usr/bin/python
+	import mymodule # the mymodule.py and import.py are in the same directory
+
+	if __name__ == '__main__':
+      	  print 'The import.py program is being run by itself'
+	else:
+      	  print 'The import.py program has been imported from another module'
+
+   	mymodule.sayhi()
+    	print "mymodule.version:", mymodule.version
+    
+    	$ vim import2.py
+	#!/usr/bin/python
+	from mymodule import sayhi, version # the mymodule.py and import.py are in the same directory
+
+	if __name__ == '__main__':
+	  print 'The import.py program is being run by itself'
+	else:
+	  print 'The import.py program has been imported from another module'
+
+	sayhi() #call it directly
+	print "mymodule.version:", version
+    
+	import sys as s
+	s.argv
+    
+	b. sys module
+	1) sys.argv
+	$ ./test.py a b
+	sys.argv[0] is 'test.py'
+	sys.argv[1] is 'a'
+	sys.argv[2] is 'b'
+    
+	2) sys.path: add a directory to the path and the *py files can be import by the program directly
+	path="/home/python/"  #there are mymodule.py in the directory
+	sys.path.append(path)
+    
+	3) sys.exit(number): exit the program abnormally. the number default is zero. 
+
+	4) I/O 
+	sys.stdin
+	sys.stdout
+	sys.stderr
+	
+	c. os module
+	import os
+	1)pwd 
+	os.getcwd
+
+	2)ls
+	os.lisdir
+
+	3)splite a path to a dir path and file path
+	os.path.splite(path)
+
+	4) check a path whether a file
+	os.path.isfile(path)
+
+	5) check a path whether is a dir
+	os.path.isdir(path)
+
+	6) sep
+	os.sep: '/' in unix
+	os.pathsep: ':' in unix
+	os.linesep: '\n' in unix
+
+	d. dir module
+	>>> import copy 
+	>>> dir(copy)
+	dir(copy)
+	['Error', 'PyStringMap', '_EmptyClass', '__all__', '__builtins__', '__doc__', '__file__', '__name__', ...]
+	1) attribute: __doc__
+	>>> print copy.__doc__
+	Generic (shallow and deep) copying operations.	
+	.....
+
+	2) attribute: __file__
+	>>> print copy.__file__
+	/usr/lib/python2.7/copy.pyc
+
+	3) attribute: __all__  # function in the modules
+	>>> copy.__all__
+	['Error', 'copy', 'deepcopy']
+	>>> from copy import deepcopy
+	>>> copy.copy.__doc__
+	"Shallow copy operation on arbitrary Python objects.\n\n
+	>> copy.copy.__all__
+	['__call__', '__class__', '__closure__', '__code__', '__defaults__', '__delattr__', '__dict__', '__doc__', '__format__', '__get__', '__getattribute__'....]
+
+	e. random
+	>>> import random
+	1) random
+	>>> random.random() # 0-->1
+	0.40353140529707454
+
+	
+	2) randrange([start,] stop[, step])
+	>>> random.randrange(10)
+	3
+	>>> random.randrange(1, 10, 2)
+	5
+
+	3) choice
+	>>> random.choice([2, 3, 4, 6, 9])
+	4
+
+	4) sample
+	>>> random.sample([2, 3, 4, 6, 9], 3)
+	[9, 6, 3]
+
+	5) uniform
+	>>>  random.uniform(2, 3) # a real number between 2 and 3
+	2.4387819534838986
+
+	f. time
+	>>> import time
+	>>> time1 = (2008, 2, 29, 12, 23, 30, -1, -1, -1) # 2008, 2.29 13:23:30
+	>>> data1 = time.mktime(time1)
+	1204316610.0
+
+	>>> time.asctime(time1)
+	'Sun Feb 29 12:23:30 2008
+
+	>>> time.time() #current time
+	1379426685.751153
+
+	>>> time.localtime(1204316610)
+	time.struct_time(tm_year=2008, tm_mon=2, tm_mday=29, tm_hour=12, tm_min=23, tm_sec=30, tm_wday=4, tm_yday=60, tm_isdst=0)
+
+	>>> time.sleep(2) # sleep 2 seconds
+
+	>>> time2 = (2009, 5, 29, 18, 20, 15, -1, -1, -1)
+	>>> data2 = time.mktime(time2)
+	>>> ntime = random.uniform(data1, data2)
+
+	g. set
+	>>> set([1, 2, 4, 1, 9, 0, 2])
+	set([0, 1, 2, 4, 9])
+
+	>>> a = set([1, 2, 3])
+	>>> b = set([2, 3, 4])
+	>>>  a | b
+	set([1, 2, 3, 4])
+
+	>>> c = a & b
+	>>> c
+	set([2, 3])
+
+	<<< c <= a
+	True
+
+	>>> c >= a
+	False
+
+
+	h. heap
+	# vim heap.py
+	#!/usr/bin/python
+
+	from heapq import *
+	from random import shuffle
+
+	data = range(10)
+	shuffle(data)
+
+	heap = []
+	for n in data:
+  	  heappush(heap, n)
+
+	print heap
+	heappush(heap, 1.5)
+	print heap
+
+	print "pop", heappop(heap)
+	print "heapreplace", heapreplace(heap, 3.5)
+	print heap
+
+	# python heap.py
+	[0, 1, 2, 3, 4, 9, 5, 7, 6, 8]
+	[0, 1, 2, 3, 1.5, 9, 5, 7, 6, 8, 4]
+	pop 0
+	heapreplace 1
+	[1.5, 3, 2, 3.5, 4, 9, 5, 7, 6, 8]
+
+
+	i. deque
+	# vim heap.py
+	#!/usr/bin/python
+	from collections import deque
+
+	q = deque(range(5))
+
+	print "deque", q
+
+	q.append(5)
+	print "append 5", q
+
+	q.appendleft(6)
+	print "appendleft 6", q
+
+	print "pop", q.pop()
+	print "popleft", q.popleft()
+
+	q.rotate(3)
+	print "rotate 3", q
+
+	q.rotate(-1)
+	print "rotate -1", q
+
+	# python deque.py
+	deque deque([0, 1, 2, 3, 4])
+	append 5 deque([0, 1, 2, 3, 4, 5])
+	appendleft 6 deque([6, 0, 1, 2, 3, 4, 5])
+	pop 5
+	popleft 6
+	rotate 3 deque([2, 3, 4, 0, 1])
+	rotate -1 deque([3, 4, 0, 1, 2])
+
+////////////////////////////////////////////////////////////
+
+9. data structure
+	a. list
+	namelist = ['apple', 'mango', 'carrot', 'banana']
+	1) access
+	listname[n]: the n item of the listname, n start with 0.
+	listname[n][m]: the m character/subItem of n item of the listname. The item of list can be a list too.
+	listname[n:m]: the n to the m-1 item of the listname
+	>>> n = [1,2,3,4,5,6,7,8,9,10]
+	>> n[-3:-1] #-1 means the last one, -3 means the last three on
+	8,9
+	n[a:b:c]:step c between a and b. if c is negtive, get values reverse. all the value can be empty, for a is beginning, for b is ending an c is 1
+	>>> n[1:9:2] #[2, 4, 6, 8]
+	>>> n[-7:-1:2] #[4, 6, 8]
+	>>> n[9:1:-2] #[10, 8, 6, 4]
+	>>> n[-1:-7:-2] #[10, 8, 6]
+
+	2) operators
+	+
+	>>> [1, 2, 'a'] + [5, 'w']
+	[1, 2, 'a', 5, 'w']
+
+	*
+	>>> ['a', 'b'] * 2
+	['a', 'b', 'a', 'b']
+
+	==, != , >...
+	>>> b = a[:]
+	>>> a == b
+	True
+	>>> b = a
+	>>> a == b
+	True
+	
+	in : check sth in sthes
+	>>> n = [ ['a', 1], ['b', 2] ]
+	>>> ['a', 1] in n
+	True
+
+	is: ckeck the identity
+	>>> b = a[:]
+	>>> a is b
+	False
+	>>> b = a
+	>>> a is b
+	True
+
+	del: del the item of the list
+	del listname[n]: delete the n item of the listname
+
+	>>> n = ['a', 'b', 'c']
+	len: length of the list
+	>>> len(n)
+	3
+
+	max: the max item in the list
+	>>> max(n)
+	'c'
+
+	min: the min item in the list
+	>>> min(n)
+	'a'
+
+	3) function
+	count: count of some item
+	>>> x = ['a', 'a', 'c', 'd']
+	>>> x.count('a') 
+	2
+
+	extend: add b list to a
+	>>> a = ['a', 'b']
+	>>> b = ['m', 'n']
+	>>> a.extend(b)
+	>>> a
+	['a', 'b', 'm', 'n']
+
+	reverse
+	>>> a.reverse()
+	>>> a
+	['n', 'm', 'b', 'a']
+
+	index: return the index of item
+	>>> a.index('m')
+	1
+
+	insert
+	>>> a.insert(2, 'in')
+	>>> a
+	['n', 'm', 'in', 'b', 'a']
+
+	remove: remove a specific item
+	>>> a.remove('in') # a must contans 'in'
+	>>> a
+	['n', 'm', 'b', 'a']
+
+	pop: pop the last one
+	>>> a.pop()
+	'a'
+	>>> a
+	['n', 'm', 'b']
+
+	append: add a item to the end
+	>>> a.append('p');
+	>>> a
+	['n', 'm', 'b', 'p']
+	
+	sort: sort the listname
+	>>> a.sort()
+	>>> a
+	['b', 'm', 'n', 'p']
+
+	reference and copy
+	shoplist = ['apple', 'mango', 'carrot', 'banana']
+	mylist = shoplist # mylist is just another name pointing to the same object!
+	mylist2 = shoplist[:] # make a copy by doing a full slice
+
+	
+	b. tuple: it is same with list but it can't be modified.
+	nametuple = ('apple', 'mango', 'carrot', 'banana')
+	1) operators
+	len(tuplename): length of the tuplename
+	in : check sth in sthes
+	max(tuplename): the max item in the tuple
+	min(tuplename): the min item in the list
+	list(tuplename); make a tuple to a list
+	==, != , >...
+
+	2) function
+	tuplename.count: count of some item
+	tuplename.index: return the index of item
+	tuplename.sort: sort the listname
+
+	3) access is the same as list
+
+	
+	c. dictionary
+	1) operators
+	add/modify a item
+	>>> d = {}
+	>>> d[20] = 12
+	>>> d['name'] = 'wx'
+	>>> d
+	{20: 12, 'name': 'wx'}
+
+	dict
+	a = dict(name='wx', age=26)
+	>>> a
+	{'age': 26, 'name': 'wx'}
+
+	delete one: del d['wx']
+
+	length: len(d)
+
+
+	2) function
+	clear
+	i)
+	>>> x = { "name":'wx' }
+	>>> y = x
+	>>> x = {}
+	>>> y
+	{ "name":'wx' }
+	ii)
+	>>> x = { "name":'wx' }
+	>>> y = x
+	>>> x.clear()
+	>>> y
+	{}
+
+	item
+	i) dictname.item() 
+	for name, addr in ab.items():
+          print 'name %s, addr %s'%(name, addr)
+    	ii) ab['key']
+    	for key in dicname:
+	  print key, "value", dicname[key]
+
+	haskey
+	if ab.has_key('jss'):
+          print 'jss addr %s'%ab['jss']
+
+	deepcopy 
+	from copy import deepcopy
+	>>> y = deepcopy(x)
+
+	fromkeys: add new keys and set the value to default value
+	>>> x = {}
+	>>> x.fromkeys(['name', 'age'], '(empty)')
+	>>> x
+	{'age': '(empty)', 'name': '(empty)'}
+
+	get: if get a value from key dirctly will cause error. but it will get None or the second parameter through get
+	>>> x = {}
+	>>> print x.get('name')
+	None
+
+	>>> print x.get('name', 'N/A')
+	'N/A'
+
+	pop: pop the key one and return the value
+	>>> n = {'x':1, 'y':2, 'z', 3}
+	>>> n.pop('x')
+	1
+	>>> n
+	{'y':2, 'z':3}
+
+	values: put all the values into a list
+	n.values()
+	[2, 3]
+
+	update: update the diction from another one
+	>>> new = {'x':2, 'z':3}
+	>>> old = {'x':1, 'y':2}
+	>>> old.update(new)
+	>>> old
+	{'y': 2, 'x': 2, 'z': 3}
+	  
+	
+	d. string: also is a read only structure
+	1) % format
+	%(+/-)(0)(a)(.b)x
+	x: d, o, f...
+
+	>>> '%10f' %3.14
+	'  3.140000'
+	>>> '%.2f' %3.14
+	'3.14'
+	>>> '%10.2f' %3.14
+	'      3.14'
+	>>> '%010.2f' %3.14
+	'0000003.14'
+	>>> '%-10.2f' %3.14
+	'3.14      '
+	>>> '%-+10.2f' %3.14
+	'+3.14   
+
+	2) function
+	find : return the position of left character of b that ocurr the first in n
+	>>> n = 'www snwude  jZeY www'
+	>>> n.find('sn')
+	4
+
+	lower: return a string with lower
+	>>> n.lower()
+	'www snwude  jzey www'
+
+	c.replace: return a string with replacement
+	>>> n.replace('sn', 'mmmm')
+	'www mmmmwude  jZeY www'
+
+	split: split the string n to list as b delimiter
+	>>> n.split(b)
+	>>> '1+2+3+4+5'.split('+')
+	['1', '2', '3', '4', '5']
+
+	strip: return a string with strip both side " " or specific character
+	>>> m = "  wss ss  "
+	>>> m.strip()
+	'wss ss'
+
+	>>> m = '***!ww * ww!w**!'
+	>>> m.strip("!*")
+	'ww * ww!w'
+	
+	startwith
+	>>> name = 'Swaroop'
+	>>> name.startwith('Swar')
+	True
+
+	endswith
+	name.endswith("roop')
+	True
+
+	join
+	>>> delimiter="*"
+	>>> mylist = ['a','b','c']
+	>>> delimiter.join(mylist)
+	a*b*c
+
+	3) operators
+	in:
+    	>>> pm = "ws"
+	>> 'w' in pm
+	True
+
+	list: string to list
+	>>> list("abcd")
+	['a', 'b', 'c', 'd']
+
+	e. print with these structure
+	1) print provides a space with , and provide "\n" each line
+	print "aaa", 16
+	print "ddd"
+	
+	aaa 16
+	ddd
+	
+	2) print without "\n" each line it must be end with a ,
+	print "aahha",
+	print "wws" 
+	
+	aahha wws
+	
+	3) print with item of tuple/list/dic
+	print item[n]
+	
+	4) print with tuple
+	print 'this is %s, age %d' %('wx', 26)
+	
+	5) traverse the tuple/list
+	for d in listname/tuplename:
+	  print d
+
+////////////////////////////////////////////////////////////
+
+10. class
+	1) template
+	class Name:
+	  value = sth
+	  def __init__(self, xx...):
+	    self.xx = xx
+	    self.xx2 = xx2
+	    Name.value += 1
+
+	  def get_xx(self):
+	    return self.xx
+	
+          def get_value(self):
+	    return Name.value
+
+	  def __del__(self):
+	    xxxxxx
+
+	s = Name(xx..)
+	s.get_xx()
+	s.get_value()
+	Name.value
+
+	2) inheritance
+	class Name2(Name):
+	  def __init__(self, xx3...):
+	    Name.__init__(self)
+	    self.xx3 = xx3
+
+	def get_xx(self):
+	    return Name.get_xx(self)
+
+11. file
+	1) file class
+	a. f = file("sth.txt", 'w') #'w', 'a', 'o'
+	b. write
+	f.write("wwwxwss")	
+	f.writelines
+	lines = ["last second sentence\n", "last sentence\n"]
+	f.writelines(lines)
+
+	c. read 
+	i. readline
+	while True:
+	  line = f.readline()
+	  if len(line) == 0:
+	    break
+  	  print line
+	
+	ii. read
+	print  f.read(10)
+
+	iii. readlines # read the whole file  and make a list according to each line
+	print f.readlines()
+	
+	d. f.close()
+
+	2) pickle class
+	a. dump
+	import cPickle as p
+	p.dump(shoplist, f) #dump a list object to a file boject
+	b. store 
+	copylist = p.store(f)
+
+12. exception
+	1) try...except...else
+	try:
+	  s = raw_input("Enter something--->")
+	except EOFError:
+	  print "an EOF error"
+	except:
+	  print "something error"
+	else:
+	  print "no error"
+
+	2) try...except...finally: finnally will be done any way
+	try:
+	  s = raw_input("Enter something--->")
+	except EOFError:
+	  print "an EOF error"
+	except:
+	  print "something error"
+	finally:
+	  print "done"
+
+	3) customize exception type
+	class ShortInputException(Exception):
+        def __init__(self, length, atleast):
+          Exception.__init__(self)
+          self.length = length
+          self.atleast = atleast
+
+	try:
+        s = raw_input("Enter something again--->")
+        if len(s) < 4:
+          raise ShortInputException(len(s), 4)
+	  except EOFError:
+          print '\nWhy did you do a EOF on me?'
+	  except ShortInputException, x:
+          print '\nShortInputException error occurred, input length %d\
+	  was exceting at least %d'%(x.length, x.atleast)
+	  except:
+          print '\nSomething error occurred'
+	  finally:# It will be here whatever the except
+          print 'Done'	

@@ -1,0 +1,4 @@
+# Create a library called "Hello" which includes the source file "hello.cxx".
+# The extension is already found.  Any number of sources could be listed here.
+AUX_SOURCE_DIRECTORY(. DIR_HELLO_SRCS)
+add_library (Hello ${DIR_HELLO_SRCS})

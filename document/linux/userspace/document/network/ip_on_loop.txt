@@ -1,0 +1,23 @@
+通常在loop device上设置loop地址127.x.x.x， 但是也可以设置其他ip
+a. 如果设置ip/32的地址， 外面设备也是可以访问的。
+b. 但是如果设置的是非32的地址，在local表中会加一条到该地址subnet的路由
+# ifconfig lo 10.0.0.1/24
+[root@LD2 ~]# ip route list table local
+local 10.0.0.0/24 dev lo  proto kernel  scope host  src 10.0.0.1
+所以ping任意的该subnet地址都是到本机
+
+在loop设备上添加一个非32的地址，就会增加一个到该subnet的本地路由
+在非loop设备上添加一个非32的地址，就会增加一个到该subnet的main路由
+void fib_add_ifaddr(struct in_ifaddr *ifa)
+{
+	
+	if (!ipv4_is_zeronet(prefix) && !(ifa->ifa_flags & IFA_F_SECONDARY) &&
+	    (prefix != addr || ifa->ifa_prefixlen < 32)) {
+		fib_magic(RTM_NEWROUTE,
+			  dev->flags & IFF_LOOPBACK ? RTN_LOCAL : RTN_UNICAST,
+			  prefix, ifa->ifa_prefixlen, prim);
+	}
+
+}
+
+

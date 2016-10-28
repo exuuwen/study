@@ -1,0 +1,108 @@
+LVS DR mode:
+Two LVS servers LD1 LD2 and two real servers LS1 LS2
+LD1: eth0 172.168.0.101/24
+LD2: eth0 172.168.0.102/24
+LV1: eth0 172.168.0.1/24
+     lo: 172.168.0.7/32
+     echo 8 > /proc/sys/net/ipv4/conf/lo/arp_ignore
+     echo 2 > /proc/sys/net/ipv4/conf/lo/arp_announce
+LV2: eth0 172.168.0.2/24
+     lo: 172.168.0.7/32
+     echo 8 > /proc/sys/net/ipv4/conf/lo/arp_ignore
+     echo 2 > /proc/sys/net/ipv4/conf/lo/arp_announce
+
+MASTER:
+
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-1
+}
+
+vrrp_instance VI_1 {
+        interface eth0
+        state MASTER
+        virtual_router_id 82
+        priority 250
+        unicast_src_ip 172.168.0.101
+        unicast_peer {
+           172.168.0.102
+        }
+        virtual_ipaddress {
+                172.168.0.7/32 dev eth0
+        }
+}
+
+
+virtual_server_group VSG_3 {
+        172.168.0.7 80
+}
+
+virtual_server group VSG_3 {
+        delay_loop 6
+        lb_algo wlc
+        lb_kind DR
+        protocol TCP
+        real_server 172.168.0.1 80 {
+                weight 100
+                TCP_CHECK {
+                        connect_timeout 3
+                        connect_port 80
+                }
+        }
+        real_server 172.168.0.2 80 {
+                weight 100
+                TCP_CHECK {
+                        connect_timeout 3
+                        connect_port 80
+                }
+        }
+}
+
+
+
+SLAVE:
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-1
+}
+
+vrrp_instance VI_1 {
+        interface eth0
+        state MASTER
+        virtual_router_id 82
+        priority 250
+        unicast_src_ip 172.168.0.101
+        unicast_peer {
+           172.168.0.102
+        }
+        virtual_ipaddress {
+                172.168.0.7/32 dev eth0
+        }
+}
+
+
+virtual_server_group VSG_3 {
+        172.168.0.7 80
+}
+
+
+virtual_server group VSG_3 {
+        delay_loop 6
+        lb_algo wlc
+        lb_kind DR
+        protocol TCP
+        real_server 172.168.0.1 80 {
+                weight 100
+                TCP_CHECK {
+                        connect_timeout 3
+                        connect_port 80
+                }
+        }
+        real_server 172.168.0.2 80 {
+                weight 100
+                TCP_CHECK {
+                        connect_timeout 3
+                        connect_port 80
+                }
+        }
+}

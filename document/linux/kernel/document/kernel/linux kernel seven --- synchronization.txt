@@ -1,0 +1,102 @@
+a. The atomic integer methods operate on a special data type, atomic_t.
+1). atomic_t: atomic operate for 32-bits
+2). atomic64_t: atomic operation for 64-bits
+The 64-bit atomic64_t is reserved for code that is both architecture-specific and that requires 64-bits.
+
+b. atomic bitwise: operate at the bit level
+set_bit/clear_bit/test_bit
+int find_first_bit(unsigned long *addr, unsigned int size)
+int find_first_zero_bit(unsigned long *addr, unsigned int size)
+
+c. spinlock: Spin Locks Are Not Recursive 
+This provides the needed protection from concurrency on multiprocessing machines. On uniprocessor machines, the locks compile away and do not exist; they simply act as markers to disable and enable kernel preemption. If kernel preempt is turned off, the locks compile away entirely.
+
+1). spinlock with interrupt
+If a data shared between interrupt handler with others(interrupt handler, bottom-half, process context), you must also disable local interrupts(interrupt requests on the current processor) before obtaining the lock through spin_lock_irqsave(&mr_lock, flags);
+It is possible for an interrupt handler to interrupt kernel code while the lock is held and attempt to reacquire the lock.The interrupt handler spins, waiting for the lock to become available.The lock holder, however, does not run until the interrupt handler completes. This is an example of the double-acquire deadlock discussed in the previous chapter. Note that you need to disable interrupts only on the current processor. If an interrupt occurs on a different processor, and it spins on the same lock, it does not prevent the lock holder (which is on a different processor) from eventually releasing the lock.
+
+2). spinlock with bottom-half
+i). if data is shared between a bottom-half and process context, you must protect the data in process context with both a lock and the disabling of bottom halves through spin_lock_bh.
+ii).if data is shared between bottom-halfs
+1. tasklet
+Two tasklets of the same type do not ever run simultaneously, If the data is shared between two different tasklets, however, you must obtain a normal spin lock before accessing the data in the bottom half.
+2. softirq
+With softirqs, regardless of whether it is the same softirq type, if data is shared by softirqs, it must be protected with a lock. Recall that softirqs, even two of the same type, might run simultaneously on multiple processors in the system.A softirq never preempts another softirq running on the same processor, however, so disabling bottom halves is not needed.
+
+d. reader-writer lock
+read_lock()/read_unlock(), read_lock_irq()/read_unlock_irq(), read_lock_irqsave()/read_unlock_irqrestore() 
+write_lock()/write_unlock(), write_lock_irq()/write_unlock_irq(), write_lock_irqsave()/write_unlock_irqrestore()
+A final important consideration in using the Linux reader-writer spin locks is that they favor readers over writers. If the read lock is held and a writer is waiting for exclusive access, readers that attempt to acquire the lock continue to succeed.The spinning writer does not acquire the lock until all readers release the lock.Therefore, a sufficient number of readers can starve pending writers.
+
+e. Semaphores
+Semaphores in Linux are sleeping locks.When a task attempts to acquire a semaphore that is unavailable, the semaphore places the task onto a wait queue and puts the task to sleep.The processor is then free to execute other code.When the semaphore becomes available, one of the tasks on the wait queue is awakened so that it can then acquire the semaphore.emaphores must be obtained only in process context because interrupt context is not schedulable. Additionally, unlike spin locks, semaphores do not disable kernel preemption and, consequently, code holding a semaphore can be preempted.This means semaphores do not adversely affect scheduling latency.
+
+f. reader-writer semaphores
+Semaphores, like spin locks, also come in a reader-writer flavor.The situations where reader-writer semaphores are preferred over standard semaphores are the same as with reader-writer spin locks versus standard spin locks.
+
+g. Mutexes
+The mutex is represented by struct mutex. It behaves similar to a semaphore with a count of one, but it has a simpler interface, more efficient performance, and additional constraints on its use
+
+mutex_init(&mutex);
+//Locking and unlocking the mutex is easy:
+mutex_lock(&mutex);
+/* critical region ... */
+mutex_unlock(&mutex);
+
+constraints:
+1). Only one task can hold the mutex at a time.That is, the usage count on a mutex is always one.
+2). Whoever locked a mutex must unlock it.That is, you cannot lock a mutex in one context and then unlock it in another.This means that the mutex isn¡¯t suitable for more complicated synchronizations between kernel and user-space. Most use cases, however, cleanly lock and unlock from the same context.
+3). Recursive locks and unlocks are not allowed.That is, you cannot recursively acquire the same mutex, and you cannot unlock an unlocked mutex. 
+4). A process cannot exit while holding a mutex.
+5). A mutex cannot be acquired by an interrupt handler or bottom half, even with mutex_trylock().
+
+Unless one of mutex¡¯s additional constraints prevent you from using them, prefer the new mutex type to semaphores
+Spin Locks Versus Semaphores:
+    Requirement 			   Recommended Lock
+Low overhead locking 	    	    	Spin lock is preferred.
+Short lock hold time 	            	Spin lock is preferred.
+Long lock hold time 	    	    	Mutex is preferred.
+Need to lock from interrupt context 	Spin lock is required.
+Need to sleep while holding lock 	Mutex is required
+
+
+h. sequential locks
+Seq locks are useful to provide a lightweight and scalable lock for use with many readers and a few writers. Seq locks, however, favor writers over readers. 
+It works by maintaining a sequence counter.Whenever the data in question is written to, a lock is obtained and a sequence number is incremented. Prior to and after reading the data, the sequence number is read. If the values are the same, a write did not begin in the middle of the read. Further, if the values are even, a write is not underway
+
+seqlock_t mr_seq_lock = DEFINE_SEQLOCK(mr_seq_lock);
+
+The write path is then:
+
+write_seqlock(&mr_seq_lock);
+/* write lock is obtained... */
+
+read path:
+
+unsigned long seq;
+do {
+seq = read_seqbegin(&mr_seq_lock);
+/* read data here ... */
+} while (read_seqretry(&mr_seq_lock, seq));
+
+
+i. Preemption Disabling
+Because the kernel is preemptive, a process in the kernel can stop running at any instant to enable a process of higher priority to run.
+kernel preemption can be disabled via preempt_disable().The call is nestable; you can call it any number of times. For each call, a corresponding call to preempt_enable() is required.
+
+preempt_disable();
+/* preemption is disabled ... */
+preempt_enable();
+
+The preemption count stores the number of held locks and preempt_disable() calls. If the number is zero, the kernel is preemptive
+
+
+j. Ordering and Barriers
+it is sometimes a requirement that memory-reads (loads) and memory-writes(stores) issue in the order specified in your program code.When talking with hardware, you often need to ensure that a given read occurs before another read or write.
+The rmb() method provides a read memory barrier. It ensures that no loads are reordered across the rmb()
+The wmb() method provides a write barrier. It ensures no stores are reordered across the barrier.
+The mb() call provides both a read barrier and a write barrier. 
+
+Note that the actual effects of the barriers vary for each architecture. For example, if a machine does not perform out-of-order stores (for example, Intel x86 processors do not), wmb() does nothing.
+
+

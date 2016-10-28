@@ -1,0 +1,164 @@
+Mininet creates a realistic virtual network, running real kernel, switch and application code, on a single machine. Mininet is also a great way to develop, share, and experiment with OpenFlow and Software-Defined Networking systems.
+1. install
+Make sure the match install the openvswitch and start it
+# git clone git://github.com/mininet/mininet
+# ./mininet/util/install.sh -3nf
+or apt-get install mininet
+# apt-get install  openvswitch-controller
+# mv /usr/bin/ovs-controller /usr/bin/controller
+# apt-get remove openvswitch-controller
+
+2. start
+a. A simple one h1, h2 link with s1
+# mn
+mn
+*** Creating network
+*** Adding controller
+*** Adding hosts:
+h1 h2 
+*** Adding switches:
+s1 
+*** Adding links:
+(h1, s1) (h2, s1) 
+*** Configuring hosts
+h1 h2 
+*** Starting controller
+*** Starting 1 switches
+s1 
+*** Starting CLI:
+mininet> h1 ping h2
+PING 10.0.0.2 (10.0.0.2) 56(84) bytes of data.
+64 bytes from 10.0.0.2: icmp_seq=1 ttl=64 time=3.76 ms
+
+b. API
+# vim test.py
+#!/usr/bin/python
+from mininet.net import Mininet
+from mininet.node import OVSSwitch, Controller, RemoteController, Node
+from mininet.cli import CLI
+from mininet.log import setLogLevel, info
+from mininet.link import Link, Intf
+
+def emptyNet():
+
+    net = Mininet(switch=OVSSwitch)
+
+    #c0 = net.addController('c0', controller=RemoteController, port=6633)
+    c0 = net.addController('c0', controller=Controller, port=6634)
+
+    h1 = net.addHost('host1', ip='192.168.0.1/24', mac='00:1e:65:15:fc:01')
+    h2 = net.addHost('host2', ip='192.168.0.2/24', mac='00:1e:65:15:fc:02')
+    s1 = net.addSwitch('br0')
+    net.addLink(h1, s1)
+    net.addLink(h2, s1)
+
+    net.start()
+
+    #s1.cmd('ovs-vsctl set bridge br0 protocols=OpenFlow13')
+
+    CLI(net)
+    net.stop()
+
+if __name__ == '__main__':
+    setLogLevel( 'info' )
+    emptyNet()
+
+# python t.py 
+*** Configuring hosts
+host1 host2 
+*** Starting controller
+*** Starting 1 switches
+br0 
+*** Starting CLI:
+mininet> host1 ping host2
+PING 192.168.0.2 (192.168.0.2) 56(84) bytes of data.
+64 bytes from 192.168.0.2: icmp_seq=1 ttl=64 time=3.98 ms
+
+
+c. multiple switch and controller
+#!/usr/bin/python
+
+from mininet.net import Mininet
+from mininet.node import OVSSwitch, Controller, RemoteController, Node, Host
+from mininet.cli import CLI
+from mininet.log import setLogLevel, info
+from mininet.link import Link, Intf
+
+def emptyNet():
+
+    net = Mininet(switch=OVSSwitch, build=False)
+
+    #c0 = net.addController('c0', controller=RemoteController, port=6633)
+    #c1 = net.addController('c1', controller=RemoteController, port=6634)
+    c0 = net.addController('c0', controller=Controller, port=6634)
+    c1 = net.addController('c1', controller=Controller, port=6635)
+
+    h1 = net.addHost('host1', ip='192.168.0.2/24', mac='00:1e:65:15:fc:01')
+    h2 = net.addHost('host2', ip='192.168.0.3/24', mac='00:1e:65:15:fc:02')
+    s1 = net.addSwitch('br0')
+    net.addLink(h1, s1)
+    net.addLink(h2, s1)
+
+    h3 = net.addHost('host3', ip='172.168.0.2/24', mac='00:1e:65:15:fc:03')
+    h4 = net.addHost('host4', ip='172.168.0.3/24', mac='00:1e:65:15:fc:04')
+    s2 = net.addSwitch('br1')
+    net.addLink(h3, s2)
+    net.addLink(h4, s2)
+
+    # hide the gatway in net
+    gateway = Host('gateway')
+    net.addLink(s1, gateway)
+    net.addLink(s2, gateway)
+    gateway.intf("gateway-eth0").setIP('192.168.0.1/24')
+    gateway.intf("gateway-eth1").setIP('172.168.0.1/24')
+
+    # show gateway in net
+    #gateway = net.addHost('gateway', ip='192.168.0.1/24')
+    #net.addLink(s1, gateway)
+    #net.addLink(s2, gateway)
+    #gateway.intf("gateway-eth1").setIP('172.168.0.1/24')
+
+    net.build()
+
+    print h1.cmd('ip route add default via 192.168.0.1 dev host1-eth0')
+    print h2.cmd('ip route add default via 192.168.0.1 dev host2-eth0')
+    print h3.cmd('ip route add default via 172.168.0.1 dev host3-eth0')
+    print h4.cmd('ip route add default via 172.168.0.1 dev host4-eth0')
+
+    c0.start()
+    c1.start()
+    s1.start([c0])
+    s2.start([c1])
+
+    #s1.cmd('ovs-vsctl set bridge br0 protocols=OpenFlow13')
+    #s2.cmd('ovs-vsctl set bridge br1 protocols=OpenFlow13')
+    CLI( net )
+    net.stop()
+
+
+if __name__ == '__main__':
+    setLogLevel( 'info' )
+    emptyNet()
+
+
+# python test.py
+*** Configuring hosts
+host1 host2 host3 host4 
+*** Starting CLI:
+mininet> host1 ping hsot2
+ping: unknown host hsot2
+mininet> host1 ping host2
+PING 192.168.0.3 (192.168.0.3) 56(84) bytes of data.
+64 bytes from 192.168.0.3: icmp_seq=1 ttl=64 time=6.01 ms
+64 bytes from 192.168.0.3: icmp_seq=2 ttl=64 time=0.401 ms
+^C
+--- 192.168.0.3 ping statistics ---
+2 packets transmitted, 2 received, 0% packet loss, time 1002ms
+rtt min/avg/max/mdev = 0.401/3.205/6.010/2.805 ms
+mininet> host1 ping host3
+PING 172.168.0.2 (172.168.0.2) 56(84) bytes of data.
+64 bytes from 172.168.0.2: icmp_seq=1 ttl=63 time=15.4 ms
+
+
+3. delele an unclear net
+# mn -c 

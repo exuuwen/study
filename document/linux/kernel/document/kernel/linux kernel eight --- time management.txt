@@ -1,0 +1,187 @@
+a. HZ: tick rate
+Increasing the tick rate means the timer interrupt runs more frequently. Consequently, the work it performs occurs more often.
+This has the following advantage:
+1). The timer interrupt has a higher resolution and, consequently, all timed events have a higher resolution.
+2). The accuracy of timed events improves(poll/select, preemption occurs accurately)
+
+This higher resolution rises disadvantage:
+It implies more frequent timer interrupts, which implies higher overhead, because the processor must spend more time executing the timer interrupt handler. This adds up to not just less processor time available for other work, but also a more frequent thrashing of the processor¡¯s cache and increase in power consumption.
+
+b. Jiffies
+The global variable jiffies holds the number of ticks that have occurred since the system booted. The kernel initializes jiffies to a special initial value, causing the variable to overflow more often, catching bugs.When the actual value of jiffies is sought, this ¡°offset¡± is first subtracted.
+
+u64 jiffies_64 __cacheline_aligned_in_smp = INITIAL_JIFFIES;
+jiffies is the lower 32 bits of the full 64-bit jiffies_64 variable on 32-bit architectures. The jiffies variable has always been an unsigned long, and therefore 32 bits in size on 32-bit architectures and 64-bits on 64-bit architectures. On 64-bit architectures,  jiffies_64 and jiffies refer to the same thing. Code can either read jiffies or call get_jiffies_64() as both actions have the same effect. 
+
+jiffies wrapped:
+time_after(unknown, known), time_before(unknown, known), time_after_eq(unknown, known), time_before_eq(unknown, known)
+
+unsigned long timeout = jiffies + HZ/2; /* timeout in 0.5s */
+/* ... */
+if (time_before(jiffies, timeout)) {
+/* we did not time out, good ... */
+} else {
+/* we timed out, error ... */
+}
+
+c. Real-Time clock ane system timer
+Architectures provide two hardware devices to help with time keeping: the system timer and the real-time clock.
+
+1). RT clock: the real time clock¡¯s primary importance is only during boot, when the xtime variable is initialized.
+On the PC architecture, the RTC and the CMOS are integrated, and a single battery keeps the RTC running and the BIOS setting preserved. On boot, the kernel reads the RTC and uses it to initialize the wall time, which is stored in the xtime variable.The kernel does not typically read the value again; however, some supported architectures, such as x86, periodically save the current wall time back to the RTC.
+
+2). System timer
+The system timer serves a much more important (and frequent) role in the kernel¡¯s timekeeping. It provides a mechanism for driving an interrupt at a periodic rate.
+On x86, the primary system timer is the programmable interrupt timer (PIT) and the local APIC timer.
+a) for x86_64 or local apic
+local apic timer interrupt: used to update_process_times()  
+alloc_intr_gate(LOCAL_TIMER_VECTOR, apic_timer_interrupt);/*in init_IRQ*/
+
+/* apic_timer_interrupt  is the same as smp_apic_timer_interrupt */
+smp_apic_timer_interrupt(struct pt_regs *regs)
+{
+	struct clock_event_device *evt = &per_cpu(lapic_events, cpu);
+	evt->event_handler(evt);
+	/* tick_handle_periodic */
+}
+
+void tick_handle_periodic(struct clock_event_device *dev)-> tick_periodic
+{
+	write_seqlock(&jiffies_lock);
+	do_timer(1);
+	write_sequnlock(&jiffies_lock);
+
+	update_process_times(user_mode(get_irq_regs()));
+}
+
+void do_timer(unsigned long ticks)
+{
+	/*update jiffies_64*/
+	jiffies_64 += ticks;
+	/*update wall time write to the timerkeeper*/
+	update_wall_time();
+}
+
+int update_process_times
+{
+	/*raise timer softirq to handle dynamic timer*/
+	run_local_timers();/* raise_softirq(TIMER_SOFTIRQ); */
+	
+	/* update the time slice of the current process*/
+	scheduler_tick();
+}
+
+2) for clock irq0
+time_init-> hpet_time_init-> setup_default_timer_irq
+{
+	setup_irq(0, &irq0);
+} 
+
+static struct irqaction irq0  = {
+	.handler = timer_interrupt,
+	.flags = IRQF_DISABLED | IRQF_NOBALANCING | IRQF_IRQPOLL | IRQF_TIMER,
+	.name = "timer"
+};
+
+static irqreturn_t timer_interrupt(int irq, void *dev_id)
+{
+	global_clock_event->event_handler(global_clock_event);
+	/*for non-x86_64 && non-apic, the handle is tick_handle_periodic */
+	return IRQ_HANDLED;
+}
+
+
+3). The Time of Day
+/*get the timeoftoday*/
+sys_gettimeofday->do_gettimeofday->__getnstimeofday
+{
+	/*read from the wall time(timerkeeper)*/
+	struct timekeeper *tk = &timekeeper;
+	unsigned long seq;
+
+	do {
+		seq = read_seqcount_begin(&timekeeper_seq);
+
+		ts->tv_sec = tk->xtime_sec;
+		nsecs = timekeeping_get_ns(tk);
+
+	} while (read_seqcount_retry(&timekeeper_seq, seq));
+
+	ts->tv_nsec = 0;
+	timespec_add_ns(ts, nsecs);
+}
+
+/*set time of today*/
+sys_settimeofday->do_sys_settimeofday->do_settimeofday()
+{
+	struct timekeeper *tk = &timekeeper;
+
+	write_seqcount_begin(&timekeeper_seq);
+
+	timekeeping_forward_now(tk);
+
+	xt = tk_xtime(tk);
+	ts_delta.tv_sec = tv->tv_sec - xt.tv_sec;
+	ts_delta.tv_nsec = tv->tv_nsec - xt.tv_nsec;
+
+	tk_set_wall_to_mono(tk, timespec_sub(tk->wall_to_monotonic, ts_delta));
+	/*set to the wall time*/
+	tk_set_xtime(tk, tv);
+
+	write_seqcount_end(&timekeeper_seq);
+}
+
+
+d. dynamic timers
+Timers¡ªsometimes called dynamic timers or kernel timers¡ªare essential for managing the flow of time in kernel code. Typically, timers are run fairly close to their expiration; however, they might be delayed until the first timer tick after their expiration. Consequently, timers cannot be used to implement any sort of hard real-time processing. The dynamic timer function running in the sofirq context (TIMER_SOFTIRQ is raised in system timer-> update_process_times), so it can't block.
+
+struct timer_list my_timer;
+init_timer(&my_timer);
+my_timer.expires = jiffies + delay; /* timer expires in delay ticks */
+my_timer.data = 0; /* zero is passed to the timer handler */
+my_timer.function = my_function; /* function to run when timer expires */
+
+/*activate the timer*/
+add_timer(&my_timer);
+
+other function:
+mod_timer(&my_timer, jiffies + new_delay);
+modify the expiration of an already active timer
+If the timer is inactive, mod_timer() activates it.The function returns zero if the timer were inactive and one if the timer were active. In either case, upon return from mod_timer(), the timer is activated and set to the new expiration.
+
+del_timer(&my_timer);
+The function works on both active and inactive timers. If the timer is already inactive, the function returns zero; otherwise, the function returns one. Note that you do not need to call this for timers that have expired because they are automatically deactivated.
+
+del_timer_sync(&my_timer);
+To deactivate the timer and wait until a potentially executing handler for the timer exits. Unlike del_timer(), del_timer_sync() cannot be used from interrupt context.
+
+
+e. Delaying Execution
+1). Busy Looping
+A better solution would be to reschedule your process to allow the processor to accomplish other work while your code waits:
+
+unsigned long delay = jiffies + 5*HZ;
+while (time_before(jiffies, delay))
+cond_resched();
+The call to cond_resched()schedules a new process, but only if need_resched is set.
+
+2). Small Delays
+void udelay(unsigned long usecs)
+void ndelay(unsigned long nsecs)
+void mdelay(unsigned long msecs)
+Typical uses of these busy waiting functions delay for a small amount of time, usually in the microsecond range
+
+3). schedule_timeout()
+This call
+puts your task to sleep until at least the specified time has elapsed.There is no guarantee that the sleep duration will be exactly the specified time¡ªonly that the duration is at least as long as specified. 
+
+When the specified time has elapsed, the kernel wakes the task up and places it back on the runqueue.
+
+/* set task¡¯s state to interruptible sleep */
+set_current_state(TASK_INTERRUPTIBLE);
+/* take a nap and wake up in ¡°s¡± seconds */
+schedule_timeout(s * HZ);
+/*set it back*/
+set_current_state(TASK_RUNNING);
+
+

@@ -1,0 +1,253 @@
+cgroup is used for computer resources management and assignment for a group of processes. Computer resources is classfied to several subsystem. 
+
+disable the default config for cgroup
+# vim /etc/default/cgconf
+CREATE_DEFAULT=no
+# service cgconfig restart
+
+subsystem:
+cpu, memory, cpuset, cpuacct, devices, frezzer, blkio, perf_event, hugetlb, net_cls, net_prio.
+
+net_cls and net_prio is compiled as modules not in kernel.
+# modprobe cls_cgroup
+# modprobe netprio_cgroup
+# cat /proc/cgroup
+#subsys_name	hierarchy	num_cgroups	enabled
+cpuset		0	1	1
+cpu		0	1	1
+cpuacct		0	1	1
+memory		0	1	1
+devices		0	1	1
+freezer		0	1	1
+blkio		0	1	1
+perf_event	0	1	1
+hugetlb		0	1	1
+net_cls		0	1	1
+net_prio	0	1	1
+
+Root:
+User can make use of one or several these subsystemes to group a resource pool named Root. There may be several Root in the system, but each class only can belong to only one Root. If the hierachy is not zero, it means the subsystem is belong to a Root.
+
+exp. 
+make a resource pool contains cpu net_cls and net_prio subsystems to a Root in myroot
+# mount -t cgroup myroot -o cpu,netcls,net_prio /cgroup/myroot/
+delete a Root: User can delete it only there is no groups in the Root except default group
+# umount /cgroup/myroot
+
+group:
+User can create several groups in each Root and user also can create (sub)groups in each group. Each group assign specfic resources from the subsystems of the Root, each group only can assign the resources that is belong to it's father group. When create a new Root there is a default group in the Root. The default group contains all the related resource and all the proceess on the system. It means all the proceess on the system have all resource in the subsystems of the Root.
+# cat /cgroup/myroot/tasks
+1
+2
+3
+.
+.
+.
+9090
+9106
+
+create a exuuwen group and the group is empty with non-tasks, a process only can attach to one group in a Root
+#cd /cgroup/myroot
+# mkdir exuuwen
+# cat /cgroup/myroot/exuuwen/tasks
+
+
+2. subsystem
+a. cpuset:set the cpu and mem affinity of processes in a group
+# mount -t cgroup mycpuset -o cpuset /cgroup/cpuset/
+# ls /cgroup/cpuset/
+cgroup.clone_children  cpuset.cpu_exclusive  cpuset.memory_migrate           cpuset.memory_spread_slab        notify_on_release
+cgroup.event_control   cpuset.cpus           cpuset.memory_pressure          cpuset.mems                      release_agent
+cgroup.procs           cpuset.mem_exclusive  cpuset.memory_pressure_enabled  cpuset.sched_load_balance        tasks
+cgroup.sane_behavior   cpuset.mem_hardwall   cpuset.memory_spread_page       cpuset.sched_relax_domain_level
+
+cpuset.cpus: which cpus the processes of this group can be schduled on, if a process move to a new group in cpuset related Root, it will be schuled to one of cpus in cpuset.cpus. if cuset.sched_load_balance is set, the process will blanced to the cpus in the cpuset.cpus.  The default group in this group has all cpus.
+# cat cpuset.cpus
+0-3
+cpuset.mems: which memory node the memory of the processes of this group can allocate from, if a process move to a new group in cpuset related Root, if need allocate memory then it will allocate from this memory node, it will not affect the memory allocated before except the cpuset.memory_migrate is set. The default group in this group has all memory nodes.
+# cat cpuset.mems
+0
+cpuset.cpu_exclusive: the cpuset.cpus can be only used for this group and it's descendant group, a group can set this only when it's parent set it.
+The default group for the Root always set i
+# cat cpuset.cpu_exclusive
+1
+cpuset.mem_exclusive: the cpuset.mems can be only used for this group and it's descendant group, a group can set this only when it's parent set it.
+The default group for the Root always set i
+# cat cpuset.mem_exclusive
+1
+
+tips:
+If the cpuset.cpus of one group are all disable, the processes of this group will move to the near ancestor group
+If the process allocate memory with GFP_ATOMIC and there are not enough memory on the cpuset.mems, it will allocate from all mem nodes.
+If a process already set the cpu affinity or memory policy, it can't be attach a new group doesn't contain the cpus and mem nodes
+
+exp
+create a exuuwen group
+# mkdir /cgroup/cpuset/exuuwen
+set cpus and mems
+# echo 0 > /cgroup/cpuset/exuuwen/cpuset.cpus
+# echo 0 > /cgroup/cpuset/exuuwen/cpuset.mems
+attach the bash to this group
+# echo $$
+9320
+# echo $$ > /cgroup/cpuset/exuuwen/tasks
+# cat /cgroup/cpuset/exuuwen/tasks
+9320
+# cat /proc/self/cgroup 
+4:cpuset:/exuuwen
+
+
+b. cpuacct: caculate the cpu usage of the group process
+# mount -t cgroup mycpuacct -o cpuacct /cgroup/cpuacct/
+# ls /cgroup/cpuacct/
+cgroup.clone_children  cgroup.procs          cpuacct.stat   cpuacct.usage_percpu  notify_on_release  tasks
+cgroup.event_control   cgroup.sane_behavior  cpuacct.usage  exuuwen               release_agent
+
+cpuacct.usage: cpu usage: nano microsecond
+# cat cpuacct.usage
+3059213855412
+cpuacct.stat: user HZ
+# cat cpuacct.stat
+user 146898
+system 98453
+
+exp
+create a exuuwen group
+# mkdir /cgroup/cpuacct/exuuwen
+attach the bash to this group
+# echo $$
+9320
+# echo $$ > /cgroup/cpuacct/exuuwen/tasks
+# cat /cgroup/cpuacct/exuuwen/tasks
+9320
+# cat cpuacct.stat 
+user 2
+system 7
+# cat cpuacct.usage
+117674765
+# cat /proc/self/cgroup 
+5:cpuacct:/exuuwen
+4:cpuset:/exuuwen
+
+
+c. memory: contorl the memory usage of the processes in this group
+# mount -t cgroup mymemory -o memory /cgroup/memory/
+# ls /cgroup/memory/
+cgroup.clone_children  memory.failcnt             memory.move_charge_at_immigrate  memory.stat            notify_on_release
+cgroup.event_control   memory.force_empty         memory.oom_control               memory.swappiness      release_agent
+cgroup.procs           memory.limit_in_bytes      memory.pressure_level            memory.usage_in_bytes  tasks
+cgroup.sane_behavior   memory.max_usage_in_bytes  memory.soft_limit_in_bytes       memory.use_hierarchy
+
+memory.max_usage_in_bytes: record the max usage of the processes in this group
+memory.usage_in_bytes: record the current usage of the processes in this group
+memory.limit_in_bytes: limit the usage of the processes in this group
+memory.stat: show the memory status of the processes in this group
+
+#cat memory.usage_in_bytes 
+719060992
+# cat memory.limit_in_bytes 
+18446744073709551615
+
+exp.
+create a exuuwen group
+# mkdir /cgroup/memory/exuuwen
+attach the bash to this group
+# echo $$
+9320
+# echo $$ > /cgroup/memory/exuuwen/tasks
+# cat /cgroup/memory/exuuwen/tasks
+9320
+
+# cat /proc/self/cgroup 
+6:memory:/exuuwen
+5:cpuacct:/exuuwen
+4:cpuset:/exuuwen
+
+set usage to 40M
+# echo 41943040 > memory.limit_in_bytes
+
+
+
+d. devices: control the block or character devices access
+# mount -t cgroup mydevices -o devices /cgroup/devices/
+# ls /cgroup/devices/
+cgroup.clone_children  cgroup.procs          devices.allow  devices.list       release_agent
+cgroup.event_control   cgroup.sane_behavior  devices.deny   notify_on_release  tasks
+ 
+devices.list: show the access devices list 
+devices.allow: the white list access the devices, write only
+devices.allow: the black list access the devices, write only
+
+# cat devices.list 
+a *:* rwm
+all can read write mknod
+
+exp.
+create a exuuwen group
+# mkdir /cgroup/devices/exuuwen
+attach the bash to this group
+# echo $$
+9320
+# echo $$ > /cgroup/devices/exuuwen/tasks
+# cat /cgroup/devices/exuuwen/tasks
+9320
+
+# cat /proc/self/cgroup 
+7:devices:/exuuwen
+6:memory:/exuuwen
+5:cpuacct:/exuuwen
+4:cpuset:/exuuwen
+in another terminate, disable all device access
+# echo a > /cgroup/devices/exuuwen/devices.deny 
+back to the orignal terminate
+# echo 1 > /dev/zero
+bash: /dev/zero: Operation not permitted
+# echo 1 > /dev/null 
+bash: /dev/null: Operation not permitted
+in another terminate, enable /dev/null device access
+# echo "c 1:3 mrw" > /cgroup/devices/exuuwen/devices.allow
+back to the orignal terminate
+# cat /cgroup/devices/exuuwen/devices.list 
+c 1:3 rwm
+# echo 1 > /dev/null
+
+
+e. freezer: freeze the processes of this group
+# mount -t cgroup myfreezer -o freezer /cgroup/freezer/
+# ls /cgroup/freezer/
+cgroup.clone_children  cgroup.event_control  cgroup.procs  cgroup.sane_behavior  notify_on_release  release_agent  tasks
+
+create a exuuwen group
+# mkdir /cgroup/freezer/exuuwen
+attach the another bash to this group, move to another terminal
+# echo $$
+10168
+back to orignal terminal
+# echo 10168 > /cgroup/freezer/exuuwen/tasks
+# cat /cgroup/freezer/exuuwen/tasks
+10168
+
+# ls /cgroup/freezer/exuuwen/
+cgroup.clone_children  cgroup.event_control  cgroup.procs  freezer.parent_freezing  freezer.self_freezing  freezer.state  notify_on_release  tasks
+
+freezer.state: set the status of these processes in this group
+# echo FROZEN > freezer.state
+so another terminal is freezen
+# cat  freezer.state
+FROZEN
+# echo THAWEN > freezer.state
+so another terminal recover to normal
+# cat  freezer.state
+THAWED
+
+
+
+
+
+
+
+
+
+
+
+

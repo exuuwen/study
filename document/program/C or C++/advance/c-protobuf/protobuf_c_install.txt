@@ -1,0 +1,23 @@
+1. protobuf-2.6.1.tar.gz
+#./configure -prefix=/usr
+# make && make check
+# make install
+
+2. 
+# vim ~/.bashrc
+add:
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib
+export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/lib/pkgconfig
+
+3.
+logout and login
+
+4. protobuf-c
+protobuf-c-1.1.1/tar.gz
+# ./autoconf
+#./configure --prefix=/usr
+# make 
+# make install
+
+5. usage
+protoc-c --c_out=.  test.proto

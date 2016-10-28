@@ -1,0 +1,203 @@
+1. 原因
+在openvswitch2.3.0 group table中有个type为select, 该类型会随机选择group下的一个bucket执行, 当每个bucket都放output的action, 就可以实现多路径转发
+
+使用mininet搭建环境
+三个client c1, c2, c3 跟swicth s1相连， s1右端与三个switch s21, s22, s23相连, s21 s22 s23右端与switch s3连接, s3右端连接6个host h1 h2 h3 h4 h5 h6
+
+a. mininet python文件
+$ vim mininet_multipath
+#!/usr/bin/python
+
+from mininet.net import Mininet
+from mininet.node import OVSSwitch, Controller, RemoteController, Node, Host
+from mininet.cli import CLI
+from mininet.log import setLogLevel, info
+from mininet.link import Link, Intf
+
+def emptyNet():
+
+    net = Mininet(switch=OVSSwitch, build=False)
+
+
+    c1 = net.addHost('c1', ip='192.168.0.101/24', mac='00:1e:65:15:fc:11')
+    c2 = net.addHost('c2', ip='192.168.0.102/24', mac='00:1e:65:15:fc:12')
+    c3 = net.addHost('c3', ip='192.168.0.103/24', mac='00:1e:65:15:fc:13')
+
+    s1 = net.addSwitch('s1')
+
+    s21 = net.addSwitch('s21')
+    s22 = net.addSwitch('s22')
+    s23 = net.addSwitch('s23')
+
+    net.addLink(s21, s1)
+    net.addLink(s22, s1)
+    net.addLink(s23, s1)
+
+    net.addLink(c1, s1)
+    net.addLink(c2, s1)
+    net.addLink(c3, s1)
+
+    h1 = net.addHost('h1', ip='192.168.0.1/24', mac='00:1e:65:15:fc:01')
+    h2 = net.addHost('h2', ip='192.168.0.2/24', mac='00:1e:65:15:fc:02')
+    h3 = net.addHost('h3', ip='192.168.0.3/24', mac='00:1e:65:15:fc:03')
+    h4 = net.addHost('h4', ip='192.168.0.4/24', mac='00:1e:65:15:fc:04')
+    h5 = net.addHost('h5', ip='192.168.0.5/24', mac='00:1e:65:15:fc:05')
+    h6 = net.addHost('h6', ip='192.168.0.6/24', mac='00:1e:65:15:fc:06')
+    
+    s3 = net.addSwitch('s3')
+
+    net.addLink(s21, s3)
+    net.addLink(s22, s3)
+    net.addLink(s23, s3)
+
+    net.addLink(h1, s3)
+    net.addLink(h2, s3)
+    net.addLink(h3, s3)
+    net.addLink(h4, s3)
+    net.addLink(h5, s3)
+    net.addLink(h6, s3)
+
+
+    net.start()
+
+    CLI( net )
+    net.stop()
+
+
+if __name__ == '__main__':
+    setLogLevel( 'info' )
+    emptyNet()
+	
+
+b.设置flow
+$ vim set_flows.sh
+#!/bin/bash
+ovs-vsctl set bridge s1 protocols=OpenFlow13
+ovs-vsctl set bridge s21 protocols=OpenFlow13
+ovs-vsctl set bridge s22 protocols=OpenFlow13
+ovs-vsctl set bridge s23 protocols=OpenFlow13
+ovs-vsctl set bridge s3 protocols=OpenFlow13
+
+ovs-ofctl -O OpenFlow13 add-group s1 group_id=5566,type=select,bucket=output:1,bucket=output:2,bucket=output:3
+ovs-ofctl -O OpenFlow13 add-flow s1 in_port=4,actions=group:5566
+ovs-ofctl -O OpenFlow13 add-flow s1 in_port=5,actions=group:5566
+ovs-ofctl -O OpenFlow13 add-flow s1 in_port=6,actions=group:5566
+
+ovs-ofctl -O OpenFlow13 add-flow s1 ip,ip_dst=192.168.0.101,actions=output:4
+ovs-ofctl -O OpenFlow13 add-flow s1 arp,ip_dst=192.168.0.101,actions=output:4
+ovs-ofctl -O OpenFlow13 add-flow s1 ip,ip_dst=192.168.0.102,actions=output:5
+ovs-ofctl -O OpenFlow13 add-flow s1 arp,ip_dst=192.168.0.102,actions=output:5
+ovs-ofctl -O OpenFlow13 add-flow s1 ip,ip_dst=192.168.0.103,actions=output:6
+ovs-ofctl -O OpenFlow13 add-flow s1 arp,ip_dst=192.168.0.103,actions=output:6
+
+ovs-ofctl -O OpenFlow13 add-flow s21 in_port=1,actions=output:2
+ovs-ofctl -O OpenFlow13 add-flow s21 in_port=2,actions=output:1
+ovs-ofctl -O OpenFlow13 add-flow s22 in_port=1,actions=output:2
+ovs-ofctl -O OpenFlow13 add-flow s22 in_port=2,actions=output:1
+ovs-ofctl -O OpenFlow13 add-flow s23 in_port=1,actions=output:2
+ovs-ofctl -O OpenFlow13 add-flow s23 in_port=2,actions=output:1
+
+
+ovs-ofctl -O OpenFlow13 add-flow s3 ip,ip_dst=192.168.0.1,actions=output:4
+ovs-ofctl -O OpenFlow13 add-flow s3 ip,ip_dst=192.168.0.2,actions=output:5
+ovs-ofctl -O OpenFlow13 add-flow s3 ip,ip_dst=192.168.0.3,actions=output:6
+ovs-ofctl -O OpenFlow13 add-flow s3 ip,ip_dst=192.168.0.4,actions=output:7
+ovs-ofctl -O OpenFlow13 add-flow s3 ip,ip_dst=192.168.0.5,actions=output:8
+ovs-ofctl -O OpenFlow13 add-flow s3 ip,ip_dst=192.168.0.6,actions=output:9
+
+#ARP
+ovs-ofctl -O OpenFlow13 add-flow s3 arp,ip_dst=192.168.0.1,actions=output:4
+ovs-ofctl -O OpenFlow13 add-flow s3 arp,ip_dst=192.168.0.2,actions=output:5
+ovs-ofctl -O OpenFlow13 add-flow s3 arp,ip_dst=192.168.0.3,actions=output:6
+ovs-ofctl -O OpenFlow13 add-flow s3 arp,ip_dst=192.168.0.4,actions=output:7
+ovs-ofctl -O OpenFlow13 add-flow s3 arp,ip_dst=192.168.0.5,actions=output:8
+ovs-ofctl -O OpenFlow13 add-flow s3 arp,ip_dst=192.168.0.6,actions=output:9
+
+
+ovs-ofctl -O OpenFlow13 add-flow s3 ip,ip_dst=192.168.0.101,actions=output:1
+ovs-ofctl -O OpenFlow13 add-flow s3 arp,ip_dst=192.168.0.101,actions=output:1
+
+ovs-ofctl -O OpenFlow13 add-flow s3 ip,ip_dst=192.168.0.102,actions=output:2
+ovs-ofctl -O OpenFlow13 add-flow s3 arp,ip_dst=192.168.0.102,actions=output:2
+
+ovs-ofctl -O OpenFlow13 add-flow s3 ip,ip_dst=192.168.0.103,actions=output:3
+ovs-ofctl -O OpenFlow13 add-flow s3 arp,ip_dst=192.168.0.103,actions=output:3
+
+
+
+# python mininet_multipath.py
+
+onfiguring hosts
+c1 c2 c3 h1 h2 h3 h4 h5 h6 
+*** Starting controller
+*** Starting 5 switches
+s1 s21 s22 s23 s3 
+*** Starting CLI:
+mininet> 
+
+# bash set_flows.sh
+
+
+mininet> c1 ping h1 -c 3
+PING 192.168.0.1 (192.168.0.1) 56(84) bytes of data.
+64 bytes from 192.168.0.1: icmp_seq=1 ttl=64 time=0.369 ms
+64 bytes from 192.168.0.1: icmp_seq=2 ttl=64 time=0.108 ms
+64 bytes from 192.168.0.1: icmp_seq=3 ttl=64 time=0.109 ms
+
+--- 192.168.0.1 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 1999ms
+rtt min/avg/max/mdev = 0.108/0.195/0.369/0.123 ms
+mininet> c1 ping h2 -c 3
+PING 192.168.0.2 (192.168.0.2) 56(84) bytes of data.
+64 bytes from 192.168.0.2: icmp_seq=1 ttl=64 time=0.679 ms
+64 bytes from 192.168.0.2: icmp_seq=2 ttl=64 time=0.097 ms
+64 bytes from 192.168.0.2: icmp_seq=3 ttl=64 time=0.104 ms
+
+
+发现s21 s22 s23都有流量通过
+# ovs-ofctl -O OpenFlow13 dump-flows s22
+# OFPST_FLOW reply (OF1.3) (xid=0x2):
+ cookie=0x0, duration=1133.140s, table=0, n_packets=487, n_bytes=91135, in_port=1 actions=output:2
+ cookie=0x0, duration=1133.138s, table=0, n_packets=450, n_bytes=82553, in_port=2 actions=output:1
+# ovs-ofctl -O OpenFlow13 dump-flows s22
+OFPST_FLOW reply (OF1.3) (xid=0x2):
+ cookie=0x0, duration=1136.169s, table=0, n_packets=483, n_bytes=88980, in_port=1 actions=output:2
+ cookie=0x0, duration=1136.164s, table=0, n_packets=439, n_bytes=82479, in_port=2 actions=output:1
+# ovs-ofctl -O OpenFlow13 dump-flows s23
+OFPST_FLOW reply (OF1.3) (xid=0x2):
+ cookie=0x0, duration=1137.722s, table=0, n_packets=446, n_bytes=84003, in_port=1 actions=output:2
+ cookie=0x0, duration=1137.717s, table=0, n_packets=443, n_bytes=83169, in_port=2 actions=output:1
+
+
+不过发往同一host的机器都通过同一个path,因为select根据目的mac进行hash选择bucket, 可以加入一个patch让其根据flow选择bucket
+# vim openvswitch.patch
+diff --git a/ofproto/ofproto-dpif-xlate.c b/ofproto/ofproto-dpif-xlate.c
+index 4aedb59..be16092 100644
+--- a/ofproto/ofproto-dpif-xlate.c
++++ b/ofproto/ofproto-dpif-xlate.c
+@@ -2739,10 +2739,24 @@  xlate_select_group(struct xlate_ctx *ctx, struct
+group_dpif *group)
+     struct ofputil_bucket *bucket;
+     uint32_t basis;
+
+-    basis = hash_mac(ctx->xin->flow.dl_dst, 0, 0);
++    /* Hashing based on all L2, L3 and L4 fields
++     */
++    basis = flow_hash_symmetric_l4(&ctx->xin->flow, 0);
+     bucket = group_best_live_bucket(ctx, group, basis);
+     if (bucket) {
++        /* Since flow_hash_symmetric_l4() looks at all fields,
++         * we require matching on all fields used for the hash.
++         */
+         memset(&wc->masks.dl_dst, 0xff, sizeof wc->masks.dl_dst);
++        memset(&wc->masks.dl_src, 0xff, sizeof wc->masks.dl_src);
++        memset(&wc->masks.dl_type, 0xff, sizeof wc->masks.dl_type);
++        memset(&wc->masks.nw_dst, 0xff, sizeof wc->masks.nw_dst);
++        memset(&wc->masks.nw_proto, 0xff, sizeof wc->masks.nw_proto);
++        memset(&wc->masks.nw_src, 0xff, sizeof wc->masks.nw_src);
++        memset(&wc->masks.tp_dst, 0xff, sizeof wc->masks.tp_dst);
++        memset(&wc->masks.tp_src, 0xff, sizeof wc->masks.tp_src);
++        memset(&wc->masks.vlan_tci, 0xff, sizeof wc->masks.vlan_tci);
++
+         xlate_group_bucket(ctx, bucket);
+         xlate_group_stats(ctx, group, bucket);

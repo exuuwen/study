@@ -1,0 +1,273 @@
+A  platform机制
+platform_driver_register，什么时候调用PROBE函数 注册后如何找到驱动匹配的设备
+platform_driver_register(struct platform_driver *drv)注册后如何找到驱动匹配的设备
+
+struct platform_driver {
+        int (*probe)(struct platform_device *);
+        int (*remove)(struct platform_device *);
+        void (*shutdown)(struct platform_device *);
+        int (*suspend)(struct platform_device *, pm_message_t state);
+        int (*suspend_late)(struct platform_device *, pm_message_t state);
+        int (*resume_early)(struct platform_device *);
+        int (*resume)(struct platform_device *);
+        struct device_driver driver;
+};
+
+BUS首先初始化总线   do_basic_setup()->driver_init()->platform_bus_init()->...初始化platform_bus_type(虚拟总线)
+
+DEVICE有2种方法 1用函数platform_device_register()直接注册一个platform_device设备  2从dts文件中读出来形成一个platform_device设备
+1   设备向内核注册的时候platform_device_register()->platform_device_add()->...内核把设备挂在虚拟的platform bus下
+	platform_device_register(&physmap_flash); /*这是一个flash驱动例子*/
+
+2   用下面的函数_init gfar_of_init(void) 读取dts文件获得platform_device结构体 /*这是一个mac驱动的例子*/
+struct platform_device {
+	const char	* name;
+	u32		id;
+	struct device	dev;
+	u32		num_resources;
+	struct resource	* resource;
+};
+
+读取的是下面dts里面的结构
+ethernet@24000 {
+			#address-cells = <0x1>;
+			#size-cells = <0x0>;
+			device_type = "network";
+			model = "eTSEC";
+			compatible = "gianfar";
+			reg = <0x24000 0x1000>;
+			local-mac-address = [00 00 00 00 00 00];
+			interrupts = <0x1d 0x2 0x1e 0x2 0x22 0x2>;
+			interrupt-parent = <0x1>;
+			phy-handle = <0x2>;
+			phy-connection-type = "sgmii";
+		};
+
+
+static int __init gfar_of_init(void)  /*在fsl_soc.c文件下的*/
+{
+	struct device_node *np;
+	unsigned int i;
+	struct platform_device *gfar_dev;
+	struct resource res;
+	int ret;
+
+	for (np = NULL, i = 0;
+	     (np = of_find_compatible_node(np, "network", "gianfar")) != NULL;
+	     i++) {
+		struct resource r[4];
+		struct device_node *phy, *mdio;
+		struct gianfar_platform_data gfar_data;
+		const unsigned int *id;
+		const char *model;
+		const char *ctype;
+		const void *mac_addr;
+		const phandle *ph;
+		int n_res = 2;
+
+		memset(r, 0, sizeof(r));
+		memset(&gfar_data, 0, sizeof(gfar_data));
+
+		ret = of_address_to_resource(np, 0, &r[0]);
+		if (ret)
+			goto err;
+
+		of_irq_to_resource(np, 0, &r[1]);
+
+		model = of_get_property(np, "model", NULL);
+
+		/* If we aren't the FEC we have multiple interrupts */
+		if (model && strcasecmp(model, "FEC")) {
+			r[1].name = gfar_tx_intr;
+
+			r[2].name = gfar_rx_intr;
+			of_irq_to_resource(np, 1, &r[2]);
+
+			r[3].name = gfar_err_intr;
+			of_irq_to_resource(np, 2, &r[3]);
+
+			n_res += 2;
+		}
+
+		gfar_dev =
+		    platform_device_register_simple("fsl-gianfar", i, &r[0],
+						    n_res);
+
+	..........
+
+		ret =
+		    platform_device_add_data(gfar_dev, &gfar_data,
+					     sizeof(struct
+						    gianfar_platform_data));
+		if (ret)
+			goto unreg;
+	}
+
+
+DRIVER驱动注册的时候platform_driver_register()->driver_register()->bus_add_driver()->driver_attach()->bus_for_each_dev()对每个挂在虚拟的platform bus的设备作__driver_attach()->driver_probe_device()->drv->bus->match()就是下面的platform_match比较strncmp(pdev->name, drv->name, BUS_ID_SIZE)，如果相符就调用platform_drv_probe()->driver->probe()，如果probe成功则绑定该设备到该驱动.
+
+static int platform_match(struct device * dev, struct device_driver * drv)
+{
+	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
+
+	return (strncmp(pdev->name, drv->name, BUS_ID_SIZE) == 0);
+}
+
+
+当最后匹配后就调用platform_drv_probe()->driver->probe() 进入驱动的probe()。
+
+
+
+
+
+
+
+
+
+B   of_platform机制
+
+struct of_platform_driver
+{
+	const char		*name;
+	const struct of_device_id	*match_table;
+	struct module		*owner;
+
+	int	(*probe)(struct of_device* dev,
+			 const struct of_device_id *match);
+	int	(*remove)(struct of_device* dev);
+
+	int	(*suspend)(struct of_device* dev, pm_message_t state);
+	int	(*resume)(struct of_device* dev);
+	int	(*shutdown)(struct of_device* dev);
+
+	struct device_driver	driver;
+};
+
+struct of_device_id
+{
+	char	name[32];
+	char	type[32];
+	char	compatible[128];
+#ifdef __KERNEL__
+	void	*data;
+#else
+	kernel_ulong_t data;
+#endif
+};
+
+
+BUS首先初始化总线   do_basic_setup()->driver_init()->platform_bus_init()->...初始化of_platform_bus_type(虚拟总线)
+
+DEVICE用下面的函数mpc8572_register_mtd(void)读取dts文件 获得device_node结构
+struct device_node {
+	const char *name;
+	const char *type;
+	phandle	node;
+	phandle linux_phandle;
+	char	*full_name;
+
+	struct	property *properties;
+	struct  property *deadprops; /* removed properties */
+	struct	device_node *parent;
+	struct	device_node *child;
+	struct	device_node *sibling;
+	struct	device_node *next;	/* next device of same type */
+	struct	device_node *allnext;	/* next in list of all nodes */
+	struct  proc_dir_entry *pde;	/* this node's proc directory */
+	struct  kref kref;
+	unsigned long _flags;
+	void	*data;
+};
+
+读取的是下面dts里面的结构
+nor@ef800000 {
+		device_type = "rom";
+		compatible = "direct-mapped";
+		reg = <0xef800000 0x800000>;
+		probe-type = "CFI";
+		bank-width = <0x1>;
+		partitions = <0x0 0x400000 0x400000 0x8001 0x408000 0x300001 0x708000 0x78001 0x780000 0x80001>;
+		partition-names = "JFFS2(RW)", "DTB(RO)", "Linux Kernel(RO)", "Parameters(RO)", "U-BOOT(RO)";
+	};
+
+static int __init mpc8572_register_mtd(void)  /*在mpc85xx_ds.c文件中*/
+{
+	struct device_node *np;
+
+	np = of_find_compatible_node(NULL, "rom", "direct-mapped");
+	if (np == NULL)
+		return 0;
+
+	of_platform_device_create(np, np->name, NULL);
+	return 0;
+}
+
+DRIVER驱动注册的时候platform_driver_register()->driver_register()->bus_add_driver()->driver_attach()->bus_for_each_dev()对每个挂在虚拟的platform bus的设备作__driver_attach()->driver_probe_device()->drv->bus->match()，就是下面的of_platform_bus_match，如果相符就调用platform_drv_probe()->driver->probe()，如果probe成功则绑定该设备到该驱动.
+
+最终比较的是of_platform_driver.match_table与device_node里面的name，type，compatible。
+
+static int of_platform_bus_match(struct device *dev, struct device_driver *drv)
+{
+	struct of_device *of_dev = to_of_device(dev);
+	struct of_platform_driver *of_drv = to_of_platform_driver(drv);
+	const struct of_device_id *matches = of_drv->match_table;
+
+	if (!matches)
+		return 0;
+
+	return of_match_device(matches, of_dev) != NULL;
+}
+
+const struct of_device_id *of_match_device(const struct of_device_id *matches,
+					const struct of_device *dev)
+{
+	if (!dev->node)
+		return NULL;
+	return of_match_node(matches, dev->node);
+}
+
+const struct of_device_id *of_match_node(const struct of_device_id *matches,
+					 const struct device_node *node)
+{
+	while (matches->name[0] || matches->type[0] || matches->compatible[0]) {
+		int match = 1;
+		if (matches->name[0])
+			match &= node->name
+				&& !strcmp(matches->name, node->name);
+		if (matches->type[0])
+			match &= node->type
+				&& !strcmp(matches->type, node->type);
+		if (matches->compatible[0])
+			match &= of_device_is_compatible(node,
+						matches->compatible);
+		if (match)
+			return matches;
+		matches++;
+	}
+	return NULL;
+}
+
+当最后匹配后就调用platform_drv_probe()->driver->probe() 进入驱动的probe()。
+
+
+device和driver的match
+ driver_register->bus_add_driver-> driver_attach-> bus_for_each_dev(drv->bus, NULL, drv, __driver_attach)->[driver_match_device(drv, dev)->drv->bus->match,driver_probe_device(drv, dev)-> really_probe(dev, drv)->if (dev->bus->probe) {
+ 125                ret = dev->bus->probe(dev);
+ 126                if (ret)
+ 127                        goto probe_failed;
+ 128        } else if (drv->probe) {
+ 129                ret = drv->probe(dev);
+ 130                if (ret)
+ 131                        goto probe_failed;
+ 132        }
+]
+
+
+
+
+
+phy_device的生成 driver_register(&gianfar_mdio_driver)---gfar_mdio_probe-> mdiobus_register(new_bus)->get_phy_device->phy_device_create
+通过注册mdio总线 扫描phy_device并创建
+
+phy_driver a 自己的driver
+	   b 内核的genphy_driver

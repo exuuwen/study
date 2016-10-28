@@ -1,0 +1,142 @@
+1.dowload desktop(32/64),server(32/64) iso file
+http://www.ubuntu.com/download/
+2.create newuser
+adduser username
+3.add sudo privilege for new user
+sudo vi /etc/sudoers
+Add:
+username ALL=(ALL:ALL) ALL
+4. Static IP address
+vim /etc/network/interfaces
+auto eth0
+iface eth0 inet static
+ address 192.168.1.2
+        netmask 255.255.255.0
+        network 192.168.1.0
+        broadcast 192.168.1.255
+
+5.ssh install
+#sudo apt-get update
+#sudo apt-get install ssh
+#ssh IP_of_the_ubuntu_machine -l username
+scp：using ssh to copy
+
+scp username@IP:file_path    local_path  
+scp  local_file username@IP:file_path    
+
+ssh without password login
+ HOME: $ ssh-keygen
+ HOME: $ scp ~/.ssh/id_rsa.pub REMOTE:
+ HOME: $ ssh REMOTE
+ REMOTE: $ mkdir .ssh
+ REMOTE: $ cat ~/id_rsa.pub >> ~/.ssh/authorized_keys
+ REMOTE: $ chmod 700 .ssh
+ REMOTE: $ chmod 600 .ssh/authorized_keys
+ REMOTE: $ chmod 755 ~
+ REMOTE: $ rm id_rsa.pub
+
+5. tftp
+1) Install the software packet
+# sudo apt-get install tftpd    （server）
+# sudo apt-get install tftp     （client）  
+# sudo apt-get install xinetd  
+
+2) Create the conf file
+# vi /etc/xinetd.d/tftp
+input:
+service tftp
+{
+          socket_type               = dgram
+          protocol                  = udp
+          wait                      = yes
+          user                      = root
+          server                    = /usr/sbin/in.tftpd
+          server_args               = -s /tftpboot
+          disable                   = no
+          per_source                = 11
+          cps                       = 100 2
+          flags                     = IPv4
+}
+
+
+3) Setup tftp server directory
+# sudo mkdir /tftpboot
+     
+4) restar the xine server
+# /etc/init.d/xinetd restart
+
+5) Test tftp: 
+# cd /tftpboot
+# tftp 192.168.0.1 #there is a file named abc in the directory /tftpboot of another server
+tftp> get abc
+Received 9 bytes in 0.0 seconds 
+tftp> q
+
+6) drawback: file size limit is 32 MB
+
+6. vstfpd is a ftp sever, file size limit is 4G
+1) Install in server
+# apt-get install vsftpd
+# vim /etc/vsftpd.conf
+#enale
+local_enable=YES
+write_enable=YES
+
+2) Test
+a) server
+# cp temp.txt /srv/ftp/
+b) client
+# wget ftp://x.server.ip.x/temp.txt
+# ls
+temp.txt
+
+3) windows
+ftp tools access the user home dir through x.x.x.x:21 username passwd
+
+
+7. chrome installation
+a). get the package
+32bits：https://dl.google.com/linux/direct/google-chrome-stable_current_i386.deb
+64bits：https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+b). install
+# dpkg -i google-chrome-stable_current_amd64.deb
+if there are some errs
+# sudo apt-get -f install 
+
+8. instal smplayer to enjoy musics and vedios
+# sudo apt-get install smplayer
+
+9. install wireshark
+# sudo apt-get install wireshark
+if you want to install the latest version of wireshark for ubuntu 12.04
+a. sudo apt-get remove wireshark
+b. sudo add-apt-repository ppa:whoopie79/ppa
+c. sudo apt-get update; sudo apt-get install wireshark
+d. sudo rm /etc/apt/sources.list.d/whoopie79-ppa*.list; sudo apt-get update
+if you want to install the latest version of wireshark for ubuntu 14.04
+a. sudo apt-get remove wireshark
+b. sudo add-apt-repository ppa:n-muench/programs-ppa
+c. sudo apt-get update; sudo apt-get install wireshark
+d. sudo rm /etc/apt/sources.list.d/programs-ppa*.list; sudo apt-get update
+
+10. install chinese input tools
+a). install  fcitx-table-wbpy
+# apt-get install  fcitx-table-wbpy
+b). system settings --> language support --> install ---> chinese(simplified)
+c). system settings --> language support --> keyboard input method system---->fcitx 
+d). fcitx graphy ---> configure current input method(chinese->pinyin) to add
+
+11. wine to install app running in windows such as source insight
+# sudo apt-get install wine
+# wine Si3572Setup.exe
+# cd xx/Source\ Insight\ 3/
+# wine Insight3.exe
+
+12. wineqq
+Download WineQQ2013SP6-20140102-Longene
+http://www.longene.org/forum/viewtopic.php?f=6&t=4700
+$ sudo dpkg -i WineQQ2013SP6-20140102-Longene
+$ sudo apt-get install libgtk2.0-0
+if it's a amd64 machine
+or sudo apt-get install libgtk2.0-0:i386  
+

@@ -1,0 +1,56 @@
+1. show the current terminal
+a. cmd
+1).
+$ tty
+/dev/pts/2
+2).
+$ tty
+/dev/ttyN # N is 1~6
+3). 
+$ tty
+/dev/ttySn
+
+b. api
+ttyname(0): show the current control terminal of this process.
+
+
+2. process control terminal  
+All the printf and stdout, stdin, stderr associate with process control terminal in default
+a. /dev/pts/n
+It is a pseudo terminal. When a gnome user start a terminal or a remote user connect to host through ssh/telnet, then control terminal for this session is /dev/pts/n. n will be created and destroyed dynamicly with the life cycle of the session 
+
+b. /dev/tty1~6
+It is a virtual terminal. init process will call getty to make user can login the host with virtual terminal. User can jump to the virtual terminal through Ctrl+Alt+Fn(n is 1~6, 7 is return to the x-window enviromnet). There are six virtual terminals assocate with the console. but there is only one(/dev/tty0) active and output to the console in any moment .
+
+c. /dev/ttySn
+It is a serial port terminal. When user logins the host through the serial port device(COM), the terminal of this session is /dev/ttySn 
+
+d. /dev/tty
+This is the control terminal of the current process. it can be a link of a virtual terminal, pseudo terminal or serial port terminal.
+$ echo "www" > /dev/tty
+www
+
+e. /dev/tty0
+This is the control terminal of the current process. it can only be a link of a virtual terminal, but not a pseudo terminal. Only root user can access it.
+$ tty
+/dev/pts/2
+$ sudo -s
+# echo "www" > /dev/tty0
+
+$ tty
+/dev/tty1
+$ sudo -s
+# echo "www" > /dev/tty0
+#  www
+
+f. /dev/console 
+This is a virtual set of devices which can be set as a parameter at boot time. It might be redirected to a serial device or a virtual console and by default points to /dev/tty0. When multiple console= options are passed to the kernel, the console output will go to more than one device. Only root user can access it.
+$ /dev/pts/2
+$ sudo -s
+# echo "www" > /dev/console
+
+$ tty
+/dev/tty1
+$ sudo -s
+# echo "www" > /dev/console
+#  www

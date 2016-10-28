@@ -1,0 +1,108 @@
+First, we should install some software packets that we need.
+1.GNU m4
+we can install it through two ways 
+a. sudo apt-get install m4
+b. compiler install the m4-1.4.9.tar
+
+2. flex 
+we can install it through two ways 
+a. sudo apt-get install flex
+b. compiler install the flex-2.5.35.tar
+
+3. bison 
+we can install it through two ways 
+a. sudo apt-get install bison
+b. compiler install the bison-2.5.tar
+
+4. libcap
+compiler install the libpcap-1.0.0.tar
+
+
+Second, how to build the project. There are three part codes in our project
+1. kernel codes
+source_code/arch/x86/net/bpf_jit_comp.c
+source_code/net/packet/af_packet.c
+
+use:
+  1).replace these file in the kernel source folder
+  2).rebuild the kernerl
+	we should make the follow two config open
+  	CONFIG_HAVE_BPF_JIT=y
+	CONFIG_BPF_JIT=y
+
+
+2. raw packets receive test codes
+packet_filter.c 
+bpf_image.c
+
+use:
+     compile the programs as follow cmd.
+	gcc -o packet_filter bpf_image.c packet_filter.c -lpcap
+
+3.udp packets send test codes
+udp_send.c
+
+use:
+     compile the programs in another server as follow cmd.
+	gcc -o send udp_send.c
+
+
+Third,how to run the project 
+1. open BPF JIT function
+	 echo 2 > /proc/sys/net/core/bpf_jit_enable
+
+2. select test case of the two cases
+test 1 for kernel programming way
+a. echo 1 > /proc/wx_procdir/test_case
+test 0 for bpf jit way
+b. echo 0 > /proc/wx_procdir/test_case
+
+3. start receive program 
+/*"ip and udp dst port 2152" is the bpf rule which means only receive the specific traffic*/
+./packet_filter ip and udp dst port 2152
+
+
+4.send the udp packets from the other server
+/* ./send -u <recieve host> <port> <packet_size> <batch_size>*/
+ ./send -u 10.170.121.2 2152 128 20
+
+
+Last, check the test result
+in each case after recieve the packets, input the follow cmd.
+dmesg
+we can see in case 0(jit):jiffies means the run time
+[  268.254184] filter jited executed 50000001 times, last 72 jiffies, end:4294964157, begin:4294964085
+[  268.973071] filter jited res is 96
+[  268.973074] filter jited executed 50000001 times, last 72 jiffies, end:4294964229, begin:4294964157
+[  269.691905] filter jited res is 96
+[  269.691907] filter jited executed 50000001 times, last 72 jiffies, end:4294964301, begin:4294964229
+[  270.410731] filter jited res is 96
+[  270.410734] filter jited executed 50000001 times, last 72 jiffies, end:4294964373, begin:4294964301
+
+
+we can see in case 1(kernel programming): jiffies means the run time
+[  311.909733] my_filter_2 executed 50000001 times, last 50 jiffies, end:4294968534, begin:4294968484
+[  312.409777] my_filter_2 res is 96
+[  312.409780] my_filter_2 executed 50000001 times, last 50 jiffies, end:4294968584, begin:4294968534
+[  312.909886] my_filter_2 res is 96
+[  312.909888] my_filter_2 executed 50000001 times, last 51 jiffies, end:4294968635, begin:4294968584
+[  313.409919] my_filter_2 res is 96
+[  313.409922] my_filter_2 executed 50000001 times, last 50 jiffies, end:4294968685, begin:4294968635
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

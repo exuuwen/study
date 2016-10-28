@@ -1,0 +1,179 @@
+#include <vector>
+#include <iostream>
+#include <stdio.h>
+
+class noncopyable 
+{
+public:
+	noncopyable() {}
+	~noncopyable() {}
+private:
+	noncopyable(const noncopyable&);
+	const noncopyable& operator=(const noncopyable&);
+};
+
+using namespace std;
+
+class A : noncopyable
+{
+public:
+	A(){}
+private:
+	int data;
+};
+
+class B
+{
+public:
+	B(int a){ data = a;}
+private:
+	int data;
+};
+
+/*[]:can noly refer to exist items*/
+int main()
+{
+	vector<int>::size_type size;
+	vector<int> v1;
+	
+	//v1.reserve(5);//fro the first time reserve and as the base to increase double every time
+	cout << "v vector capacity:" << v1.capacity() << endl; //" v deque reserve:" << v1.reserve() << endl;
+
+	
+	if(!v1.empty())
+	{
+		size = v1.size();
+		cout << "v1 size " << size << " data:"<< endl;
+
+		for(vector<int>::size_type i=0; i<size; i++)
+		{
+
+			cout <<"item " << i <<":" << v1[i] << endl;
+		}
+	}
+	else
+	{
+		cout << "v1 is empty" << endl;
+		for(vector<int>::size_type i=0; i<15; i++)
+		{
+			v1.push_back(i);//add a item to the end
+			cout << "v vector capacity:" << v1.capacity() << endl;
+			if(i==5)
+			v1.reserve(10);//if it is ok to set the reserve value(must than the capacity value) and as the base to increase double every time need allocate agian afterwards
+		}
+		//v1.push_front(10);  //no push_front in vector
+		v1.pop_back();
+		//v1.pop_front();/no pop_front in vector
+		v1.erase(v1.begin() + 1);
+		vector<int>::iterator iter = v1.insert(v1.begin(), 10);
+		cout << "insert return item:" << *iter << endl;
+		size = v1.size();
+		cout << "v1 size " << size << " data:"<< endl;
+
+		for(vector<int>::size_type i=0; i<size; i++)
+		{
+			cout <<"item " << i <<":" << v1[i] << endl;
+		}
+	}
+
+	cout << "v deque capacity:" << v1.capacity() << endl;
+
+	vector<int> v2(5);
+	if(!v2.empty())
+	{
+		size = v2.size();
+		cout << "v2 size " << size << " data:"<< endl;
+
+		for(vector<int>::size_type i=0; i<size; i++)
+		{
+			cout <<"item " << i <<":" << v2[i] << endl;
+		}
+	}
+	else
+	{
+		cout << "v2 is empty" << endl;
+	}
+
+	vector<int> v3(6, 2);
+	if(!v3.empty())
+	{
+		size = v3.size();
+		cout << "v3 size " << size << " data:"<< endl;
+
+		for(vector<int>::size_type i=0; i<size; i++)
+		{
+			cout <<"item " << i <<":" << v3[i] << endl;
+		}
+	}
+	else
+	{
+		cout << "v3 is empty" << endl;
+	}
+
+	vector<int> v4(v3);
+	if(!v4.empty())
+	{
+		size = v4.size();
+		cout << "v4 size " << size << " data:"<< endl;
+
+		for(vector<int>::size_type i=0; i<size; i++)
+		{
+			cout <<"item " << i <<":" << v4[i] << endl;
+		}
+	}
+	else
+	{
+		cout << "v4 is empty" << endl;
+	}
+
+	v2 = v3;
+	if(v4 == v2)
+	{
+		cout << "v2 equal v4" << endl;
+	}
+	
+	v4[2] = 10;
+	v4[3] = 1;
+	v4[4] = 16;
+	int i = 0;
+	/*vector<int>::const_iterator: only read item, can not modify it*/
+	for(vector<int>::iterator iter=v4.begin(); iter!=v4.end(); iter++,i++)
+	{
+		cout << "*iter:" << *iter << endl;
+		*iter = i;
+	}
+	 
+	vector<int>::iterator end = v4.begin() + 4;
+	vector<int>::difference_type cnt = v4.begin() - end;
+	cout << "v4 difference type:" << cnt << endl;
+	vector<int> v5(v4.begin(), end);
+	if(!v5.empty())
+	{
+		size = v5.size();
+		cout << "v5 size " << size << " data:"<< endl;
+
+		for(vector<int>::size_type i=0; i<size; i++)
+		{
+			cout <<"item " << i <<":" << v5[i] << endl;
+		}
+	}
+	else
+	{
+		cout << "v5 is empty" << endl;
+	}
+	
+
+	
+	
+	/* // can not = operation
+	vector<A> a;
+	vector<A> b(a);
+	*/
+	
+	//no defaut constructor
+	//vector<B> b(5);
+	
+	vector<B> b(5, 1);//ok
+	return 0;
+}
+

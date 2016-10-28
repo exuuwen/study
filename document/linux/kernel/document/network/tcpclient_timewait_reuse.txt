@@ -1,0 +1,83 @@
+If there are too many tcp clients and the connection is terminated by clients, there will no available port for timewait.
+
+solution
+1. client bind ports  
+setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);  
+
+inet_bind--->inet_csk_get_port
+{
+	tb_found:
+	if (!hlist_empty(&tb->owners)) {
+		/*old one reuse and new sk->reuse*/
+		if (tb->fastreuse > 0 &&
+		    sk->sk_reuse && sk->sk_state != TCP_LISTEN &&
+		    smallest_size == -1) {
+			goto success;
+		} 
+	}
+}
+
+tcp_v4_connect--->__inet_hash_connect
+{
+	if (sk_head(&tb->owners) == sk && !sk->sk_bind_node.next) {
+		hash(sk);
+		spin_unlock_bh(&head->lock);
+		return 0;
+	} else {
+		spin_unlock(&head->lock);
+		/* No definite answer... Walk to established hash table */
+		/* the tw is NULL so always success and del the old twsk through inet_twsk_deschedule(tw);*/
+		ret = check_established(death_row, sk, snum, NULL);
+out:
+		local_bh_enable();
+		return ret;
+	}
+}
+
+2. client connect dirctly without bind
+echo 1 > /proc/sys/net/ipv4/tcp_tw_reuse
+
+tcp_v4_connect--->__inet_hash_connect---select a port------>__inet_check_established
+{
+	/* Check TIME-WAIT sockets first. */
+	sk_nulls_for_each(sk2, node, &head->twchain) {
+		tw = inet_twsk(sk2);
+
+		if (INET_TW_MATCH(sk2, net, hash, acookie,
+					saddr, daddr, ports, dif)) {
+			if (twsk_unique(sk, sk2, twp))
+				goto unique;
+			else
+				goto not_unique;
+		}
+	}
+
+unique:
+	.....
+	if (twp) {
+		*twp = tw;
+		/*for connect select a port case in the __inet_hash_connect 
+		it will be inet_twsk_deschedule(early kill twsk)*/
+	} else if (tw) {
+		/* Silly. Should hash-dance instead... */
+		inet_twsk_deschedule(tw, death_row);
+		inet_twsk_put(tw);
+	}
+}
+
+twsk_unique--->tcp_twsk_unique
+{
+	/*timestaps and enable tw_resue and time 1s after the tw_sk recent_stamp*/
+	if (tcptw->tw_ts_recent_stamp &&
+	    (twp == NULL || (sysctl_tcp_tw_reuse &&
+			     get_seconds() - tcptw->tw_ts_recent_stamp > 1))) {
+		tp->write_seq = tcptw->tw_snd_nxt + 65535 + 2;
+		if (tp->write_seq == 0)
+			tp->write_seq = 1;
+		tp->rx_opt.ts_recent	   = tcptw->tw_ts_recent;
+		tp->rx_opt.ts_recent_stamp = tcptw->tw_ts_recent_stamp;
+		sock_hold(sktw);
+		return 1;
+	}
+
+}

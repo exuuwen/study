@@ -1,0 +1,863 @@
+1.find命令
+
+-exec：
+使用find时，只要把想要的操作作用于一个文件里，就可以用exec来配合find查找。
+exec选项后面跟随着所要执行的命令或脚本，然后是一对儿{ }，一个空格和一个\，最后是一个分号。
+find . -type f -exec ls -l {} \;
+find命令匹配到了当前目录下的所有普通文件，并在-exec选项中使用ls -l命令将它们列出。
+find . -name "a*" -exec rm {} \;
+find命令匹配到了当前目录下的名为a*的文件，并在-exec选项中使用rm命令将它们删除
+
+find命令中*号的疑惑，这涉及到wildcard的"扩展"功能，若在路径上有多个名称符合wildcard，那就会被扩展为多个路径。
+如路径中有1.txt 2.txt 3.txt 在 [12].txt 中会被扩展为 1.txt 2.txt 。
+然而，find -name 后面只能指定一个name 
+若 -name *.txt 被扩展为 -name 1.txt 2.txt 3.txt 的话，那在syntax上就会出错。
+要解决这个问题只能通过quoting来实现-name ”*.txt“。
+
+xargs：
+      在使用find命令的-exec选项处理匹配到的文件时，find命令将所有匹配到的文件一起传递给exec执行。但有些系统对能够传递给exec的命令长度有限制，
+      这样在find命令运行几分钟之后，就会出现溢出错误。错误信息通常是“参数列太长”或“参数列溢出”。这就是xargs命令的用处所在，特别是与find命令一起使用。
+找出当前目录下名为“a*”的文件，并将结果保存到core.log里
+find . -name "a*" | xargs echo "" > core.log 
+找出当前目录下名为“a*”的文件中，含有sswww内容的文件。
+find . -name "a*" | xargs grep "sswww"
+把本目录下的.c变为.cpp
+-t: verbose
+-i: 有{}作为每个变量的时候需要
+ls "*.c" | xargs -i -t {} {}.pp
+
+others：
+a、使用name选项："*.txt"  "[A-Z]*"  "a?s"
+b、用perm选项: find . -perm 755 
+c、用type选项  d, l, p, f
+d、用size选项 
+ find . -size +1000c -and -size -2000c -print度大于1000字节小于2000字节的文件(-and  -or用于多个条件）
+ find . -size 100c -print 长度恰好为1 0 0字节的文件
+ find . -size +10 -print 超过10块的文件（一块等于5 1 2字节）
+e、使用depth选项：先查询目录的内容，然后才是目录本身。
+mkdir -p testdir/{a,b,c/d}
+find testdir  -exec rmdir  {} \; #删除自身开始 所以会有失败
+mkdir -p testdir/{a,b,c/d}
+find testdir -depth -exec rmdir  {} \;#删除文件里面内容开始。会成功
+
+
+2.Shell 组成
+a. Shell Prompt：是告诉使用者：您现在可以输入命令行了。
+* $：给一般使用者账号使用
+* #：给root(管理员)账号使用
+
+b. Carriage Return：是使用者告訴 shell输入结束，可以执行我的命令行了，通常由Enter键产生。
+c. Command Line：命令行就是在Shell Prompt与Carriage Return字符之间所输入的文字。
+Shell根据IFS(Internal Field Seperator)将Command Line所输入的文字拆解为"字段"(Word).
+IFS：
+是Shell预设使用的栏位分隔符号，将命令组分开，可以由一个或多个如下按键组成：
+* 空白键(White Space)
+* 表格鍵(Tab)
+* 回车鍵(Enter)
+
+Word：
+Command Line 的每一个word分为如下两种：
+* literal：也就是普通纯文字，对Shell來说沒特殊功能。
+* meta：对Shell来说，具有特定功能的特殊保留字元。
+>	Output redirection
+>>	Output redirection (append)
+<	Input redirection
+*	File substitution wildcard; zero or more characters
+?	File substitution wildcard; one character
+[ ]	File substitution wildcard; any character between brackets
+`cmd`	Command Substitution
+$(cmd)	Command Substitution
+|	The Pipe (|)
+;	Command sequence
+||	OR conditional execution
+&&	AND conditional execution
+( )	Group commands
+&	Run command in the background
+#	Comment
+$	Expand the value of a variable
+\	Prevent or escape interpretation of the next character
+<<	Input redirection (see Here Documents)
+{}	make a function
+
+
+3. 特殊meta
+a. quoting
+常用的 quoting 有如下三种方法：
+* hard quote：' ' (单引号)，所有meta均被关闭，除了自己，只能配对。
+* soft quote： " " (双引号)，大部份meta都会被关闭，但保留$、`反引号、\反斜杠，自己只能配对。
+* escape ： \ (反斜线)，只有紧接在 \之后的单一meta才被关闭。
+'(单引号)组合的优先级比\高   echo ‘Hatter\'s tea party 输出Hatter\s tea party
+
+IFS元素放在hard/soft quote， escape中就不当IFS 只当做空格三中的一种
+$ A=B C        # 空白鍵未被关闭，作為 IFS 处理， A=B当第一个命令， C当第二个就无效了。
+$ C: command not found. 
+$ echo $A
+
+$ A="B C"        # 空白鍵已被关闭，仅作为空白鍵处理。
+$ echo $A
+B C
+
+
+$ a="ss 
+> dd"
+$ echo $a  #在这里 换行符号作为分割副
+$ ss dd
+
+echo "$a" # 在这里 换行符号意义保持不变
+$ ss
+$ dd
+
+a="file1 file2"
+ls $a #相当于  ls file1 file2
+ls "$a" #相当于 ls "file1 file2"
+
+b. 命令替换
+1. 反引号`
+反引号用于设置系统命令的输出到变量，将其看作一条命令执行它,并保存结果。
+echo `date`
+Sat Nov 20 21:40:47 CST 2010
+
+2. $()
+count=$(echo $1 | sed 's/^-//') #命令替换 相当于``反引号，用于赋值
+` ` 需要额外的逃脱符( \` )处理，而 $( ) 則比較直觀。
+command1 `command2 `command3` `
+原本的意图是要在 command2 `command3` 先將 command3 提换出來给 command 2 处理，然后再将结果传递給 command1 `command2 ...` 來处理。
+然而，真正的结果在命令行中却是分成了 `command2 ` 与 `` 兩段。
+正确的输入应该：command1 `command2 \`command3\` `
+要不然，换成 $( ) 就没有问题了：
+command1 $(command2 $(command3))
+
+
+c. wildcard
+wildcard匹配符号，在Command Line的位置里, wildcard只作用于argument的path上.
+1  *  匹配任意非空
+2  ？ 匹配单个字符
+3  [] 匹配字符集 ：[a-zA-Z] [!a-z] 前面加！全否定 用[\!]匹配！
+4  {string1,string2...} 匹配字符串  a{ss,dd,ee}m 匹配 assm addm aeem  {2..5}  2 3 4 5
+tips：
+1. *.txt 并不能匹配 .txt 但可匹配 1.txt 这样的路径名称.
+2. 1*txt 及 1?txt 均可匹配 1.txt这样的路径名称
+
+区分出 shell meta 与 command meta 
+前面我们提到的那些 meta ，都是在 Command Line 中有特殊用途的，
+比方說 { } 是將其內一系列 command line 置于不具名的函数中执行，但是，awk却需要用 { } 來区分出 awk 的命令段(BEGIN, MAIN, END)。
+若你在 Command Line 中如此輸入：$ awk {print $0} 1.txt
+由於  { } 在 shell 中並沒关闭，那 shell 就讲 {print $0} 视为函数 ，但同時又沒有" ; "符號作命令区分，因此就出现awk 的语法错误。
+要解决之，可用 quote ：
+$ awk '{print $0}' 1.txt
+awk "{print \$0}" 1.txt
+awk \{print\ \$0\} 1.txt
+这几个的 { 符号 shell meta 关闭，避免掉在 shell 中遭到处理，而完整的成为 awk 参数中的 command meta 。
+
+
+4. 输入输出以及匹配
+read -p "how old r u? " age
+read  one  #输入读
+echo $one
+
+read one < file #文件读
+echo $one 
+
+read -a people #读数组
+echo ${people[2]}
+
+$ read -n 10 aline #指定读入个数
+abcdefghij$
+$ echo $aline
+abcdefghij
+
+cat： concatenate files and print on the standard output
+-n 或 --number 由 1 开始对所有输出的行数编号 
+-b 或 --number-nonblank 和 -n 相似，只不过对于空白行不编号 
+-s 或 --squeeze-blank 当遇到有连续两行以上的空白行，就代换为一行的空白行 
+-v 或 --show-nonprinting 显示非打印字符
+
+a. cat  filename  输出文件内容
+b. cat  只是cat 后面输入 自动会输出
+重定向  <:输入///
+       >:输出///
+       
+echo \* #就返回 *
+echo -n 取消最后默认的 enter造成的换行符
+echo -e 啟用反斜线字符的转换 讲后面的\n,\t作为换行符,制表符等  必须""
+       
+tee：读取标准输入的数据，并将其内容输出和文件。
+$ls -l |tee myfile
+
+grep:
+查找多个文件$ grep "sort it" *
+grep -c "48" data.f 只输出总行数
+grep -n "48" data.f 输出结果并且行数
+grep -v "48" data.f 显示不包括的行 反向显示
+grep "48\>" data.f 精确匹配
+grep -i "48" data.f 关闭大小写敏感
+使用正则表达式时最好用单引号括起来，这样可以防止grep中使用的专有模式与一些shell命令的特殊方式相混淆。
+grep 'K...D' data.f
+grep '9\{3,\}' data.f 9出现3次以上
+查询有特殊含义的字符，诸如$ . ' " * [] ^ | \ + ? ,必须在特定字符前加\。假设要查询包含“.”的所有行。
+grep对字符串匹配
+#STR="mary jo come here"
+#echo $STR | grep "mary"
+
+
+5.Shell变量
+Shell一共有4种变量，本地、环境，还有两种变量被认为是特殊变量因为它们是只读的。这两种变量即为位置变量和特定变量参数。
+等号左右两边不能使用区隔符号(IFS)，也应避免使用 shell 的保留字元(meta charactor)。
+        * 变量名称不能使用 $ 符号。
+        * 变量名称的第一個字母不能是数字(number)。
+        * 变量名称長度不可超过 256 个字母。
+        * 变量名称及变量值之大小写是有区別的(case sensitive)。
+        
+我们也可利用命令行的变量替换能力來"扩充"(append)变量值：
+        A=B:C:D
+        A=$A:E
+这样，第一行我們設定 A 的值為 "B:C:D"，然後，第二行再將值扩充为 "B:C:D:E" 。
+上面的扩充范例，我們使用区隔符号( : )来达到扩充目的，要是沒有区隔符号的話，如下是有问题的：
+        A=BCD
+        A=$AE
+因为第二次是将 A 的值继承 $AE 的提换結果，而非 $A 再加 E﹗
+要解決此问题，我们可用更严谨的替换处理：
+        A=BCD
+        A=${A}E
+上例中，我們使用 {} 將变量名称的范围给明确定义出来，如此一来，我们就可以讲A的变量值 BCD 给扩充为 BCDE 。
+
+本地变量
+生命只属于本shell
+var=data   =前后无空格，data超过字符要用引号，变量在shell中被引用的时候 用$var,用unset取消一个变量
+
+字符串处理：将变量当字符串
+one=hhahhah #设置变量
+unset one #取消值
+echo ${one}   #可以不要{}  
+
+echo ${one:+jjj}   #如果one设置了值且非NULL 就在这取值为jjj，但不设置  如果没设置 就返回空
+echo ${one+jjj}    #如果one设置了值且 就在这取值为jjj 但是没有设置one
+
+echo ${one:-jjj}   #如果one没有被设置或者NULL  就作当前one为jjj 但是没有设置one
+echo ${one-jjj}    #如果one没有被设置  就作当前one为jjj 但是没有设置one
+
+echo ${one:=jjj}   #如果one没有被设置或者NULL  就作设one为jjj 
+echo ${one=jjj}    #如果one没有被设置 就作设one为jjj 
+
+echo ${one:?}      #测试one有没有被设置或者NULL 没有返回错误 
+echo ${one?}       #测试one有没有被设置没有返回错误 
+
+echo ${one:4}      #返回hah偏移4哥  echo  ${one:4:2}返回ha，偏移4个长度2  
+
+${#varname}        #返回varname的长度
+
+
+环境变量
+a.状态变量
+PATH路径 PATH=$PATH":/home/you/bin"
+HOME： Name of your home (login) directory
+SECONDS： Number of seconds since the shell was invoked
+PWD： Current directory
+OLDPWD：Previous directory before the last cd command
+EUID: effective uid
+PPID: parent pid
+UID: user id
+RANDOM: generate random integer between 0-32767
+IFS: input file decollator
+IFS='+'
+v="a+b+c"
+echo $a # a b c
+b.可以自定义环境变量
+
+可由父shell传递给子程shell，状态变量都是环境变量，一般为大写
+export  VARNAME
+
+特定shell变量
+$# 传递到脚本的参数个数
+$* 以一个单字符串显示所有向脚本传递的参数。与位置变量不同，此选项参数可超过9个
+$$ 脚本运行的当前进程I D号
+$! 后台运行的最后一个进程的进程I D号
+$@ 与$ *相同，但是使用时加引号，并在引号中返回每个参数
+$- 显示s h e l l使用的当前选项，与s e t命令功能相同
+$? 显示最后命令的退出状态。0表示没有错误，其他任何值表明有错误
+
+位置变量(只读)
+$0  $1 $2 $3 $4 $5 $6 $7 $8 $9.......  
+shell名  第一个输入参数	
+$10 不是替换第 10 个参数，而是替换第一個参数($1)然后再补一個 0 于其后﹗
+方法一是使用我們上一章介绍的 ${ } ，也就是用 ${10} 即可。
+方法二，就是 shift:向脚本传递参数时，有时需要将每一个参数偏移以处理选项，这就是shift命令的功能。
+所谓的 shift 就是取消 positional parameter 中最左边的参数( $0 不受影响)。
+其预设值为 1，也就是 shift 或 shift 1  都是取消 $1 ，而原本的 $2变成 $1
+
+接下來就是 $@ 与 $* ：
+若在 command line 上跑 my.sh p1 "p2 p3" " " p4 的话。
+$@和$*都是p1 p2 p3   p4
+"$@" 则可得到 "p1" "p2 p3" "" "p4" 这三个不同的词段(word)﹔
+"$*" 则可得到 "p1 p2 p3  p4" 这一整串单一的词段。
+set: 在shell中可以用set来设置输入参数 
+set "p1" "p2 p3" " " "p4"
+
+6.条件测试
+test:一般有两种格式，即：
+test condition
+或
+[ condition ]
+使用方括号时，要注意在条件两边加上空格。
+测试文件状态
+- d 目录
+- s 文件长度大于0、非空
+- f 正规文件
+- L 符号连接
+- u 文件有s u i d位设置
+- w 可写
+- r 可读
+- x 可执行
+
+[ -w s.txt ]  #测试文件s.txt是否有写权限
+echo $?  #查看返回结果
+
+-a 逻辑与，操作符两边均为真，结果为真，否则为假。
+-o 逻辑或，操作符两边一边为真，结果为真，否则为假。
+! 逻辑否，条件为假，结果为真。
+[ -w s.txt -a -r s.txt ]  #测试文件s.txt是否有写且读权限
+
+字符串测试，字符串最好加上引号
+这里，string operator可为：
+== 两个字符串相等。(=)也行
+!= 两个字符串不等。
+\> 大于
+\< 小于
+-z 空串。
+-n 非空串
+
+one=hhh
+
+[ -z $one ]
+
+数字测试
+-lt Less than
+-le Less than or equal
+-eq Equal
+-ge Greater than or equal
+-gt Greater than
+
+one=1
+[ $one -eq 1 ]
+
+直接用数字比较即可
+[ 990 -le 995 ]
+
+关于 [ parm1 op parm2 ] 这个 test 格式
+假如 $A 目前沒有定义，或被定义为空字串的话，那如下的写法将会失败：
+$ unset A
+$ [ $A = abc ]
+[: =: unary operator expected
+这是因为命令行碰到$这个meta时，会替换 $A 的值，然后再重组命令行，那就变成了：
+[ = abc ]
+如此一來 = 号左邊就沒有字串存在了，因此造成 test 的语法错误﹗
+但是，下面這個写法則是成立的：
+$ [ "$A" = abc ]
+$ echo $?
+1
+所以这种类型变量最好加上“”
+
+[ 0 ], [ -1 ] [ a ] 都为true
+[ $a ]: 如果a未定义则为false
+
+7. 流控
+a. if 
+后面跟着test, $((xxx)和command组合（用&&或者||)的 condition
+使用&&的一般形式为：
+命令1 && 命令2
+这种命令执行方式相当地直接。&&左边的命令（命令1）返回真(即返回0，成功被执行）
+后，&&右边的命令（命令2）才能够被执行；换句话说，“如果这个命令执行成功& &那么执
+行这个命令”
+
+||的作用有一些不同。如果||左边的命令（命令1）未执行成功，那么就执行| |右边的命令
+（命令2）；或者换句话说，“如果这个命令执行失败了|| 那么就执行这个命令”
+
+if condition
+then statements #then和statements可以分排
+[elif condition
+then statements...]
+[else 
+ statements]
+ 
+then与condition一排必须有分号， 不一排也可以有
+if condition;then 
+statements
+[elif condition ;then 
+statements...]
+[else 
+ statements]
+fi
+
+1. 测试命令是否成功 
+if  cat /proc/modules | grep lp > /dev/null 2>&1
+then
+	echo "ok"
+fi
+2. 条件检测
+if [ $# -lt 3 ]; then
+	# less than 3 parameters called, echo a usage message and exit
+	# 如果少于三个参数则显示使用的信息，然后退出。
+	echo "Usage: `basename $0`arg1 arg2 arg3" >&2
+	exit 1
+fi
+
+3. 命令和条件测试 组合
+if  cat /proc/modules | grep lps > /dev/null 2>&1 || [ -z $A ]
+then
+	echo "ok"
+fi
+
+b. while语句:conditon#可以使多个test和command组合，用&&或者||
+while condition 
+do 
+    statements... 
+done 
+do和condition在一排必须有分号
+while condition ;do 
+    statements... 
+done 
+
+while 从文件中读数据
+while read LINE
+do
+        echo $LINE
+done < names.txt
+
+while死循环 ":"是 bash 的 null command，不做任何动作，除了送回 true 的 return value 。
+while :; do
+    echo looping...
+done
+
+c. for循环
+for name  [in list ]
+do
+    statements that can use  $name... 
+done
+例子
+for loop in orange red blue grey
+do
+        echo "$loop"
+done
+$ orange
+$ red
+$ blue
+$ grey
+
+
+for loop in "orange red" blue grey
+do
+        echo "$loop"
+done
+$ orange red
+$ blue 
+$ grey
+
+for loop in {1..3}
+do
+        echo "$loop"
+done
+$ 1
+$ 2
+$ 3
+
+
+for loop in f* # the files begin with f in pwd
+do
+        echo "$loop"
+done
+$ file1
+$ file2
+
+在for循环中省去in列表选项时，它将接受命令行位置参数作为参数。实际上即指明：
+for params in "$@"或for params in "$*"
+
+for params in "$@" = for params
+
+d. until循环
+conditon可以使多个test和command组合，用&&或者||
+until循环执行一系列命令直至条件为真时停止。
+until condition
+do 
+	statements
+done
+
+
+e. case语句
+
+case expression  in 
+    pattern1)
+        statements 
+        ;; 
+	pattern2)
+        statements 
+        ;; 
+ 	... 
+	*) echo "`basename $0` : Unknow response" >&2
+        exit 1
+        ;;
+esac 
+
+f. break
+break命令允许跳出循环。break通常在进行一些处理后退出循环或case语句。如果是在一
+个嵌入循环里，可以指定跳出的循环个数。例如如果在两层循环内，用break 2刚好跳出整个
+循环。
+g. continue
+continue命令类似于break命令，只有一点重要差别，它不会跳出循环，只是跳过这个循
+环步。
+
+
+8. 数字和数组, 字符串
+1）数字
+declare:定义数字变量
+declare -i value=1 data=2 数字变量
+declare -i result
+result=value*data#+ - * /  ++ .....类似c的算数运算 ,使用时不需要$
+
+declare -a The variables are treated as arrays
+declare -r Makes the variables read-only
+declare -x Marks the variables for export via the environment(same as export)
+
+数字变量逻辑和关系运算
+a. 
+$(( ))不必定义为数字变量的时候的数字运算
+a=2
+echo $((a++)) 变量使用时候不需要$
+
+a=$(2#101010)"#2进制数字
+
+$((1<2))  为1
+echo $? # 为0
+
+$(((1<2)&&(2<1))) 为0
+echo $? #为1
+
+算数for
+for (( initialisation ; ending condition ; update ))
+do
+        statements...
+done
+
+b.let: Integer arithmetic
+a=10
+let "a+=1" # let命令无返回值
+echo $a # 11
+
+let "a=2#101010"#2进制数字
+
+
+2）数组
+A="a b c def" 這樣的變量只是將 $A 替換為一個單一的字串，
+但是改為 A=(a b c def) ，則是將 $A 定義為組數..
+names[2]=alice
+names[0]=hatter
+names[5]=duchess
+echo ${names[2]} #打印第二个元素
+echo ${names[@]}#打印所有元素
+echo ${!names[@]}#打印出有数据的标号
+echo ${#name[5]}#打印出该元素的长度
+echo ${#names[@]}#打印出元素的个数
+
+for a in ${name[@]}
+
+
+3) 字符串
+s=abcdbed
+
+${#s}: length of s
+${s:offset:length}: s从offset开始length个长多的子串
+${@:offset:length}: 输入参数从offset个开始length个子参数,*也可以
+
+${s#a*b}:从头开始去掉匹配到的a*b 短匹配  # cdbed
+${s%b*d}:从尾开始去掉匹配到的b*d  端匹配# abcd
+${s##a*b}:从头开始去掉匹配到的a*b 长匹配  # ed
+${s%%b*d}:从尾开始去掉匹配到的b*d 长匹配  # a
+
+${s/ab/w}: 把第一个ab换成w
+${s//ab/w}: 把所有ab换成w
+
+4) expr: both for integer and string
+expr arg1 op arg2
+
+expre $a \* 2
+
+expr length $ss
+
+
+
+9. I/O重定向与信号
+在 shell 程式中，最常使用的FD大概有三个，分別为： 
+0: Standard Input (STDIN) 
+1: Standard Output (STDOUT) 
+2: Standard Error Output (STDERR) 
+
+* <
+* >
+我们可用 <来改变读进的数据通道(stdin)，使之从指定的文件读取。 
+我们可用 > 来改变送出的数据通道(stdout, stderr)，使之输出到指定的文件。 
+* 1> 
+* 2> 
+前者是改变stdout的数据输出通道，后者是改变 stderr 的数据输出通道。
+由于1 是 > 的预设值，因此，1> 与 > 是相同的，都是改变 stdout 。
+* 2>&1 就是将stderr并进stdout作输出 
+* 1>&2 或 >&2 就是将stdout并进stderr作输出 
+
+command1 | command2  上一个命令的stdout接到下一個命令的 stdin 去了﹗在pipe line之間，前一个命令的 stderr 是不会进入到下一命令的 stdin 的，若不用 2> 进到 file 去的話，它还是送到监视器上面来﹗
+command > filename 把把标准输出重定向到一个新文件中
+command >> filename 把把标准输出重定向到一个文件中(追加)
+command 1 > fielname 把把标准输出重定向到一个文件中
+command > filename 2>&1 把把标准输出和标准错误一起重定向到一个文件中
+command 2 > filename 把把标准错误重定向到一个文件中
+command 2 >> filename 把把标准输出重定向到一个文件中(追加)
+command >> filename 2>&1 把把标准输出和标准错误一起重定向到一个文件中(追加)
+command < filename > filename2 把command命令以filename文件作为标准输入，以filename2文件作为标准输出
+command < filename 把command命令以filename文件作为标准输入
+command << delimiter 把从标准输入中读入，直至遇到delimiter分界符
+command <&m 把文件描述符m作为标准输入
+command >&m 把标准输出重定向到文件描述符m中
+command <&- 把关闭标准输入
+command n<&- 把关闭输入n
+command >&- 把关闭标准输出
+command n>&- 把关闭输出n
+
+多命令管道
+cat <(ls -a) <(pwd) | xxx
+
+若你写成 cm1 | cm2 > file | cm3 的話， 
+那你肯定会 cm3 的 stdin 是空的﹗(当然，你都将水管接到別的水池了﹗) 
+如此解决： 
+cm1 | cm2 | tee file | cm3 
+tee - read from standard input and write to standard output and files
+
+在合并标准输出和标准错误的时候，切记shell是从左至右分析相应的命令的。下面给出
+一个例子：
+$ cleanup > cleanup.out 2>&1
+
+把标准输出和出无输出都定向到文件file
+$ cleaup &> cleanup.out 
+
+如果想创建一个长度为0的空文件，可以用'> filename'：
+$ >myfile
+
+信号
+trap "cmd" sig1 sig2 ... #捕获信号，执行 cmd：可以是函数
+trap "echo ' You hit control-C!'" INT
+trap "echo ' You hit pkill!'" TERM
+trap  ""  INT #忽视信号
+CTRL-c, you tell the shell to send the INT (for "interrupt") signal to the current job; 
+CTRL-Z sends TSTP (on most systems, for "terminal stop"). 
+CTRL-\ send the current job a QUIT signal (control-backslash); 
+
+
+10. 函数与执行
+1 source name.sh 就是在当前shell中执行
+2 ./name.sh  在子shell中执行  父shell的变量不能用除非该变量在父shell中被export，等待子shell完成，才返回给父shell
+3 ./name.sh & 在子shell中并且后台执行  父shell的变量不能用除非该变量在父shell中被export，不等待子shell完成，直接返回给父shell
+wait:等到背景shell完成
+4. exec ./name.sh在当前shell执行，但是原来的进程终止。
+
+( ) 将command group置于sub-shell去执行， 它继承住shell的变量，改变其变量只能是对于sub-shell有用，主shell不可知。
+{ } 则是在同一个shell內完成，相当于无名函数，与主shell共享一切
+
+函数由两部分组成：
+函数标题。
+函数体。
+标题是函数名。函数体是函数内的命令集合。标题名应该唯一；如果不是，将会混淆结果，因为脚本在查看调用脚本前将首先搜索函数调用相应的shell。
+定义函数的格式为：
+function 函数名（） #function 可选
+{
+命令1
+. . .
+}
+
+取消一个函数：unset -f func_name 
+查看当前shell下定义的函数  declare -f
+declare 的任何变量在函数中都是本地变量 
+foo()
+{
+   declare a="www" #只在函数中有效 -i/a/r/X一样
+}
+
+
+向函数传递参数就像在一般脚本中使用特殊变量$ 1 , $ 2 . . . $ 9一样，函数取得所传参数后，将原始参数传回shell脚本，因此最好先在函数内重新设置变量保存所传的参数。
+一个脚本中的的变量与其内部函数是共享的，除非函数内申明为本地变量local name。
+函数和脚本们运行在一个shell上的，所以$0永不变，一直为脚本名字见script_func.sh, $num在脚本中为输入参数，在函数中为函数参数。
+
+当函数完成处理或希望函数基于某一测试语句返回时，可做两种处理：
+1) 让函数正常执行到函数末尾，然后返回脚本中调用函数的控制部分。
+2) 使用return返回脚本中函数调用的下一条语句，可以带返回值。0为无错误，1为有错误。
+
+调用其他文件的函数 需要source 该文件
+
+return value
+* 若在script里，用exit RV来指定其值，若沒指定，在结束时以最后一条命令之RV为值。
+* 若在function里，则用return RV来指定返回值。
+Return Value的作用，是用来判断行程的退出状态(exit status)，只有两种：
+* 0 为"真"(true)
+* 非0 为"假"(false)
+
+函数返回值测试
+1. 可以直接在脚本调用函数语句的后面使用最后状态命令来测试函数调用的返回值。
+if [ $? == 0 ]
+2. 直接调函数
+if func para
+then 
+	echo "ok"
+else
+	echo "no ok"
+fi
+
+# Source function library.
+. /xx/xx/functions
+11. 常用命令
+a). tr [option] str1 [str2] 
+tr用来从标准输入中通过替换或删除操作进行字符转换。tr主要用于删除文件中控制字符:是单个字符的替换
+或进行字符转换。
+-c 用字符串1中字符集的补集替换此字符集，要求字符集为ASCII。
+-d 删除str1中的字符。
+-s 删除所有重复连续出现字符序列，只保留第一个；即将重复出现字符串压缩为一个字符
+串。
+-s压缩 删除重复的
+tr -s "[a-z]" < oops.txt  #删除重复连续的 a-z
+tr -s "\n" < oops.txt  #删除重复的 空行
+tr  "[a-z]" "[A-Z]" <oops.txt   #大写代替小写， str2代替str1
+删除指定字符  -c 补集含义
+tr -cs "[a-z][A-Z]"  "\n" < oops.txt #将输入种的 非字母替换成换行符 并进行压缩新行
+tr "[w*3]" "m" <oops.txt  #多于3个w的 每个w换成m
+
+
+b). cut:字符串剪切 以列为单位
+-c:选择指定字符
+-d：指定分隔符
+-f: 指定分隔符分出的域
+ls -l | cut -c 1-5  #1到5列字符
+ls -l | cut -d : -f 1,5 #以:为分界的 1列和5列
+
+
+c)wc：计算数
+ls -l | wc -l#行数
+ls -l | wc -w#字数
+ls -l | wc -c#字节数
+
+
+d) sort排序
+$ sort -t ‘ ‘ -k1,1r -k2,2n test
+-t:指定分隔符
+-k:指定key的域， n,m表示以n到m列为域，没有,m就表示从n域到结尾都为key；还可以指定具体字符为key 3.1,3.2:第三个域的1，2个字符为key
+-n:按照数字排序
+-r:反向排序
+#cat test 
+google 110 5000
+baidu 100 5000
+guge 50 3000
+baidu 600 5000
+sohu 100 4500
+#sort -t " " -k1,1r -k2,2n test 
+sohu 100 4500
+guge 50 3000
+google 110 5000
+baidu 100 5000
+baidu 600 5000
+
+
+e) uniq 唯一显示
+uniq -c file #重复的只显示一遍，同时显示次数
+uniq -d file #只显示重复的
+uniq -u file #只显示不重复的
+
+uniq -f 2 -s 2 file
+-f 忽略前2个段(以空格分段)，接着忽略2个字符(第三个段)的内容做比较
+#cat file 
+boy took bat home 
+boy took bat home 
+girl took bat home 
+dog brought hat home 
+dog brought hat home 
+dog brought hat home 
+#uniq -c -f 2 -s 2 file #都是 at home 全一样
+6 boy took bat home
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+getopts  获取可选argument  存储argument在OPTARG中
+g e t o p t s可以编写脚本，使控制多个命令行参数更加容易。g e t o p t s用于形成命令行处理标
+准形式。原则上讲，脚本应具有确认带有多个选项的命令文件标准格式的能力。
+g e t o p t s一般格式为：
+getopts option_string variable
+
+g e t o p t s读取o p t i o n s t r i n g，获知脚本中使用了有效选项。
+g e t o p t s查看所有以连字符开头的参数，将其视为选项，如果输入选项，将把这与
+o p t i o n s t r i n g对比，如果匹配发现，变量设置为O P T I O N，如果未发现匹配字符，变量能够设
+置为？。重复此处理过程直到选项输入完毕。
+g e t o p t s接收完所有参数后，返回非零状态，意即参数传递成功，变量O P T I O N保存最后处
+理参数，一会儿就可以看出处理过程中这样做的好处。
+
+有时有必要在脚本中指定命令行选项取值。g e t o p t s 为此提供了一种方式，即在
+o p t i o n s t r i n g中将一个冒号放在选项后。例如：
+getopts ahfvc: OPTION
+上面一行脚本指出，选项a、h、f、v可以不加实际值进行传递，而选项c必须取值。使用
+选项取值时，必须使用变量O P TA R G保存该值。如果试图不取值传递此选项，会返回一个错
+误信息,并转化到？（变量能够设置为？）。错误信息提示并不明确，因此可以用自己的反馈信息屏蔽它，方法如下：
+将冒号放在o p t i o n s t r i n g开始部分。
+while getopts :ahfgvc: OPTION
+
+getopts并不处理不带-的参数
+
+
+
+
+
+head -n 2#提取前两排
+tail -n 2#提取后两排
+
+
+eval: 将多个参数(变量, string)组成一个string, 并把变量进行扩增，然后整个string转换为command
+cond="ls"
+eval $cond -l;# ls -l
+
+a='$b'
+b='$c'
+c='ddd'
+
+echo $a # $b
+eval echo $a #相当于 echo $b # $c
+eval eval echo $a #想耽于 eval echo $b ---->  echo $c # ddd
+
+
+
+4 re
+RE 表達式裡的字符也是分為 meta 與 literal 這兩種!
+那你就能很輕鬆的解決 RE meta 與 shell meta 的衝突問題了:
+--- 用 shell quoting 關掉 shell meta 就是了!
+再以剛提到的 * 字符為例, 若在 command line 中沒有 quoting 處理的話, 如 abc* , 
+那就會被作為 wildcard expansion 來擴充及重組了.
+若將之置於 quoting 中, 如 "abc*", 則可避免 wildcard expansion 的處理.
+
+在 RE 的表達式裡, 主要分兩種字符(character): literal 與 meta.
+所謂 literal 就是在 RE 裡不具特殊功能的字符, 如 abc, 123 這些;
+而 meta 在 RE 裡具有特殊的功能, 要關閉之, 需在 meta 前面使用 escape( \ )或者quoting.
+abc: 表示 abc 三個連續的字符, 但彼此獨立而非集合. (可簡單視為三個 char. set)
+(abc): 表示 abc 這三個連續字符的集合. (可簡單視為一個 char. set)
+abc|xyz: 表示或 abc 或 xyz 這兩個 char. set 之一. 
+[abc]: 表示單一字符, 可為 a 或 b 或 c . (與 wildcard 之 [abc] 原理相同)
+[^abc]: 表示單一字符, 不為 a 或 b 或 c 即可. (與 wildcard 之 [!abc] 原理相同)
+. : 表示任意單一字符. (與 wildcard 之 ? 原理相同)
+
+ 錨點(anchor)
+用以標識 RE 於句子中的位置所在. 常見有:
+^: 表示句首. 如 ^abc 表示以 abc 開首的句子.
+$: 表示句尾. 如 abc$ 表示以 abc 結尾的句子.
+\<: 表示詞首. 如 \<abc 表示以 abc 開首的詞.
+\>: 表示詞尾. 如 abc\> 表示以 abc 結尾的詞。
+
+ 修飾字符(modifier)
+獨立表示時本身不具意義, 專門用以修改前一個 char. set 的出現次數. 常見有:
+*: 表示前一個 char. set 的出現次數為 0 或多次. 如 ab*c 表示 a 與 c 之間可有 0 或多個 b 存在.
+?: 表示前一個 char. set 的出現次數為 0 或 1 次. 如 ab?c 表示 a 與 c 之間可有 0 或 1 個 b 存在.
++: 表示前一個 char. set 的出現次數為 1 或多次. 如 ab+c 表示 a 與 c 之間可有 1 或多個 b 存在.
+{n}: 表示前一個 char. set 的出現次數必須為 n 次. 如 ab{3}c 表示 a 與 c 之間必須有 3 個 b 存在.
+{n,}: 表示前一個 char. set 的出現次數至少為 n 次. 如 ab{3,}c 表示 a 與 c 之間至少有 3 個 b 存在.
+{n,m}: 表示前一個 char. set 的出現次數為 n 到 m 次. 如 ab{3,5}c 表示 a 與 c 之間有 3 到 5 個 b 存在.
+RE 是一種規範化的文字表達方式, 主要用於某些文字處理工具之間,
+如 grep, perl, vi, awk, sed, 等等.
+

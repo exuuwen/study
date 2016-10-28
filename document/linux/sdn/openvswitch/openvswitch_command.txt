@@ -1,0 +1,37 @@
+1. ovs-manager
+a. remote server manages the openvswitch database
+server 1: listen on 6633 and get the control command from remote
+ovs-vsctl set-manager ptcp:6633
+server 2: remote control the openvswitch database on server 1
+ovs-vsctl --db=tcp:10.9.32.30:6633 show
+
+b.
+set-manager: an ovs can connect to manager actively 
+set-manager tcp:ip:port
+
+2. ovs-controller
+a.
+server1: listen on 6634 and remote control it through ovs-ofctl
+ovs-vsctl set-controller br0 ptcp:6634
+server2:
+ovs-ofctl dump-flows tcp:server1_ip:6634
+
+b.
+Normally an brdige connect to an controller actively
+ovs-vsctl set-controller br0 tcp:127.0.0.1:6633
+
+3. set datapath
+ovs-vsctl set bridge br0 other_config:datapath-id=1000d2f6e7a7014e
+
+4. add a port with a request ofport
+ovs-vsctl add-port br0 veth0 -- set interface veth ofport_request=2
+
+5. set fail mode
+# ovs-vsctl add-br br0
+# ovs-ofctl dump-flows br0
+NXST_FLOW reply (xid=0x4):
+ cookie=0x0, duration=7.517s, table=0, n_packets=6, n_bytes=488, idle_age=1, priority=0 actions=NORMAL
+# ovs-vsctl set-fail-mode br0 secure
+# ovs-ofctl dump-flows br0
+NXST_FLOW reply (xid=0x4):
+

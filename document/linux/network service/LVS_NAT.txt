@@ -1,0 +1,422 @@
+Keepalived is a routing software written in C. The main goal of this project is to provide simple and robust facilities for loadbalancing and high-availability to Linux system and Linux based infrastructures. oadbalancing framework relies on well-known and widely used Linux Virtual Server (IPVS) kernel module providing Layer4 loadbalancing.
+
+# apt-get install keepalived
+
+Two lvs servers LD1 LD2 and two http service servers LS1 LS2
+br0:
+LD1 eth1: 192.167.3.181
+LD2 eth1: 192.168.3.182
+vmbr:
+LD1 eth0: 172.168.0.101
+LD2 eth0: 172.168.0.102
+LS1 eth0: 172.168.0.1
+LS1: route default via 172.168.0.7 dev eth0
+LS2 eth0: 172.168.0.2
+LS1: route default via 172.168.0.7 dev eth0
+
+Clients access server through vip 192.168.3.117 in LD1 or LD2 loadbalance to LS1 or LS2 with NAT mode
+
+
+a. basic module
+MASTER:
+# echo 1 > /proc/sys/net/ipv4/conf/eth0/arp_ignore
+# echo 1 > /proc/sys/net/ipv4/conf/eth1/arp_ignore
+
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-1
+}
+
+vrrp_instance VI_1 {
+        interface eth0 # send vrrp through eth0
+        state MASTER
+        virtual_router_id 82
+        priority 250
+        virtual_ipaddress {
+                192.168.3.117/32 dev eth1
+                172.168.0.7/32 dev eth0
+        }
+}
+
+
+virtual_server_group VSG_3 {
+        192.168.3.117 80
+}
+
+
+virtual_server group VSG_3 {
+        delay_loop 6
+        lb_algo wlc
+        lb_kind NAT
+        protocol TCP
+        real_server 172.168.0.1 80 {
+                weight 100
+                TCP_CHECK {
+                        connect_timeout 3
+                        connect_port 80
+                }
+        }
+        real_server 172.168.0.2 80 {
+                weight 100
+                TCP_CHECK {
+                        connect_timeout 3
+                        connect_port 80
+                }
+        }
+}
+
+SLAVE:
+# echo 1 > /proc/sys/net/ipv4/conf/eth0/arp_ignore
+# echo 1 > /proc/sys/net/ipv4/conf/eth1/arp_ignore
+
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-2
+}
+
+vrrp_instance VI_1 {
+        interface eth0
+        state BACKUP
+        virtual_router_id 82
+        priority 150
+        virtual_ipaddress {
+                192.168.3.117/32 dev eth1
+                172.168.0.7/32 dev eth0
+        }
+}
+
+virtual_server_group VSG_3 {
+        192.168.3.117 80
+}
+
+
+virtual_server group VSG_3 {
+        delay_loop 6
+        lb_algo wlc
+        lb_kind NAT
+        protocol TCP
+        real_server 172.168.0.1 80 {
+                weight 100
+                TCP_CHECK {
+                        connect_timeout 3
+                        connect_port 80
+                }
+        }
+        real_server 172.168.0.2 80 {
+                weight 100
+                TCP_CHECK {
+                        connect_timeout 3
+                        connect_port 80
+                }
+        }
+}
+
+/////////////////////////////////////////////////////////////////////////
+b. unicast mode
+MASTER:
+# echo 1 > /proc/sys/net/ipv4/conf/eth0/arp_ignore
+# echo 1 > /proc/sys/net/ipv4/conf/eth1/arp_ignore
+global_defs {
+        router_id ld-1
+}
+
+vrrp_instance VI_1 {
+        interface eth0 # send vrrp through eth0
+        state MASTER
+        virtual_router_id 82
+        priority 250
+        unicast_src_ip 172.168.0.101
+        unicast_peer {
+           172.168.0.102
+        }
+        virtual_ipaddress {
+                192.168.3.117/32 dev eth1
+                172.168.0.7/32 dev eth0
+        }
+}
+...............
+
+SLAVE:
+# echo 1 > /proc/sys/net/ipv4/conf/eth0/arp_ignore
+# echo 1 > /proc/sys/net/ipv4/conf/eth1/arp_ignore
+
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-2
+}
+
+vrrp_instance VI_1 {
+        interface eth0
+        state BACKUP
+        virtual_router_id 82
+        priority 150
+        unicast_src_ip 172.168.0.102
+        unicast_peer {
+           172.168.0.101
+        }
+        virtual_ipaddress {
+                192.168.3.117/32 dev eth1
+                172.168.0.7/32 dev eth0
+        }
+}
+...............
+
+
+/////////////////////////////////////////////////////////////////////////
+vritual mac: make the vip has a fixed vritual mac
+c. virtual mac multicast mode
+MASTER:
+# echo 1 > /proc/sys/net/ipv4/conf/eth0/arp_ignore
+# echo 1 > /proc/sys/net/ipv4/conf/eth1/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
+
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-1
+}
+vrrp_instance VI_1 {
+        interface eth1
+        state MASTER
+        virtual_router_id 82
+        use_vmac uvmac # send vrrp through uvmac
+        priority 250
+        virtual_ipaddress {
+                192.168.3.117/32 dev uvmac
+                172.168.0.7/32 dev eth0
+        }
+}
+............
+
+
+# echo 1 > /proc/sys/net/ipv4/conf/uvmac/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/uvmac/rp_filter
+
+SLAVE:
+# echo 1 > /proc/sys/net/ipv4/conf/eth0/arp_ignore
+# echo 1 > /proc/sys/net/ipv4/conf/eth1/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
+
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-2
+}
+vrrp_instance VI_1 {
+        interface eth1
+        state SLAVE
+        virtual_router_id 82
+        use_vmac uvmac
+        priority 150
+        virtual_ipaddress {
+                192.168.3.117/32 dev uvmac
+                172.168.0.7/32 dev eth0
+        }
+}
+...........
+
+# echo 1 > /proc/sys/net/ipv4/conf/uvmac/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/uvmac/rp_filter
+
+
+/////////////////////////////////////////////////////////////////////////
+d. virtual mac unicast mode
+MASTER:
+# echo 1 > /proc/sys/net/ipv4/conf/eth0/arp_ignore
+# echo 1 > /proc/sys/net/ipv4/conf/eth1/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
+
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-1
+}
+
+vrrp_instance VI_1 {
+        interface eth1
+        state MASTER
+        virtual_router_id 82
+        use_vmac uvmac
+        vmac_xmit_base # send vrrp through  eth1
+        priority 250
+        unicast_src_ip 192.168.3.181
+        unicast_peer {
+           192.168.3.182
+        }
+        virtual_ipaddress {
+                192.168.3.117/32 dev uvmac
+                172.168.0.7/32 dev eth0
+        }
+}
+..........
+
+# echo 1 > /proc/sys/net/ipv4/conf/uvmac/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/uvmac/rp_filter
+
+SLAVE:
+# echo 1 > /proc/sys/net/ipv4/conf/eth0/arp_ignore
+# echo 1 > /proc/sys/net/ipv4/conf/eth1/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
+
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-2
+}
+
+vrrp_instance VI_1 {
+        interface eth1
+        state BACKUP
+        virtual_router_id 82
+        use_vmac uvmac
+        vmac_xmit_base
+        priority 150
+        unicast_src_ip 192.168.3.182
+        unicast_peer {
+           192.168.3.181
+        }
+        virtual_ipaddress {
+                192.168.3.117/32 dev uvmac
+                172.168.0.7/32 dev eth0
+        }
+}
+
+virtual_server_group VSG_3 {
+        192.168.3.117 80
+}
+......
+
+# echo 1 > /proc/sys/net/ipv4/conf/uvmac/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/uvmac/rp_filter
+
+
+/////////////////////////////////////////////////////////////////////////
+5. virtual mac multicast with vmac_xmit_base
+MASTER:
+# echo 1 > /proc/sys/net/ipv4/conf/eth0/arp_ignore
+# echo 1 > /proc/sys/net/ipv4/conf/eth1/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
+
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-1
+}
+
+vrrp_instance VI_1 {
+        interface eth1
+        state MASTER
+        virtual_router_id 82
+        use_vmac uvmac
+        vmac_xmit_base
+        priority 250
+        virtual_ipaddress {
+                192.168.3.117/32 dev uvmac
+                172.168.0.7/32 dev eth0
+        }
+}
+
+
+virtual_server_group VSG_3 {
+        192.168.3.117 80
+}
+......
+
+# echo 1 > /proc/sys/net/ipv4/conf/uvmac/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/uvmac/rp_filter
+
+SLAVE:
+# echo 1 > /proc/sys/net/ipv4/conf/eth0/arp_ignore
+# echo 1 > /proc/sys/net/ipv4/conf/eth1/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
+
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-2
+}
+
+vrrp_instance VI_1 {
+        interface eth1
+        state BACKUP
+        virtual_router_id 82
+        use_vmac uvmac
+        vmac_xmit_base # send vrrp through  eth1
+        priority 150
+        virtual_ipaddress {
+                192.168.3.117/32 dev uvmac
+                172.168.0.7/32 dev eth0
+        }
+}
+
+virtual_server_group VSG_3 {
+        192.168.3.117 80
+}
+.............
+
+# echo 1 > /proc/sys/net/ipv4/conf/uvmac/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/uvmac/rp_filter
+
+
+/////////////////////////////////////////////////////////////
+6. basic mode with macvlan
+In virtual mac the vmac device must bind with the vrrp interface. So we can create macvlan by ourself
+MASTER:
+# ip link add link eth1 addr 0A:75:57:30:4E:A9 name uvmac type macvlan mode private
+# ip lin set up dev uvmac
+# echo 1 > /proc/sys/net/ipv4/conf/eth0/arp_ignore
+# echo 1 > /proc/sys/net/ipv4/conf/eth1/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
+
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-1
+}
+
+vrrp_instance VI_1 {
+        interface eth0
+        state MASTER
+        virtual_router_id 82
+        priority 250
+        unicast_src_ip 172.168.0.101
+        unicast_peer {
+           172.168.0.102
+        }
+        virtual_ipaddress {
+                192.168.3.117/32 dev uvmac
+                172.168.0.7/32 dev eth0
+        }
+}
+.............
+
+# echo 1 > /proc/sys/net/ipv4/conf/uvmac/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/uvmac/rp_filter
+
+
+SLAVE:
+# ip link add link eth1 addr 0A:75:57:30:4E:A9 name uvmac type macvlan mode private
+# ip lin set up dev uvmac
+# echo 1 > /proc/sys/net/ipv4/conf/eth0/arp_ignore
+# echo 1 > /proc/sys/net/ipv4/conf/eth1/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/all/rp_filter
+
+# vim /etc/keepalived/keepalived.conf
+global_defs {
+        router_id ld-2
+}
+
+vrrp_instance VI_1 {
+        interface eth0
+        state BACKUP
+        virtual_router_id 82
+        priority 150
+        unicast_src_ip 172.168.0.102
+        unicast_peer {
+           172.168.0.101
+        }
+        virtual_ipaddress {
+                192.168.3.117/32 dev uvmac
+                172.168.0.7/32 dev eth0
+        }
+}
+.............
+
+# echo 1 > /proc/sys/net/ipv4/conf/uvmac/arp_ignore
+# echo 0 > /proc/sys/net/ipv4/conf/uvmac/rp_filter
+
+
+

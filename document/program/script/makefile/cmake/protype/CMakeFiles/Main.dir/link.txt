@@ -1,0 +1,1 @@
+/usr/bin/c++       CMakeFiles/Main.dir/main.cxx.o  -o Main -rdynamic Hello/libHello.a Demo/libDemo.a 

@@ -1,0 +1,110 @@
+kdump and crash are the kernel crash anynlse suit-tools. kdump make the os come out a dump file after the kernel crash. crash is the anylase tool for this dump file
+
+1. install kdump and crash
+# apt-get install linux-crashdump kdump-tools
+# vim /etc/default/kdump-tools
+set USE_KDUMP=1
+
+centos:
+# yum install kexec-tools crash
+# service kdump start
+if there is error: No memory reserved for crash kernel. Modify crashkernel=auto in /boot/grub/menu.list
+
+kernel /vmlinuz-2.6.32-279.19.el6.x86_64 ro root=UUID=6f5f3fbd-d9e8-4ee9-ad20-ae1047278aeb rd_NO_LUKS rd_NO_LVM LANG=en_US.UTF-8 rd_NO_MD SYSFONT=latarcyrheb-sun16 crashkernel=128M@0M  KEYBOARDTYPE=pc KEYTABLE=us rd_NO_DM nomodeset pcie_aspm=off
+
+2. reboot the os check everything is ready
+a. check everthing
+# cat /proc/cmdline 
+BOOT_IMAGE=/boot/vmlinuz-3.11.0-15-generic root=UUID=3291bae4-d926-44e1-bc07-5c166a373e56 ro crashkernel=384M-2G:64M,2G-:128M quiet splash vt.handoff=7
+
+# dmesg | grep crashkernel
+[    0.000000] Command line: BOOT_IMAGE=/boot/vmlinuz-3.11.0-15-generic root=UUID=3291bae4-d926-44e1-bc07-5c166a373e56 ro crashkernel=384M-2G:64M,2G-:128M quiet splash vt.handoff=7
+[    0.000000] Reserving 128MB of memory at 720MB for crashkernel (System RAM: 4095MB)
+
+# cat /sys/kernel/kexec_crash_loaded
+1
+
+b. make a crash
+# echo 1 > /proc/sys/kernel/sysrq
+# echo c > /proc/sysrq-trigger
+
+There will be a dump file in the directory /var/crash
+
+
+3. crash
+a. install the vmlinux with debug info
+# tee /etc/apt/sources.list.d/ddebs.list << EOF
+deb http://ddebs.ubuntu.com/ $(lsb_release -cs)          main restricted universe multiverse
+deb http://ddebs.ubuntu.com/ $(lsb_release -cs)-security main restricted universe multiverse
+deb http://ddebs.ubuntu.com/ $(lsb_release -cs)-updates  main restricted universe multiverse
+deb http://ddebs.ubuntu.com/ $(lsb_release -cs)-proposed main restricted universe multiverse
+EOF
+
+# apt-key adv --keyserver keyserver.ubuntu.com --recv-keys ECDCAD72428D7C01
+# apt-get update
+# apt-get install linux-image-$(uname -r)-dbgsym
+
+The file will be installed in /usr/lib/debug/boot/
+
+if there is compiled by yourself, the vmlinux just in the kernel-src/vmlinux or vmlinux-x.x.x.bz2 (rpm install)
+
+b. using crash
+# crash vmlinux dump-file
+sudo crash /usr/lib/debug/boot/vmlinux-3.11.0-15-generic /var/crash/201408020924/dump.201408200924
+[sudo] password for ubuntu: 
+
+crash 7.0.3
+Copyright (C) 2002-2013  Red Hat, Inc.
+Copyright (C) 2004, 2005, 2006, 2010  IBM Corporation
+Copyright (C) 1999-2006  Hewlett-Packard Co
+Copyright (C) 2005, 2006, 2011, 2012  Fujitsu Limited
+Copyright (C) 2006, 2007  VA Linux Systems Japan K.K.
+Copyright (C) 2005, 2011  NEC Corporation
+Copyright (C) 1999, 2002, 2007  Silicon Graphics, Inc.
+Copyright (C) 1999, 2000, 2001, 2002  Mission Critical Linux, Inc.
+This program is free software, covered by the GNU General Public License,
+and you are welcome to change it and/or distribute copies of it under
+certain conditions.  Enter "help copying" to see the conditions.
+This program has absolutely no warranty.  Enter "help warranty" for details.
+
+GNU gdb (GDB) 7.6
+Copyright (C) 2013 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.  Type "show copying"
+and "show warranty" for details.
+This GDB was configured as "x86_64-unknown-linux-gnu"...
+
+      KERNEL: /usr/lib/debug/boot/vmlinux-3.13.0-24-generic
+    DUMPFILE: /var/crash/201405051934/dump.201405051934  [PARTIAL DUMP]
+        CPUS: 4
+        DATE: Mon May  5 19:34:38 2014
+      UPTIME: 00:54:46
+LOAD AVERAGE: 0.14, 0.07, 0.05
+       TASKS: 495
+    NODENAME: zUbuntu
+     RELEASE: 3.13.0-24-generic
+     VERSION: #46-Ubuntu SMP Thu Apr 10 19:11:08 UTC 2014
+     MACHINE: x86_64  (2675 Mhz)
+      MEMORY: 8 GB
+       PANIC: "Oops: 0002 [#1] SMP " (check log for details)
+         PID: 7826
+     COMMAND: "tee"
+        TASK: ffff8800a2ef8000  [THREAD_INFO: ffff8800a2e68000]
+         CPU: 2
+       STATE: TASK_RUNNING (PANIC)
+
+crash> help
+
+///////////////////////////
+crash command
+1) help: list all the commands
+2) bt: traceback
+3) ps
+4) dmesg
+5) dis -l crash_address: disassembling instruction to the source file
+6) dis -l symbol(kernel function name): disassembling the symbol to source file
+7) struct -o vm_struct: show the detail of an sturcture
+8) struct vm_struct address: show the content of the address that represent vm_struct
+
+

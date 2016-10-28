@@ -1,0 +1,54 @@
+A strange question: a connection in the server size go into timewait state. A new conn request from the same client(ip and port src), but the server just retansmit the last ack.
+The client locate in windows pc. Send syn without tstamp and new seq smaller than old one.
+
+tcp_v4_rcv
+{
+	switch (tcp_timewait_state_process(inet_twsk(sk), skb, th)) {
+	case TCP_TW_SYN: {
+		/*a new syn request*/
+		struct sock *sk2 = inet_lookup_listener(dev_net(skb->dev),
+							&tcp_hashinfo,
+							iph->daddr, th->dest,
+							inet_iif(skb));
+		if (sk2) {
+			/*early kill twsk*/
+			inet_twsk_deschedule(inet_twsk(sk), &tcp_death_row);
+			inet_twsk_put(inet_twsk(sk));
+			sk = sk2;
+			goto process;
+		}
+		/* Fall through to ACK */
+	}
+	case TCP_TW_ACK:
+		/*just send last ack again*/
+		tcp_v4_timewait_ack(sk, skb);
+		break;
+	case TCP_TW_RST:
+		goto no_tcp_socket;
+	case TCP_TW_SUCCESS:;
+	}
+	goto discard_it;
+
+}
+
+tcp_timewait_state_process
+{
+	/* so the syn request must (take tstamp and the tsval must bigger than old) or (new seq bigger than old seq)
+	if (th->syn && !th->rst && !th->ack && !paws_reject &&
+	    (after(TCP_SKB_CB(skb)->seq, tcptw->tw_rcv_nxt) ||
+	     (tmp_opt.saw_tstamp &&
+	      (s32)(tcptw->tw_ts_recent - tmp_opt.rcv_tsval) < 0))) {
+		u32 isn = tcptw->tw_snd_nxt + 65535 + 2;
+		if (isn == 0)
+			isn++;
+		TCP_SKB_CB(skb)->when = isn;
+		return TCP_TW_SYN;
+	}
+
+	if (!th->rst) {
+		/* Send ACK. Note, we do not put the bucket,
+		 * it will be released by caller.
+		 */
+		return TCP_TW_ACK;
+	}
+}

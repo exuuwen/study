@@ -1,0 +1,409 @@
+1. cpuset: cpuset is used to control which cpus a group can running on and which memory nodes a group can running on.
+
+struct cgroup_subsys cpuset_subsys = {
+	.name = "cpuset",
+	.css_alloc = cpuset_css_alloc,
+	.css_online = cpuset_css_online,
+	.css_offline = cpuset_css_offline,
+	.css_free = cpuset_css_free,
+	.can_attach = cpuset_can_attach,
+	.cancel_attach = cpuset_cancel_attach,
+	.attach = cpuset_attach,
+	.subsys_id = cpuset_subsys_id,
+	.base_cftypes = files,
+	.early_init = 1,
+};
+
+struct cpuset {
+	struct cgroup_subsys_state css;
+
+	unsigned long flags;		/* "unsigned long" so bitops work */
+	cpumask_var_t cpus_allowed;	/* CPUs allowed to tasks in cpuset */
+	nodemask_t mems_allowed;	/* Memory Nodes allowed to tasks */
+
+	struct cpuset *parent;		/* my parent */
+
+	struct fmeter fmeter;		/* memory_pressure filter */
+
+	/* partition number for rebuild_sched_domains() */
+	int pn;
+
+	/* for custom sched domain */
+	int relax_domain_level;
+
+	/* used for walking a cpuset hierarchy */
+	struct list_head stack_list;
+};
+
+
+a. cpuset init.
+
+top_cpuset for css of the top group
+static struct cpuset top_cpuset = {
+	.flags = ((1 << CS_CPU_EXCLUSIVE) | (1 << CS_MEM_EXCLUSIVE)),
+};
+int cpuset_init()
+{
+	cpumask_setall(top_cpuset.cpus_allowed);
+	nodes_setall(top_cpuset.mems_allowed);
+
+	fmeter_init(&top_cpuset.fmeter);
+	set_bit(CS_SCHED_LOAD_BALANCE, &top_cpuset.flags);
+	top_cpuset.relax_domain_level = -1;
+}
+
+b. When create a group it should create a css(cpuset) for each group
+cgroup_create->css_alloc()
+
+struct cgroup_subsys_state * cpuset_css_alloc()
+{
+	/*the top group*/
+	if (!cont->parent) {
+		return &top_cpuset.css;
+	}
+
+	/*create new one for this group and init it*/
+	parent = cgroup_cs(cont->parent);
+	cs = kmalloc(sizeof(*cs), GFP_KERNEL);
+
+	cs->flags = 0;
+	set_bit(CS_SCHED_LOAD_BALANCE, &cs->flags);
+	cpumask_clear(cs->cpus_allowed);
+	nodes_clear(cs->mems_allowed);
+	fmeter_init(&cs->fmeter);
+
+	cs->parent = parent;
+	number_of_cpusets++;
+	return &cs->css 
+}
+
+
+c. When attach tasks to a group it should can ss->can_attach and ss->attach
+cgroup_attach_task->ss->can_attach
+{
+	/*no cpus and mem node allowed in this group*/
+	if (cpumask_empty(cs->cpus_allowed) || nodes_empty(cs->mems_allowed))
+		return -ENOSPC;
+
+	cgroup_taskset_for_each(task, cgrp, tset) {
+		/*
+		 * Kthreads bound to specific cpus cannot be moved to a new
+		 * cpuset; we cannot change their cpu affinity and
+		 * isolating such threads by their set of allowed nodes is
+		 * unnecessary.
+		 */
+		if (task->flags & PF_THREAD_BOUND)
+			return -EINVAL;
+	}
+
+	/* check the cpus and mem nodes is online */
+	if (cs == &top_cpuset)
+		cpumask_copy(cpus_attach, cpu_possible_mask);
+	else
+		guarantee_online_cpus(cs, cpus_attach);
+
+	guarantee_online_mems(cs, &cpuset_attach_nodemask_to);
+}
+
+
+cgroup_attach_task->ss->attach
+{
+	/* set nodemask and cou mask for each task
+	cgroup_taskset_for_each(task, cgrp, tset) {
+		WARN_ON_ONCE(set_cpus_allowed_ptr(task, cpus_attach));
+			//cpumask_copy(&task->cpus_allowed, new_mask);
+			// the schdule just choose the allowed cpus to running this task
+
+		cpuset_change_task_nodemask(task, &cpuset_attach_nodemask_to);
+			// tsk->mems_allowed = *newmems
+			// memctrol just allocate memory on allowed nodes for this task
+	}
+}
+
+d. files
+There are two important files to set the cpus and nodes for this group
+
+static struct cftype files[] = {
+	{
+		.name = "cpus",
+		.read = cpuset_common_file_read,
+		.write_string = cpuset_write_resmask,
+		.max_write_len = (100U + 6 * NR_CPUS),
+		.private = FILE_CPULIST,
+	},
+
+	{
+		.name = "mems",
+		.read = cpuset_common_file_read,
+		.write_string = cpuset_write_resmask,
+		.max_write_len = (100U + 6 * MAX_NUMNODES),
+		.private = FILE_MEMLIST,
+	},
+	...
+}
+
+When create a group it will create the files of the sysbstems 
+cgroup_create->cgroup_populate_dir
+{
+	/*it will create cpus and mems files*/
+	list_for_each_entry(set, &ss->cftsets, node)
+			cgroup_addrm_files(cgrp, ss, set->cfts, true);
+
+}
+
+size_t cpuset_common_file_read()
+{
+	switch (type) {
+	case FILE_CPULIST:
+		s += cpuset_sprintf_cpulist(s, cs); //cpuset->cpus_allowed
+		break;
+	case FILE_MEMLIST:
+		s += cpuset_sprintf_memlist(s, cs); //cpuset->mems_allowed
+		break;
+	default:
+		retval = -EINVAL;
+		goto out;
+	}
+}
+
+int cpuset_write_resmask()
+{
+	switch (cft->private) {
+	case FILE_CPULIST:
+		retval = update_cpumask(cs, trialcs, buf); //cpuset->cpus_allowed and update each tasks
+		break;
+	case FILE_MEMLIST:
+		retval = update_nodemask(cs, trialcs, buf); //cpuset->mems_allowed and update each tasks
+		break;
+	default:
+		retval = -EINVAL;
+		break;
+	}
+}
+
+
+2. memory: memory is used to control how many memorys a group can allocate.
+
+
+struct cgroup_subsys mem_cgroup_subsys = {
+	.name = "memory",
+	.subsys_id = mem_cgroup_subsys_id,
+	.css_alloc = mem_cgroup_css_alloc,
+	.css_online = mem_cgroup_css_online,
+	.css_offline = mem_cgroup_css_offline,
+	.css_free = mem_cgroup_css_free,
+	.can_attach = mem_cgroup_can_attach,
+	.cancel_attach = mem_cgroup_cancel_attach,
+	.attach = mem_cgroup_move_task,
+	.bind = mem_cgroup_bind,
+	.base_cftypes = mem_cgroup_files,
+	.early_init = 0,
+	.use_id = 1,
+};
+
+struct mem_cgroup {
+	struct cgroup_subsys_state css;
+	/*
+	 * the counter to account for memory usage
+	 */
+	struct res_counter res;
+	....
+};
+
+struct res_counter {
+	/*
+	 * the current resource consumption level
+	 */
+	unsigned long long usage;
+	/*
+	 * the maximal value of the usage from the counter creation
+	 */
+	unsigned long long max_usage;
+	/*
+	 * the limit that usage cannot exceed
+	 */
+	unsigned long long limit;
+	/*
+	 * the limit that usage can be exceed
+	 */
+	unsigned long long soft_limit;
+};
+
+
+
+a. When create a group it should create a css(mem_cgroup) for each group
+cgroup_create->css_alloc()
+
+struct cgroup_subsys_state * mem_cgroup_css_alloc()
+{
+	memcg = mem_cgroup_alloc();
+	parent = mem_cgroup_from_cont(cont->parent);
+	if (parent && parent->use_hierarchy) {
+		/*init it from parents*/
+		res_counter_init(&memcg->res, &parent->res);
+		mem_cgroup_get(parent);
+	} else {
+		/*init it to empty*/
+		res_counter_init(&memcg->res, NULL);
+	}
+	return &memcg->css 
+}
+
+
+
+b. files
+There are two important files to get/set the memory usage for this group
+
+static struct cftype mem_cgroup_files[] = {
+	{
+		.name = "usage_in_bytes",
+		.private = MEMFILE_PRIVATE(_MEM, RES_USAGE),
+		.read = mem_cgroup_read,
+		.register_event = mem_cgroup_usage_register_event,
+		.unregister_event = mem_cgroup_usage_unregister_event,
+	},
+	{
+		.name = "limit_in_bytes",
+		.private = MEMFILE_PRIVATE(_MEM, RES_LIMIT),
+		.write_string = mem_cgroup_write,
+		.read = mem_cgroup_read,
+	},
+	....
+};
+
+c. How to implement the memory usage for the group
+
+when a page_fault it will call __mem_cgroup_try_charge before allocate pages.
+__mem_cgroup_try_charge->mem_cgroup_do_charge->res_counter_charge->res_counter_charge_locked()
+int res_counter_charge_locked(struct res_counter *counter, unsigned long val,
+			      bool force)
+{
+	int ret = 0;
+
+	if (counter->usage + val > counter->limit) {
+		//surpass the limit
+		counter->failcnt++;
+		ret = -ENOMEM;
+		if (!force)
+			return ret;
+	}
+
+	//update the usage
+	counter->usage += val;
+	if (counter->usage > counter->max_usage)
+		counter->max_usage = counter->usage;
+	return ret;
+}
+
+
+
+3. cpuacct: cpuacct is used to calculate the cpu usage of a group.
+
+struct cgroup_subsys cpuacct_subsys = {
+	.name		= "cpuacct",
+	.css_alloc	= cpuacct_css_alloc,
+	.css_free	= cpuacct_css_free,
+	.subsys_id	= cpuacct_subsys_id,
+	.base_cftypes	= files,
+	.early_init	= 1,
+};
+
+
+struct cpuacct {
+	struct cgroup_subsys_state css;
+	/* cpuusage holds pointer to a u64-type object on every cpu */
+	u64 __percpu *cpuusage;
+	struct kernel_cpustat __percpu *cpustat;
+};
+
+
+a. init
+
+struct cpuacct root_cpuacct;
+
+int sched_init()
+{
+	root_cpuacct.cpustat = &kernel_cpustat;
+	root_cpuacct.cpuusage = alloc_percpu(u64);
+}
+
+
+b. When create a group it should create a css(cpuacct) for each group
+cgroup_create->css_alloc()
+
+struct cgroup_subsys_state * cpuacct_css_alloc()
+{
+	struct cpuacct *ca;
+
+	/*top group*/
+	if (!cgrp->parent)
+		return &root_cpuacct.css;
+
+	ca = kzalloc(sizeof(*ca), GFP_KERNEL);
+	if (!ca)
+		goto out;
+
+	ca->cpuusage = alloc_percpu(u64);
+	if (!ca->cpuusage)
+		goto out_free_ca;
+
+	ca->cpustat = alloc_percpu(struct kernel_cpustat);
+	return &ca->css 
+}
+
+c. files
+There are three important files to get/set the cpu usage for this group
+
+static struct cftype files[] = {
+	{
+		.name = "usage",
+		.read_u64 = cpuusage_read,
+		/*just can clear it*/
+		.write_u64 = cpuusage_write,
+	},
+	{
+		.name = "usage_percpu",
+		.read_seq_string = cpuacct_percpu_seq_read,
+	},
+	{
+		.name = "stat",
+		.read_map = cpuacct_stats_show,
+	},
+	{ }	/* terminate */
+};
+
+static u64 cpuusage_read(struct cgroup *cgrp, struct cftype *cft)
+{
+	struct cpuacct *ca = cgroup_ca(cgrp);
+	u64 totalcpuusage = 0;
+	int i;
+
+	/*read each cpuusage*/
+	for_each_present_cpu(i)
+		totalcpuusage += cpuacct_cpuusage_read(ca, i);
+			//u64 *cpuusage = per_cpu_ptr(ca->cpuusage, cpu);
+
+	retur
+
+static int cpuusage_write(struct cgroup *cgrp, struct cftype *cftype,
+								u64 reset)
+{
+	struct cpuacct *ca = cgroup_ca(cgrp);
+	int err = 0;
+	int i;
+
+	if (reset) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	/*write 0 to each percpu*/
+	for_each_present_cpu(i)
+		cpuacct_cpuusage_write(ca, i, 0);
+
+out:
+	return err;
+}
+
+
+

@@ -1,0 +1,893 @@
+1. basic
+a. route table
+1). main: It contains the routes that describe how to send out both local and forward packet. This table can be operated by system administrator.
+2). local: It contains the routes that describe which packet recieved by local host
+3). defealt: It contain some default routes and usually is empty.
+if enable CONFIG_IP_MULTIPLE_TABLES
+4). others for rule route
+
+b. what's information contained in a route
+1) dst_net: it can be a real address or a network, if dst addr of a packet matchs this it can using this route
+2) dst_len: it represent the netmask for a network(dst_addr)
+3) output interface: it describes which network interface send the packet out through  
+4) gateway: it describes which server the packet sends to
+5) tos: if it is non-zero, the packet has the same tos can match this route
+6) scope: it describe the usage range of this route
+enum rt_scope_t {
+	RT_SCOPE_UNIVERSE=0,
+/* User defined values  */
+	RT_SCOPE_SITE=200,
+	RT_SCOPE_LINK=253,
+	RT_SCOPE_HOST=254,
+	RT_SCOPE_NOWHERE=255
+};
+7) priority: the priority of this route.
+8) type
+enum {
+	RTN_UNSPEC,
+	RTN_UNICAST,		/* Gateway or direct route for main table*/
+	RTN_LOCAL,		/* Accept locally for local table */
+	......
+	__RTN_MAX
+};
+
+
+c. rule of the route
+1). if two different dst_net of tables match with a packet, kernel will choose the bigger dst_len route. It means the choosen one has more precise match with more small subnet
+2). if both the dst_net and dst_len are the same in two routes, the kernel will choose the same tos one if the tos of this table is non-zero.
+c). if a and b is the same then choose the higer priority one.
+d). if both a, b and c can't choose one from several, just choose the first one.
+
+
+2. initialization
+void __init ip_fib_init(void)
+{
+	/*register rtnl for NEWROUTE DELROUTE and GETROUTE*/
+	rtnl_register(PF_INET, RTM_NEWROUTE, inet_rtm_newroute, NULL, NULL);
+	rtnl_register(PF_INET, RTM_DELROUTE, inet_rtm_delroute, NULL, NULL);
+	rtnl_register(PF_INET, RTM_GETROUTE, NULL, inet_dump_fib, NULL);
+
+	/*init the fib subsystem*/
+	register_pernet_subsys(&fib_net_ops)
+		//fib_net_init
+	/*register the notifier for device operation*/
+	register_netdevice_notifier(&fib_netdev_notifier);
+		//fib_netdev_event
+	/*register the notifier for inetaddr operation*/
+	register_inetaddr_notifier(&fib_inetaddr_notifier);
+		//fib_inetaddr_event
+
+	/*init the trie memory for managing each route in a table*/
+	fib_trie_init();
+}
+
+a. fib_net_init
+int fib_net_init(struct net *net)
+{
+	/*net init*/
+	error = ip_fib_net_init(net);
+	/*register NETLINK_FIB_LOOKUP for userspace to lookup */
+	error = nl_fib_lookup_init(net);
+	/*proc init*/
+	error = fib_proc_init(net);
+
+}
+
+if enable CONFIG_IP_MULTIPLE_TABLES
+#define FIB_TABLE_HASHSZ 256
+
+
+int __net_init ip_fib_net_init(struct net *net)
+{
+	int err;
+	size_t size = sizeof(struct hlist_head) * FIB_TABLE_HASHSZ;
+
+	net->ipv4.fib_table_hash = kzalloc(size, GFP_KERNEL);
+
+	err = fib4_rules_init(net);
+}
+
+fib_rules_ops __net_initconst fib4_rules_ops_template = {
+	.family		= AF_INET,
+	.rule_size	= sizeof(struct fib4_rule),
+	.addr_size	= sizeof(u32),
+	.action		= fib4_rule_action,
+	.match		= fib4_rule_match,
+	.configure	= fib4_rule_configure
+};
+
+
+int fib4_rules_init(struct net *net)
+{
+	int err;
+	struct fib_rules_ops *ops;
+
+	ops = fib_rules_register(&fib4_rules_ops_template, net);
+
+	/*add three rule for table local, main and default */
+	err = fib_default_rules_init(ops);
+		//err = fib_default_rule_add(ops, 0, RT_TABLE_LOCAL, 0); // r->action = FR_ACT_TO_TBL; r->table = RT_TABLE_LOCA; r->pref = 0
+		//err = fib_default_rule_add(ops, 0x7FFE, RT_TABLE_MAIN, 0);//r->action = FR_ACT_TO_TBL; r->table = RT_TABLE_LOCA; r->pref = 32766 
+		//err = fib_default_rule_add(ops, 0x7FFF, RT_TABLE_DEFAULT, 0);//r->action = FR_ACT_TO_TBL; r->table = RT_TABLE_LOCA; r->pref = 32767
+		//# ip rule list
+		//0:	from all lookup local 
+		//32766:	from all lookup main 
+		//32767:	from all lookup default 
+		// if ip rule enable, kernel will not lookup the local, main and default directly but lookup the rule from the 0 to 32767, any one rule is match then stop lookup. so anyway the kernel will lookup the local, main and default through the rule interface.
+	net->ipv4.rules_ops = ops;
+	/*disable ip rule*/
+	net->ipv4.fib_has_custom_rules = false;
+}
+
+b. notifier
+1) fib_netdev_event for device modification
+static int fib_netdev_event(struct notifier_block *this, unsigned long event, void *ptr)
+{
+	switch (event) {
+	case NETDEV_UP:
+		for_ifa(in_dev) {
+			/*add each addr to local table and if the mask < 32, add the subnet of each addr to main table*/
+			fib_add_ifaddr(ifa);
+				//fib_magic(RTM_NEWROUTE, RTN_LOCAL, addr, 32, prim);
+				//fib_magic(RTM_NEWROUTE, RTN_UNICAST, prefix, ifa->ifa_prefixlen, prim);
+		} endfor_ifa(in_dev);
+
+	case NETDEV_DOWN:
+		/*clear all*/
+		fib_disable_ip(dev, 0);
+}
+
+2) int fib_inetaddr_event for inetaddr modification
+static int fib_inetaddr_event(struct notifier_block *this, unsigned long event, void *ptr)
+{
+	switch (event) {
+	case NETDEV_UP:
+		/*add each addr to local table and the subnet of each addr to main table*
+		fib_add_ifaddr(ifa);
+	case NETDEV_DOWN:
+		fib_del_ifaddr(ifa, NULL);
+}
+
+
+3.ip route
+1). insert a route 
+Userspace can create a route through rtnl interface.
+struct fib_config {
+	u8			fc_dst_len;
+	u8			fc_tos;
+	u8			fc_protocol;
+	u8			fc_scope;
+	u8			fc_type;
+	/* 3 bytes unused */
+	u32			fc_table;
+	__be32			fc_dst;
+	__be32			fc_gw;
+	int			fc_oif;
+	u32			fc_flags;
+	u32			fc_priority;
+	__be32			fc_prefsrc
+	....
+ };
+
+
+int inet_rtm_newroute()
+{
+	/* get the config according the rtnl message from userspace*/
+	rtm_to_fib_config(net, skb, nlh, &cfg);
+
+	/*get the table number*/
+	tb = fib_new_table(net, cfg.fc_table);
+
+	/*insert the route to the specific route table*/
+	err = fib_table_insert(tb, &cfg);
+}
+
+struct fib_table *fib_new_table(struct net *net, u32 id)
+{
+	struct fib_table *tb;
+	unsigned int h;
+
+	if (id == 0)
+		id = RT_TABLE_MAIN;
+	/*get the table from the hash list*/
+	tb = fib_get_table(net, id);
+	if (tb)
+		return tb;
+	/*create a table*/
+	tb = fib_trie_table(id);
+	if (!tb)
+		return NULL;
+
+	switch (id) {
+	case RT_TABLE_LOCAL:
+		net->ipv4.fib_local = tb;
+		break;
+
+	case RT_TABLE_MAIN:
+		net->ipv4.fib_main = tb;
+		break;
+
+	case RT_TABLE_DEFAULT:
+		net->ipv4.fib_default = tb;
+		break;
+
+	default:
+		break;
+	}
+
+	/*add it to hash list*/
+	h = id & (FIB_TABLE_HASHSZ - 1);
+	hlist_add_head_rcu(&tb->tb_hlist, &net->ipv4.fib_table_hash[h]);
+	return tb;
+}
+
+
+Each table is a trie tree, each node has several children.
+There are three structure to manage the trie tree
+a. struct leaf
+struct leaf {
+	unsigned long parent;
+	t_key key;
+	struct hlist_head list;
+	struct rcu_head rcu;
+};
+b. struct leaf_info
+struct leaf_info {
+	struct hlist_node hlist;
+	int plen;
+	u32 mask_plen; /* ntohl(inet_make_mask(plen)) */
+	struct list_head falh;
+	struct rcu_head rcu;
+};
+c. struct fib_alias
+struct fib_alias {
+	struct list_head	fa_list;
+	struct fib_info		*fa_info;/*store the whole route information also include struct fib_nh*/
+	u8			fa_tos;
+	u8			fa_type;
+	u8			fa_state;
+	struct rcu_head		rcu;
+};
+
+There are two structure to manage a route info
+struct fib_info {
+	unsigned int		fib_flags;
+	unsigned char		fib_protocol;
+	unsigned char		fib_scope;
+	unsigned char		fib_type;
+	__be32			fib_prefsrc;
+	u32			fib_priority;
+	struct fib_nh		fib_nh[0];
+	...
+};
+
+struct fib_nh {
+	struct net_device	*nh_dev;
+	struct fib_info		*nh_parent;
+	unsigned int		nh_flags;
+	unsigned char		nh_scope;
+/*with CONFIG_IP_ROUTE_MULTIPATH*/
+	int			nh_weight;
+
+	int			nh_oif;
+	__be32			nh_gw;
+	__be32			nh_saddr;
+	int			nh_saddr_genid;
+	...
+};
+
+Leaf is a leaf-node of the tree and it is created when a new key(fc_dst) insert to the table
+A leaf may has several leaf_info in a list. leaf_info presents a subkey(fc_dst_len). A leaf_info is created when a new subkey(new just for the leaf) insert to the leaf.
+A leaf_info has several fib_alias in a list. A fib_alias presents a finnaly key(fc_tos, fc_priority), it is created when a new finnaly-key(new just for the leaf_info)in the route insert to the leaf_info.
+So a leaf + a leaf_info of the leaf + a fib_alias of the leaf info make up a route in the tree.
+
+                                       +--------+
+                                  +---->tos/pri1|
+                                  |    +--------+
+                               +--+--+ +--------+
+                       +------->plen1+->tos/pri2|
+                       |       +--+--+ +--------+
+                       |          |    +--------+
+                       |          +---->tos/pri3|
+                     +-+-+     +-----+ +--------+
+                     |Dst|+---->plen2|
+                     +-+-+     +-----+
+                       |
+                       |
+                       |       +-----+
+                       +------->plen3|
+                               +-----+
+
+# ip route add 192.168.10.0/24 dev eth0 
+/*error with the same key, same subkey and finnal key*/
+# ip route add 192.168.10.0/24 dev eth1
+RTNETLINK answers: File exists
+/*ok with different finnaly key*/
+# ip route add 192.168.10.0/24 dev eth1 tos 10
+
+
+struct fib_info *fib_create_info(struct fib_config *cfg)
+{
+	/*get the multiple nexthops*/
+	/*ip route add 1.1.1.1 nexthop via  192.168.130.2 nexthop via 192.168.130.20*/
+	if (cfg->fc_mp) {
+		nhs = fib_count_nexthops(cfg->fc_mp, cfg->fc_mp_len);
+		
+	}
+	struct fib_info *fi = kzalloc(sizeof(*fi)+nhs*sizeof(struct fib_nh), GFP_KERNEL);
+	
+
+	fi->fib_net = hold_net(net);
+	fi->fib_protocol = cfg->fc_protocol;
+	fi->fib_scope = cfg->fc_scope;
+	fi->fib_flags = cfg->fc_flags;
+	fi->fib_priority = cfg->fc_priority;
+	fi->fib_prefsrc = cfg->fc_prefsrc;
+	fi->fib_type = cfg->fc_type;
+
+	fi->fib_nhs = nhs;
+
+	if (cfg->fc_mp) {
+		/*get each muliple pathe through cfg*/
+		err = fib_get_nhs(fi, cfg->fc_mp, cfg->fc_mp_len, cfg);
+		
+		if (cfg->fc_oif && fi->fib_nh->nh_oif != cfg->fc_oif)
+			goto err_inval;
+		/*so if there are multipath(netxhops), the gw should not be here*/
+		//# ip route add 1.1.1.1 via 192.168.130.2  nexthop via  192.168.130.20 
+		//RTNETLINK answers: Invalid argument
+		if (cfg->fc_gw && fi->fib_nh->nh_gw != cfg->fc_gw)
+			goto err_inval;
+	}else {
+		/*set the gw to the only one nexthop*/
+		struct fib_nh *nh = fi->fib_nh;
+
+		nh->nh_oif = cfg->fc_oif;
+		nh->nh_gw = cfg->fc_gw;
+		nh->nh_flags = cfg->fc_flags;
+	}
+
+	/*should less than HOST*/
+	if (cfg->fc_scope > RT_SCOPE_HOST)
+		goto err_inval;
+
+	change_nexthops(fi) {
+		err = fib_check_nh(cfg, fi, nexthop_nh);
+			//struct flowi4 fl4 = {.daddr = nh->nh_gw, .flowi4_scope = cfg->fc_scope + 1, .flowi4_oif = nh->nh_oif,};
+			//if (fl4.flowi4_scope < RT_SCOPE_LINK) fl4.flowi4_scope = RT_SCOPE_LINK;
+			// fib_lookup(net, &fl4, &res);
+		/*check each nh->gw that the host can find a route to the gw(no matter if the gw machine exist) with RT_SCOPE_LINK and oif(if it is set)*/
+		/*ip of eth1 is 10.0.0.1 and eth0 is 192.168.130.10
+		# ip route add 1.1.1.1 via 192.168.130.3 dev eth1
+		RTNETLINK answers: Network is unreachable
+		# ip route add 1.1.1.1 via 192.168.130.3 dev eth1
+		*/		
+	} endfor_nexthops(fi)
+
+}
+
+int fib_table_insert(struct fib_table *tb, struct fib_config *cfg)
+{
+	/*get key*/
+	key = ntohl(cfg->fc_dst);
+	/*get subkey*/
+	int plen = cfg->fc_dst_len;
+	
+	mask = ntohl(inet_make_mask(plen));
+
+	/*
+	follow the rule
+	# ip route add 10.0.0.1/24 dev eth0
+	Invalid argument
+	should be 10.0.1.0/24 or 10.0.0.1/32
+	*/
+	if (key & ~mask)
+		return -EINVAL;
+
+	/*create a fib info according to the cfg*/
+	fi = fib_create_info(cfg);
+
+	/*find the leaf through the key*/
+	struct leaf *l = fib_find_node(t, key);
+
+	if (l) {
+		/*find the leaf_info in the leaf list through subkey then find the fib_alias in the leaf_info list through finnal-key*/
+		fa_head = get_fa_head(l, plen);
+		fa = fib_find_alias(fa_head, tos, fi->fib_priority);
+	}
+
+	/*find the same one*/
+	if (fa && fa->fa_tos == tos &&
+	    fa->fa_info->fib_priority == fi->fib_priority) {
+
+		err = -EEXIST;
+		/*can't replace it*/
+		if (cfg->fc_nlflags & NLM_F_EXCL)
+			goto out;
+		/*
+		# ip route add 10.0.0.1/32 dev eth0
+		# ip route add 10.0.0.1/32 dev br0
+		RTNETLINK answers: File exists
+		# ip route replace 10.0.0.1/32 dev br0
+		*/
+		if (cfg->fc_nlflags & NLM_F_REPLACE) {
+			/*create new one and repalce it*/
+			new_fa = kmem_cache_alloc(fn_alias_kmem, GFP_KERNEL);
+			if (new_fa == NULL)
+				goto out;
+
+			fi_drop = fa->fa_info;
+			new_fa->fa_tos = fa->fa_tos;
+			new_fa->fa_info = fi;
+			new_fa->fa_type = cfg->fc_type;
+			state = fa->fa_state;
+			new_fa->fa_state = state & ~FA_S_ACCESSED;
+
+			list_replace_rcu(&fa->fa_list, &new_fa->fa_list);
+			alias_free_mem_rcu(fa);
+			return 0;
+		}
+	}
+
+	/*a new route*/
+	
+	if (!(cfg->fc_nlflags & NLM_F_CREATE))
+		goto out;
+
+	err = -ENOBUFS;
+	/*create a new fib_alias*/
+	new_fa = kmem_cache_alloc(fn_alias_kmem, GFP_KERNEL);
+	if (new_fa == NULL)
+		goto out;
+
+	new_fa->fa_info = fi;
+	new_fa->fa_tos = tos;
+	new_fa->fa_type = cfg->fc_type;
+	new_fa->fa_state = 0;
+
+	/*no leaf or leaf_info for this route then insert one with key and subkey, return the leaf_info list*/
+	if (!fa_head) {
+		fa_head = fib_insert_node(t, key, plen);
+	}
+
+	/*insert the fib_alias to the leaf_info list*/
+	list_add_tail_rcu(&new_fa->fa_list, (fa ? &fa->fa_list : fa_head));
+}
+
+
+
+
+2). ip route lookup
+
+rtable describle how to response fro a packet forwarding after loopup the route table in kernel.
+
+struct dst_entry {
+	int			(*input)(struct sk_buff *);/*for input packet handling*/
+	int			(*output)(struct sk_buff *);/*for out packet handling*/
+};
+
+struct rtable {
+	struct dst_entry	dst;
+
+	int			rt_genid;
+	unsigned int		rt_flags;
+	__u16			rt_type;
+	__u8			rt_is_input;
+	__u8			rt_uses_gateway;
+
+	int			rt_iif;
+
+	/* Info on neighbour */
+	__be32			rt_gateway;
+};
+
+
+a. input
+ip_rcv->ip_rcv_finish(skb)
+{
+    /*normally there is no ratble for a new coming skb and get the dst through lookuping the route table*/
+    if (!skb_dst(skb)) {
+		int err = ip_route_input_noref(skb, iph->daddr, iph->saddr,
+					       iph->tos, skb->dev); 
+    }  
+
+    rt = skb_rtable(skb);
+    return skb_dst(skb)->input(skb);
+}
+
+/*flowi4 is used to lookup the route table as a key*/
+struct flowi4 {
+	struct flowi_common	__fl_common;
+	/* (saddr,daddr) must be grouped, same order as in IP header */
+	__be32			saddr;
+	__be32			daddr;
+};
+
+	
+struct flowi_common {
+	int	flowic_oif;
+	int	flowic_iif;
+	__u32	flowic_mark;
+	__u8	flowic_tos;
+	__u8	flowic_scope;
+	__u8	flowic_proto;
+	__u8	flowic_flags;
+};
+
+
+int ip_route_input_noref(struct sk_buff *skb, __be32 daddr, __be32 saddr,
+			 u8 tos, struct net_device *dev)
+{
+	struct in_device *in_dev = __in_dev_get_rcu(dev);
+   	
+	/* IP on this device is disabled. discard it */
+	if (!in_dev)
+		goto out;
+
+	/*
+	 *	Now we are ready to route packet.
+	 */
+	fl4.flowi4_oif = 0;
+	fl4.flowi4_iif = dev->ifindex;
+	fl4.flowi4_mark = skb->mark;
+	fl4.flowi4_tos = tos;
+	fl4.flowi4_scope = RT_SCOPE_UNIVERSE;
+	fl4.daddr = daddr;
+	fl4.saddr = saddr;
+	err = fib_lookup(net, &fl4, &res);
+	if (err != 0)
+		goto no_route;
+	if (res.type == RTN_LOCAL) {
+		/*local address and validate the source ip*/
+		err = fib_validate_source(skb, saddr, daddr, tos, LOOPBACK_IFINDEX,  dev, in_dev, &itag);
+		
+		goto local_input;
+	}
+
+	/*check ip_forward enable*/
+	if (!IN_DEV_FORWARD(in_dev))
+		goto no_route;
+
+	if (res.type != RTN_UNICAST)
+		goto martian_destination;
+
+	return ip_mkroute_input(skb, &res, &fl4, in_dev, daddr, saddr, tos);
+		//also fib_validate_source
+		//rth = rt_dst_alloc
+		//rth->dst.input = ip_forward;
+		//rth->dst.output = ip_output;
+		//rt_set_nexthop: if (nh->nh_gw && nh->nh_scope == RT_SCOPE_LINK) { rt->rt_gateway = nh->nh_gw;rt->rt_uses_gateway = 1;} used for L2 neigbour subsystem
+		//skb_dst_set(skb, &rth->dst);
+
+local_input:
+	/*allocate the rtable*/
+	rth = rt_dst_alloc(net->loopback_dev,
+			   IN_DEV_CONF_GET(in_dev, NOPOLICY), false, do_cache);
+	/*init the input and output function*/
+	rth->dst.input= ip_local_deliver;
+	rth->dst.output= ip_rt_bug;
+	/*set the rtable to the skb*/
+	skb_dst_set(skb, &rth->dst);
+}
+
+/*conifg with CONFIG_IP_MULTIPLE_TABLES*/
+/*the detail result lookup the table*/
+struct fib_result {
+	unsigned char	prefixlen;
+	unsigned char	nh_sel;
+	unsigned char	type;
+	unsigned char	scope;
+	u32		tclassid;
+	struct fib_info *fi;
+	struct fib_table *table;
+	struct list_head *fa_head;
+};
+
+static inline int fib_lookup(struct net *net, struct flowi4 *flp,
+			     struct fib_result *res)
+{
+	/*don't enable rules lookup, then lookup the local table, main table and default table orderly*/
+	if (!net->ipv4.fib_has_custom_rules) {
+		res->tclassid = 0;
+		if (net->ipv4.fib_local &&
+		    !fib_table_lookup(net->ipv4.fib_local, flp, res,
+				      FIB_LOOKUP_NOREF))
+			return 0;
+		if (net->ipv4.fib_main &&
+		    !fib_table_lookup(net->ipv4.fib_main, flp, res,
+				      FIB_LOOKUP_NOREF))
+			return 0;
+		if (net->ipv4.fib_default &&
+		    !fib_table_lookup(net->ipv4.fib_default, flp, res,
+				      FIB_LOOKUP_NOREF))
+			return 0;
+		return -ENETUNREACH;
+	}
+     
+        /*rules lookup talked later*/
+	return __fib_lookup(net, flp, res);
+}
+
+/*loopup the specific table (tire tree) with t_key key = ntohl(flp->daddr);*/
+/*the find the leaf with this key*/
+fib_table_lookup->check_leaf()
+{
+	/*search for each sub key(fib_alias)*/
+	hlist_for_each_entry_rcu(li, hhead, hlist) {
+		struct fib_alias *fa;
+
+		if (l->key != (key & li->mask_plen))
+			continue;
+		/*lookup each finnlay key(fib_info) in a sub key*/
+		list_for_each_entry_rcu(fa, &li->falh, fa_list) {
+			struct fib_info *fi = fa->fa_info;
+			/*the same tos if there is a tos in this route*/
+			if (fa->fa_tos && fa->fa_tos != flp->flowi4_tos)
+				continue;
+			/*more far scope than this one in route*/
+			if (fa->fa_info->fib_scope < flp->flowi4_scope)
+				continue;
+
+			for (nhsel = 0; nhsel < fi->fib_nhs; nhsel++) {
+				const struct fib_nh *nh = &fi->fib_nh[nhsel];
+
+				/*find the same oif in the nhsel*/
+				if (flp->flowi4_oif && flp->flowi4_oif != nh->nh_oif)
+					continue;
+
+				res->prefixlen = li->plen;
+				res->nh_sel = nhsel;
+				res->type = fa->fa_type;
+				res->scope = fa->fa_info->fib_scope;
+				res->fi = fi;
+				res->table = tb;
+				
+				/*find the route*/
+				return 0;
+			}
+		}
+	}
+
+	/*don't find the route*/
+	return 1;
+}
+
+
+b. output:
+struct rtable *ip_route_output_flow(struct net *net, struct flowi4 *flp4, struct sock *sk)
+{
+	fl4->flowi4_iif = LOOPBACK_IFINDEX;
+	fl4->flowi4_tos = tos & IPTOS_RT_MASK;
+	fl4->flowi4_scope = ((tos & RTO_ONLINK) ? RT_SCOPE_LINK : RT_SCOPE_UNIVERSE);
+	if (fib_lookup(net, fl4, &res)) {
+		res.fi = NULL;
+		res.table = NULL;
+		/*find the route and if non-saddr(non-bind), select the saddr from the oif*/
+		if (fl4->flowi4_oif) {
+			if (fl4->saddr == 0)
+				fl4->saddr = inet_select_addr(dev_out, 0,
+							      RT_SCOPE_LINK);
+			res.type = RTN_UNICAST;
+			goto make_route;
+		}
+	}
+
+make_route:
+	rth = __mkroute_output(&res, fl4, orig_oif, dev_out, flags);
+		//rth = rt_dst_alloc
+		//rth->dst.output = ip_output;
+		//rt_set_nexthop: if (nh->nh_gw && nh->nh_scope == RT_SCOPE_LINK) { rt->rt_gateway = nh->nh_gw;rt->rt_uses_gateway = 1;} used for L2 neigbour subsystem
+
+out:
+	return rth;
+}
+
+
+4. ip rules: system adminstrator can create some rules in userspace. If the incoming packet matchs one of the rules then did the action (lookup in spcefict ip route table or prohibit it and so on)described in the rule. If there is no rules net->ipv4.fib_has_custom_rules is false and a incoming packet just lookup the local, main, default table inorderly. If there is new rules add by userspace or delete by userspcae. net->ipv4.fib_has_custom_rules is true and the incoming packes will loopup each rules inorderly until matched if match then do the action of this rule for the packet. But there are always three rules in the rules list we talked in fib4_rules_init. 0: from all lookup local, 32766: from all lookup main, 32767: from all lookup default. So if there are some new rules each packet will lookup the local tabel firstly and if no matched rules with the new rules it will lookup the last two one tables main and default. So if all the new rules configured by userspace is delete. net>ipv4.fib_has_custom_rules is also true and all the packet have to match the three rules and loopup inorderly until matched.
+
+1). ip rules insert
+A ip rules can be described by struct fib4_rule 
+action:
+enum {
+	FR_ACT_UNSPEC,
+	FR_ACT_TO_TBL,		/* Pass to fixed table */
+	FR_ACT_GOTO,		/* Jump to another rule */
+	FR_ACT_NOP,		/* No operation */
+	FR_ACT_RES3,
+	FR_ACT_RES4,
+	FR_ACT_BLACKHOLE,	/* Drop without notification */
+	FR_ACT_UNREACHABLE,	/* Drop with ENETUNREACH */
+	FR_ACT_PROHIBIT,	/* Drop with EACCES */
+	__FR_ACT_MAX,
+};
+
+struct fib_rule{
+	int			iifindex;/* incoming dev*/
+	int			oifindex;/* incoming dev*/
+	u32			mark;/*mark set by iptable*/
+	u32			mark_mask;
+	u32			flags;
+	u32			table;  /*it is significant only when the action is FR_ACT_TO_TBL. It means loopup the specific table*/
+	u8			action;
+	u32			target; /*it is significant only when the action is FR_ACT_GOTO. It meas jump to another rule*/
+	struct fib_rule __rcu	*ctarget;/*target rule*/
+
+	u32			pref; /*priority for the packet*/
+};
+
+struct fib4_rule {
+	struct fib_rule		common;
+	u8			dst_len;
+	u8			src_len;
+	u8			tos; 
+	__be32			src; /*src ip*/
+	__be32			srcmask;
+	__be32			dst; /*dst ip*/
+	__be32			dstmask;
+};
+
+
+static int fib_nl_newrule(struct sk_buff *skb, struct nlmsghdr* nlh)
+{
+	/*allocate a rule struct*/
+	struct fib_rule *rule  = kzalloc(ops->rule_size, GFP_KERNEL);
+
+	/*get the priority*/
+	if (tb[FRA_PRIORITY])
+		rule->pref = nla_get_u32(tb[FRA_PRIORITY]);
+	/*get the iifindex*/
+	if (tb[FRA_IIFNAME]) {
+		.....
+		rule->iifindex = dev->ifindex;
+	}
+
+	/*get the oifindex*/
+	if (tb[FRA_OIFNAME]) {
+		.....
+		rule->oifindex = dev->ifindex;
+	}
+	
+	/*get the fwmark*/
+	if (tb[FRA_FWMARK]) {
+		rule->mark = nla_get_u32(tb[FRA_FWMARK]);
+
+	/*get action*/
+	rule->action = frh->action;
+	rule->flags = frh->flags;
+
+	/*get table number*/
+	rule->table = frh_get_table(frh, tb);
+
+	/*if action is goto then get target number*/
+	if (tb[FRA_GOTO]) {
+		if (rule->action != FR_ACT_GOTO)
+			goto errout_free;
+
+		rule->target = nla_get_u32(tb[FRA_GOTO]);
+		/* Backward jumps are prohibited to avoid endless loops */
+		if (rule->target <= rule->pref)
+			goto errout_free;	
+		/*set ctarget*/
+		list_for_each_entry(r, &ops->rules_list, list) {
+			if (r->pref == rule->target) {
+				RCU_INIT_POINTER(rule->ctarget, r);
+				break;
+			}
+		}
+	}
+
+	/*configure AP_INET family rules*/
+	err = ops->configure(rule, skb, frh, tb);
+		//fib4_rule_configure
+
+	/*insert rule to the position(priority if no set it is zero and after the first one[0: from all lookup local] ) */
+	/*we can also insert two same rules the later one just behind the first one*/
+	list_for_each_entry(r, &ops->rules_list, list) {
+		if (r->pref > rule->pref)
+			break;
+		last = r;
+	}
+
+	if (last)
+		list_add_rcu(&rule->list, &last->list);
+	else
+		list_add_rcu(&rule->list, &ops->rules_list);
+
+	return 0;
+}
+
+int fib4_rule_configure()
+{
+	if (frh->src_len)
+		rule4->src = nla_get_be32(tb[FRA_SRC]);
+
+	if (frh->dst_len)
+		rule4->dst = nla_get_be32(tb[FRA_DST]);
+
+	rule4->src_len = frh->src_len;
+	rule4->srcmask = inet_make_mask(rule4->src_len);
+	rule4->dst_len = frh->dst_len;
+	rule4->dstmask = inet_make_mask(rule4->dst_len);
+	rule4->tos = frh->tos;
+
+	/*eanable it*/
+	net->ipv4.fib_has_custom_rules = true;
+}
+
+
+2). ip rules lookup
+/*The kernel must be compiled with CONFIG_IP_MULTIPLE_TABLES*/
+fib_lookup()->__fib_lookup()->fib_rules_lookup(net->ipv4.rules_ops, flowi4_to_flowi(flp), 0, &arg)
+	//if (net->ipv4.fib_has_custom_rules)
+{
+	struct fib_rule *rule;
+
+	list_for_each_entry_rcu(rule, &ops->rules_list, list) {
+jumped:
+		/*check if the rule matchs with this*/
+		if (!fib_rule_match(rule, ops, fl, flags))
+			continue;
+		/*jump to another one*/
+		if (rule->action == FR_ACT_GOTO) {
+			struct fib_rule *target;
+
+			target = rcu_dereference(rule->ctarget);
+			if (target == NULL) {
+				continue;
+			} else {
+				rule = target;
+				goto jumped;
+			}
+		} else if (rule->action == FR_ACT_NOP)
+			continue;
+		else
+			err = ops->action(rule, fl, flags, arg);
+				// fib4_rule_action
+
+	}
+
+	err = -ESRCH;
+out:
+	rcu_read_unlock();
+
+	return err;
+}
+
+int fib4_rule_action(struct fib_rule *rule, struct flowi *flp,
+			    int flags, struct fib_lookup_arg *arg)
+{
+	int err = -EAGAIN;
+	struct fib_table *tbl;
+
+	switch (rule->action) {
+	case FR_ACT_TO_TBL:
+		break;
+
+	case FR_ACT_UNREACHABLE:
+		err = -ENETUNREACH;
+		goto errout;
+
+	case FR_ACT_PROHIBIT:
+		err = -EACCES;
+		goto errout;
+
+	case FR_ACT_BLACKHOLE:
+	default:
+		err = -EINVAL;
+		goto errout;
+	}
+	
+	/*action is TO_TBL and lookup the table*/
+	tbl = fib_get_table(rule->fr_net, rule->table);
+	if (!tbl)
+		goto errout;
+	
+	err = fib_table_lookup(tbl, &flp->u.ip4, (struct fib_result *) arg->result, arg->flags);
+	if (err > 0)
+		err = -EAGAIN;
+errout:
+	return err;
+}
+
+
+

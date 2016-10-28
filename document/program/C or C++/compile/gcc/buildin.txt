@@ -1,0 +1,34 @@
+1. int __builtin_types_compatible_p (type1, type2)
+You can use the built-in function __builtin_types_compatible_p to determine whether two types are the same. This built-in function returns 1 ifthe unqualified versions of the types type1 and type2 (which are types, not expressions) are compatible, 0 otherwise.
+This built-in function ignores top level qualifiers (e.g., const, volatile). For example, int is equivalent to const int.
+
+if( __builtin_types_compatible_p(typeof(c), int))
+	printf("it's a int type\n");
+else
+	printf("it's not a int type\n");
+
+
+2. int __builtin_constant_p (exp)
+You can use the built-in function __builtin_constant_p to determine if a value is known to be constant at compile-time and hence that GCC can perform constant-folding on expressions involving that value. Should compiled with -O2
+
+int a = 10;
+int *b = malloc(sizeof(int));
+int ret = -1;
+
+*b = ret;//if no this sentence, the ret is 0
+ret = __builtin_constant_p(a + *b);
+free(b);
+
+3. long __builtin_expect (long exp, long c)
+You may use __builtin_expect to provide the compiler with branch prediction information. The return value is the value of exp, which should be an integral expression. The value of c must be a compile-time constant. The semantics of the built-in are that it is expected that exp == c.
+
+#define likely(x)       __builtin_expect((x),1)
+#define unlikely(x)     __builtin_expect((x),0)
+
+4. void __builtin_prefetch (const void *addr, ...)
+This function is used to minimize cache-miss latency by moving data into a cache before it is accessed.
+The value of addr is the address of the memory to prefetch. There are two optional arguments, rw and locality. The value of rw is a compile-time constant one or zero; one means that the prefetch is preparing for a write to the memory address and zero, the default, means that the prefetch is preparing for a read. The value locality must be a compile-time constant integer between zero and three. A value of zero means that the data has no temporal locality, so it need not be left in the cache after the access. A value of three means that the data has a high degree of temporal locality and should be left in all levels of cache possible. Values of one and two mean, respectively, a low or moderate degree of temporal locality. The default is three.
+
+__builtin_prefetch (&c, 1, 1);
+__builtin_prefetch (&ret, 0, 1);
+c = ret;

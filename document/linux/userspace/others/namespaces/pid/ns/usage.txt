@@ -1,0 +1,25 @@
+a. ./ns_child_exec -p -m /bin/bash
+b. ./ns_child_exec -p -m ./init
+
+# mount -t proc proc /proc 
+# ps a
+PID TTY          TIME CMD
+ 1 pts/1    00:00:00 bash
+ 75 pts/1    00:00:00 ps
+
+#./orphan
+Parent (PID=166) created child with PID 167
+Parent (PID=166; PPID=1) terminating
+Child  (PID=167) now an orphan (parent PID=1)
+Child  (PID=167) terminating
+
+
+
+
+or another terminal(namespaces)
+#./ns_run  -f -n /proc/6171/ns/pid ./orphan
+Parent (PID=73) created child with PID 74
+Parent (PID=73; PPID=0) terminating
+
+Child  (PID=74) now an orphan (parent PID=1)
+Child  (PID=74) terminating

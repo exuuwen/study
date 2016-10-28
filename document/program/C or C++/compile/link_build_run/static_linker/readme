@@ -1,0 +1,10 @@
+gcc -c a.c -o a.o
+gcc -c b.c -o b.o
+ld a.o b.o -e main -o ab
+
+step1:把a.o和b.o合成一个elf文件 合并类似的段，建立好新的头和各个段表
+step2：为各个段分配虚拟地址
+step3：把各个段的符号表合成一个全局符号表
+step4：根据各个的重定位表.rel.text和.rel.data为需要改变的代码根据全局符号表的地址进行重定位
+
+

@@ -1,0 +1,20 @@
+Somethings there are too musch packet in packets send to controller and make controller can't work normally
+
+show packet_in counter in last 5s, 1min, 1hour
+
+# ovs-appctl coverage/show | grep rconn
+rconn_overflow             0.0/sec     0.000/sec        0.0000/sec   total: 22398904
+rconn_queued               0.4/sec     0.317/sec        0.3894/sec   total: 58661567
+rconn_sent                 0.4/sec     0.317/sec        0.3894/sec   total: 58661567
+
+packet sends through a queues
+schedule:  When new packet_in comes if queues > 100 drop it inc rconn_overflow, else put in in queues inc rconn_queued. When send out inc rconn_sent
+
+set limit
+# ovs-vsctl set controller e6ca3303-05c2-45b1-8331-1640da4071be  controller_rate_limit=150 controller_burst_limit=150
+
+the limit is base on token bucket filter.
+
+There is bucket for shape the pps.
+1.when each new packe_in comes if there are enough tokes, goto schedule as above. Else if the packets in bucket more than bucket size(burst) drop the oldest one then add the packet in to bucket.
+2. run_conn periodicitily gets packets from bucket(not more than 50 one time) and try to send it through schedule. 

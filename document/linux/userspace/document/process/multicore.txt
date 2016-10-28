@@ -1,0 +1,42 @@
+1. 原子性
+a. 硬件原子性
+• Reading or writing a byte(一个字节的读写)
+• Reading or writing a word aligned on a 16-bit boundary(对齐到 16 位边界的字的读写)
+• Reading or writing a doubleword aligned on a 32-bit boundary(对齐到 32 位边界的双字的读写)
+• Reading or writing a quadword aligned on a 64-bit boundary(对齐到 64 位边界的四字的读写)
+
+b. lock
+x86 平台上,CPU 提供了在指令执行期间对总线加锁的手段。CPU 芯片上有一条引
+线#HLOCK pin,如果汇编语言的程序中在一条指令前面加上前缀"LOCK",经过汇编以后的
+机器代码就使 CPU 在执行这条指令的时候把#HLOCK pin 的电位拉低,持续到这条指令结束
+时放开,从而把总线锁住,这样同一总线上别的 CPU 就暂时不能通过总线访问内存了,保证
+了这条指令在多处理器环境中的原子性
+
+c. cas
+//only for 8, 16, 32 data
+__sync_fetch_and_add/sub
+__sync_sub/add_and_fetch
+__sync_bool_compare_and_swap
+
+2. 缓存一致性
+防止伪共享: 不同线程访问的数据组cacheline对齐, 使得某个核心线程频繁操作的数据独享缓存行
+struct counter
+{
+        unsigned int count;
+        char pad[CACHELINE_SIZE - sizeof(unsigned int)]
+};
+
+struct counter shares[NCORES];
+
+3. 顺序性
+/**
+ * Compiler barrier.
+ *
+ * Guarantees that operation reordering does not occur at compile time
+ * for operations directly before and after the barrier.
+ */
+#define rte_compiler_barrier() do {             \
+	asm volatile ("" : : : "memory");       \
+} while(0)
+
+

@@ -1,0 +1,67 @@
+1. 安装
+dns:port 53
+# netstat -nltp
+tcp        0      127.0.0.1:53              0.0.0.0:*               LISTEN      10402/dnsmasq
+# kill -s 9 10402
+# apt-get install dnsmasq
+如果已经是最新版本只需重启服务
+# netstat -nltp
+tcp        0      0 0.0.0.0:53              0.0.0.0:*               LISTEN      4463/dnsmasq    
+
+2. 网络
+3台containers连接到传统brdige br0上
+br0 ip 为10.0.0.1/24
+
+a. containers想通过host dhcp分配10.0.0.0/24网段的ip
+b. containers想通过host作dns解析中继
+c. containers想通过host作为转发介入外网
+
+
+3. DNS中继
+in the container: the resolve file
+# vim /etc/reslov.conf
+nameserver 10.0.0.1
+
+4. dhcp服务
+a. server udp port 67
+# vim /etc/dnsmasq.conf
+dhcp-range=10.0.0.2,10.0.0.150,255.255.255.0,12h # 10.0.0.1可以包含在其中, br0地址也可以为其他10.0.0.0/24的值
+# /etc/init.d/dnsmasq restart
+# netstat -nlup
+udp        0      0 0.0.0.0:67              0.0.0.0:*                           4463/dnsmasq    
+udp        0      0 0.0.0.0:68              0.0.0.0:*                           1198/dhclient 
+或者自己开启服务
+dnsmasq -C ./dnsmasq.conf --pid-file=./dnsmasq.pid
+# vim dnsmasq.conf
+#BEGIN
+port=0
+interface=br0
+bind-interfaces
+dhcp-range=10.0.0.2,10.0.0.150,infinite
+dhcp-option=option:dns-server,114.114.114.114,1.2.4.8
+log-dhcp
+log-async
+log-facility=./dnsmasq.log
+#END
+
+
+b. in the contaner: client udp port 68
+# dhclient eth0
+eth0会获取ip并且默认网管为host上br0地址10.0.0.1
+
+c. process
+1). 0.0.0.0(client MAC)--->255.255.255.255(FF:FF:FF:FF:FF:FF), udp src port 67 ---> udp dst port 68 , dhcp request msg type discover
+2). 10.0.0.1(server MAC)--->10.0.0.2(client MAC), udp src port 68 ---> udp dst port 67 , dhcp request msg type offer, Your IP address 10.0.0.2/24, router 10.0.0.1, dhp server 10.0.0.1
+3). 0.0.0.0(client MAC)--->255.255.255.255(FF:FF:FF:FF:FF:FF), udp src port 67 ---> udp dst port 68 , dhcp request msg type request, request address 10.0.0.2, dhcp server 10.0.0.1
+4). 10.0.0.1(server MAC)--->10.0.0.2(client MAC), udp src port 68 ---> udp dst port 67 , dhcp request msg type ACK, Your IP address 10.0.0.2/24, router 10.0.0.1, dhp server 10.0.0.1
+
+
+5. nat: 内网地址转换
+# echo 1 > /proc/sys/net/ipv4/ip_forward
+# iptables -t  nat -A POSTROUTING -s 10.0.0.0/24 -j MASQUERADE
+
+
+
+
+
+ 

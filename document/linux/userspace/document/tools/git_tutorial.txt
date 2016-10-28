@@ -1,0 +1,240 @@
+1. Install git in Ubuntu
+
+$ sudo apt-get install git git-core
+
+
+2. basic operations of git
+a. Create an empty git project
+$ git init project_name
+$ cd project_name
+$ vim .git/config
+# add
+[user]
+        name = xxx
+        email = xxx@xxx.com
+
+
+b. Add new file to the project
+$ > newfile1
+$ > newfile2
+$ git status 
+# On branch br0
+# Untracked files:
+#   (use "git add <file>..." to include in what will be committed)
+#
+#	newfile1
+#	newfile2
+nothing added to commit but untracked files present (use "git add" to track)
+you can delete the newfiles and retrive the add opertion
+
+$ git add newfile1 newfile2(git add * #add all files)
+$ git status
+# On branch br0
+# Changes to be committed:
+#   (use "git reset HEAD <file>..." to unstage)
+#
+#	new file:   newfile1
+#	new file:   newfile2
+#
+if you want to retrive the add operation just run git reset HEAD newfiel1 newfile2 and delete them
+
+$ git commit –m “add newfile1 and newfile2”  # -m: just a comment
+$ git commit --amend  #amend the comments of this commit
+
+c. Move a file to another
+$ git mv newfile1 test
+$ git status
+# On branch br0
+# Changes to be committed:
+#   (use "git reset HEAD <file>..." to unstage)
+#
+#	renamed:    newfile1 -> test
+#
+if you want to retrive the operation you can 
+$ git reset HEAD test  # git status
+$ rm test
+$ git reset HEAD newfile1 # git status
+$ git checkout -- newfile1
+
+if you want to commit
+$ git commit –m “move newfile to test”
+
+
+d. Delete a file from the project 
+
+$ git rm newfile2
+$ git status
+# On branch br0
+# Changes to be committed:
+#   (use "git reset HEAD <file>..." to unstage)
+#
+#	deleted:    newfile2
+#
+if you want to retrive the operation 
+$ git reset HEAD newfile2
+$ git checkout -- newfile2
+
+just commit
+$ git commit –m “remove the newfile2 in the project”
+
+
+e. cancel the latest one or serveral commits
+git reset --hard <commit_id>
+
+
+f. Checkout file from the project 
+$ rm *
+$ git checkout newfile1 (git checkout * #checkout all files)
+$ git checkout  # show how many files can be checkout
+ 
+
+g. branch operations of git
+1). Check how many branch in the project
+$ git branch -
+master  # the default one
+
+$ git branch -a # -a all the branch that include the remote
+master
+remotes/origin/HEAD -> origin/master
+remotes/origin/master
+remotes/origin/other
+
+2). Create a new branch through the current branch
+$ git branch newbranch1(gitcheckout -b newbranch1 # this will switch tow another branch)
+$ git branch 
+* master 
+  newbranch1
+
+3). Go to another branch
+$ git checkout newbranch1 
+ Switched to branch 'newbranch1'
+$ git checkout other  #remote one
+$ git branch
+* other
+  master
+
+4). Delete a branch in the project
+$ git branch –D newbranch1
+
+5). Check which branch the current project belong to
+$ cat .git/HEAD
+ ref: refs/heads/newbranch1
+
+Also u can:
+$ git branch
+master 
+* newbranch1 (* means the current branch)
+
+6). Compare two different branch
+$ git diff newbranch1 master
+ diff --git a/b b/b
+ deleted file mode 100644
+ index e69de29..0000000
+ diff --git a/redundance b/redundance
+ new file mode 100644
+ index 0000000..76b96a9
+ --- /dev/null
+ +++ b/redundance
+ @@ -0,0 +1 @@
+ Roll back to the old commit(version) in current branch
+
+$ git log  #get commit id through comment, you can take parameters with --one-line
+  commit 8a8b39c31da8db2e2e9ba67e82cbbf7c529436b0 
+  Author: CR7 <cr7@cr7-virtual-machine.(none)>
+  Date:   Tue Oct 2 08:31:12 2012 +0800
+  move newfile to test
+
+  commit a47dca2e0a62f5c572ace26350e07a94899fecb8
+  Author: CR7 <cr7@cr7-virtual-machine.(none)>
+  Date:   Tue Oct 2 08:29:33 2012 +0800
+  add newfileand newfile2
+
+$ git checkout a47dca2e0a62f5c572ace26350e07a94899fecb8 #roll back to the oldest one
+$ ls
+newfile1  newfile2
+$ cat .git/HEAD
+a47dca2e0a62f5c572ace26350e07a94899fecb8 # it is stored as a temporary branch, we should store it ourselves.
+$ git branch oldest # store it to an old branch
+
+ 
+h. The tag operation of git
+1). Create a tag
+$ git  checkout master  #back to the master branch
+$ git tag newtag1
+$ git checkout  newtag1 #go to the newtag1
+
+$ git branch  #the tag is similar with branch but it is not belong to any branch no matther which branch u create it. U can go to the any tags in any branch.
+* (no branch)
+  master
+  newbranch1
+  oldest
+
+2). List all tags
+$  git tag -l
+ newtag1
+
+3). Delete a tag
+$  git tag –d newtag1
+
+
+i. git remote
+machine1
+$ git init orginal
+$ > file1
+$ > file2
+$ git add file1 file2
+$ git commit -m "add file1 file"
+
+another machine2
+$ git clone user@x.x.x.:/xx/orignal
+Cloning into 'orginal'...
+wxztt@127.0.0.1's password: 
+remote: Counting objects: 3, done.
+remote: Total 3 (delta 0), reused 0 (delta 0)
+Receiving objects: 100% (3/3), done.
+
+$ cd orignal
+$ > test
+$ git add test
+$ git commit "add test"
+$ git branch
+ * master
+$ git push # restore to the machine1, machine1 should not in the same branch
+
+if there are some update in machine1, the machine2 can get it 
+$ git pull
+
+push a local branch to remote
+$ git push  <REMOTENAME> <BRANCHNAME>
+              origin       other
+rename a local branch to remote: can be the same name
+$ git push  <REMOTENAME> <LOCALBRANCHNAME>:<REMOTEBRANCHNAME> 
+              origin       other1:other
+del a remote branch
+$ git push  <REMOTENAME> :<REMOTEBRANCHNAME> 
+              origin     :other
+
+push a local tag to remote
+$ git push  <REMOTENAME> <TAGNAME> 
+del a remote tag
+$ git push  <REMOTENAME> :<REMOTETAG> 
+
+
+j. get the git patch
+$ git log --oneline
+597fda1 add tme
+7fae979 add c
+440f11b add b
+8d5503b add a
+
+$ git format-patch 440f11b...7fae979
+0001-add-c.patch
+
+get the latest patch
+$ git format-patch HEAD^...HEAD
+
+get the latest three patchs
+$ git format-patch -3
+
+apply the patch
+$ git am 000xxxxx.patch

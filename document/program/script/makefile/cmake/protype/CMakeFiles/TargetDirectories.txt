@@ -1,0 +1,3 @@
+/home/cr7/tmp/protype/Demo/CMakeFiles/Demo.dir
+/home/cr7/tmp/protype/Hello/CMakeFiles/Hello.dir
+/home/cr7/tmp/protype/CMakeFiles/Main.dir

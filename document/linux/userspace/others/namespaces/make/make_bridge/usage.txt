@@ -1,0 +1,9 @@
+gcc -o userns_child_exec userns_child_exec.c if_ops.c  rtnetlink.c rtnetlink_addr.c  rtnetlink_route.c  rtnetlink_link_veth.c bridge.c tun_tap.c
+chmod a+s userns_child_exec
+
+# brctl addbr br0
+# ifconfig br0 192.168.130.111/24 up
+# brctl addif br0 eth0
+# ip route add x.x.x.x dev br0
+# ip route add default via x.x.x.x dev br0
+

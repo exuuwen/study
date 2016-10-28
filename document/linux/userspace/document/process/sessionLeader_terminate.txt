@@ -1,0 +1,14 @@
+problem:
+As we know a bash window is a session and the bash shell is the session leader process. What happend when the shell terminated.
+The session leader ignore the SIGINT, SIGQUIT and SIGTERM signal.
+
+1. SIGKILL
+The session leader will terminate all he frontgroud processes and terminate itself. But the backgroud processes will survive and become the orphan processes.
+
+2. SIGHUP
+A seesion is launched by ssh connection. When the network shutdown the session leader will recieve a SIGHUP
+The session leader will sends SIGHUP to all the processes in this this and then terminated itself.
+
+So how process can prevent terminating by signal SIGHUP in this situation
+a. capture or ignore the SIGHUP signal
+b. make your process to a deamon program
