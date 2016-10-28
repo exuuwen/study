@@ -186,5 +186,4 @@ NXST_FLOW reply (xid=0x4):
  cookie=0x0, duration=684.149s, table=4, n_packets=3, n_bytes=146, idle_age=67, udp,tun_id=0x1,tun_src=10.10.59.233,tp_dst=2152 actions=LOCAL
 
 
-MSG_CONFIRM (Since Linux 2.3.15)
-Tell the link layer that forward progress happened: you got a successful reply from the other side. If the link layer doesn't get this it will regularly reprobe the neighbor (e.g., via a unicast ARP). Only valid on SOCK_DGRAM and SOCK_RAW sockets and currently only implemented for IPv4 and IPv6. See arp(7) for details.
+intel_iommu=on iommu=pt
