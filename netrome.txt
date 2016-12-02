@@ -1,0 +1,609 @@
+netronome smart nic 将ovs offload到nic上, nic上也跑了一个ovs. 可以理解为内核dp-flow的前一层cache. nic上带有64个vf, 每个vf默认都是nic上ovs的一个port
+
+1. ovs-internal vs netvf
+ovs-internal: 是ovs生成的虚拟网卡设备. 
+发送: 如果有报文协议栈路由后通过ovs-internal设备发送, 就会直接进入ovs(查找flow转发). 
+接收: ovs flow的output为ovs-internal port, 将报文的接收dev修改为ovs-internal虚拟网卡, 放入协议栈
+classic ovs:
+			HOST1												HOST2
+ovs-internal<---->br0<----tunnel---->           <----tunnel---->br0<----->ovs-internal  
+
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+# ovs-ofctl add-port br0 internal --  set Interface internal ofport_request=7 type=internal
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 "in_port=7 actions=set_tunnel:1000,set_field:remote_ip->tun_dst,output:1"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=remote_ip tun_id=1000 actions=7"
+
+host1-->host2
+single flow
+
+Host1
+%Cpu11 :  0.0 us, 33.9 sy,  0.0 ni, 50.0 id,  0.0 wa,  0.0 hi, 16.1 si,  0.0 st
+Host2
+%Cpu0  :  0.0 us,  0.0 sy,  0.0 ni,  0.0 id,  0.0 wa,  0.0 hi,100.0 si,  0.0 st
+%Cpu12 :  0.0 us, 94.0 sy,  0.0 ni,  6.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+
+[  3]  0.0- 2.0 sec   685 MBytes  2.87 Gbits/sec
+[  3]  2.0- 4.0 sec   746 MBytes  3.13 Gbits/sec
+[  3]  4.0- 6.0 sec   751 MBytes  3.15 Gbits/sec
+[  3]  6.0- 8.0 sec   764 MBytes  3.20 Gbits/sec
+[  3]  8.0-10.0 sec   761 MBytes  3.19 Gbits/sec
+[  3] 10.0-12.0 sec   753 MBytes  3.16 Gbits/sec
+[  3] 12.0-14.0 sec   760 MBytes  3.19 Gbits/sec
+[  3] 14.0-16.0 sec   751 MBytes  3.15 Gbits/sec
+[  3] 16.0-18.0 sec   755 MBytes  3.17 Gbits/sec
+[  3] 18.0-20.0 sec   758 MBytes  3.18 Gbits/sec
+[  3] 20.0-22.0 sec   748 MBytes  3.14 Gbits/sec
+[  3] 22.0-24.0 sec   751 MBytes  3.15 Gbits/sec
+[  3] 24.0-26.0 sec   747 MBytes  3.13 Gbits/sec
+[  3] 26.0-28.0 sec   754 MBytes  3.16 Gbits/sec
+[  3] 28.0-30.0 sec   760 MBytes  3.19 Gbits/sec
+[  3] 30.0-32.0 sec   747 MBytes  3.13 Gbits/sec
+[  3] 32.0-34.0 sec   749 MBytes  3.14 Gbits/sec
+[  3] 34.0-36.0 sec   750 MBytes  3.15 Gbits/sec
+[  3] 36.0-38.0 sec   753 MBytes  3.16 Gbits/sec
+[  3] 38.0-40.0 sec   748 MBytes  3.14 Gbits/sec
+[  3] 40.0-42.0 sec   758 MBytes  3.18 Gbits/sec
+
+
+multiple flow
+开启rps
+
+Host1-->Host2
+
+Host1
+Tasks: 333 total,   2 running, 331 sleeping,   0 stopped,   0 zombie
+%Cpu0  :  0.0 us,  2.4 sy,  0.0 ni, 96.5 id,  0.0 wa,  0.0 hi,  1.2 si,  0.0 st
+%Cpu1  :  0.0 us,  3.7 sy,  0.0 ni, 95.1 id,  0.0 wa,  0.0 hi,  1.2 si,  0.0 st
+%Cpu2  :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu3  :  0.0 us,  5.3 sy,  0.0 ni, 93.4 id,  0.0 wa,  0.0 hi,  1.3 si,  0.0 st
+%Cpu4  :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu5  :  0.0 us,  2.3 sy,  0.0 ni, 96.6 id,  0.0 wa,  0.0 hi,  1.1 si,  0.0 st
+%Cpu6  :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu7  :  0.0 us,  5.4 sy,  0.0 ni, 94.6 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu8  :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu9  :  0.0 us,  3.6 sy,  0.0 ni, 95.2 id,  0.0 wa,  0.0 hi,  1.2 si,  0.0 st
+%Cpu10 :  0.0 us,  3.0 sy,  0.0 ni, 93.9 id,  0.0 wa,  0.0 hi,  3.0 si,  0.0 st
+%Cpu11 :  0.0 us,  2.7 sy,  0.0 ni, 95.9 id,  0.0 wa,  0.0 hi,  1.4 si,  0.0 st
+%Cpu12 :  0.0 us,  3.5 sy,  0.0 ni, 95.3 id,  0.0 wa,  0.0 hi,  1.2 si,  0.0 st
+%Cpu13 :  0.0 us,  3.5 sy,  0.0 ni, 95.3 id,  0.0 wa,  0.0 hi,  1.2 si,  0.0 st
+%Cpu14 :  0.0 us,  1.0 sy,  0.0 ni, 99.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu15 :  0.0 us,  5.3 sy,  0.0 ni, 93.3 id,  0.0 wa,  0.0 hi,  1.3 si,  0.0 st
+%Cpu16 :  0.0 us,  5.0 sy,  0.0 ni, 93.8 id,  0.0 wa,  0.0 hi,  1.2 si,  0.0 st
+%Cpu17 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu18 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu19 :  0.0 us,  5.8 sy,  0.0 ni, 88.5 id,  0.0 wa,  0.0 hi,  5.8 si,  0.0 st
+%Cpu20 :  0.0 us,  2.2 sy,  0.0 ni, 96.6 id,  0.0 wa,  0.0 hi,  1.1 si,  0.0 st
+%Cpu21 :  0.0 us,  4.0 sy,  0.0 ni, 96.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu22 :  0.0 us,  4.5 sy,  0.0 ni, 92.5 id,  0.0 wa,  0.0 hi,  3.0 si,  0.0 st
+%Cpu23 :  0.0 us,  4.5 sy,  0.0 ni, 93.9 id,  0.0 wa,  0.0 hi,  1.5 si,  0.0 st
+
+Host2
+Tasks: 320 total,   2 running, 318 sleeping,   0 stopped,   0 zombie
+%Cpu0  :  0.0 us,  0.0 sy,  0.0 ni,  0.0 id,  0.0 wa,  0.0 hi,100.0 si,  0.0 st
+%Cpu1  :  0.0 us, 31.9 sy,  0.0 ni, 65.3 id,  0.0 wa,  0.0 hi,  2.8 si,  0.0 st
+%Cpu2  :  0.0 us, 26.0 sy,  0.0 ni, 72.9 id,  0.0 wa,  0.0 hi,  1.0 si,  0.0 st
+%Cpu3  :  0.0 us, 38.9 sy,  0.0 ni, 53.7 id,  0.0 wa,  0.0 hi,  7.4 si,  0.0 st
+%Cpu4  :  1.1 us, 24.2 sy,  0.0 ni, 73.7 id,  0.0 wa,  0.0 hi,  1.1 si,  0.0 st
+%Cpu5  :  1.6 us, 36.5 sy,  0.0 ni, 39.7 id,  0.0 wa,  0.0 hi, 22.2 si,  0.0 st
+%Cpu6  :  1.1 us,  4.3 sy,  0.0 ni, 94.7 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu7  :  0.0 us,  7.9 sy,  0.0 ni, 91.1 id,  0.0 wa,  0.0 hi,  1.0 si,  0.0 st
+%Cpu8  :  1.5 us, 27.3 sy,  0.0 ni, 68.2 id,  0.0 wa,  0.0 hi,  3.0 si,  0.0 st
+%Cpu9  :  0.0 us,  9.1 sy,  0.0 ni, 89.8 id,  0.0 wa,  0.0 hi,  1.1 si,  0.0 st
+%Cpu10 :  1.6 us, 37.5 sy,  0.0 ni, 31.2 id,  0.0 wa,  0.0 hi, 29.7 si,  0.0 st
+%Cpu11 :  1.0 us, 15.2 sy,  0.0 ni, 81.8 id,  0.0 wa,  0.0 hi,  2.0 si,  0.0 st
+%Cpu12 :  0.0 us, 19.0 sy,  0.0 ni, 79.7 id,  0.0 wa,  0.0 hi,  1.3 si,  0.0 st
+%Cpu13 :  0.0 us, 26.6 sy,  0.0 ni, 71.3 id,  0.0 wa,  0.0 hi,  2.1 si,  0.0 st
+%Cpu14 :  0.0 us, 26.6 sy,  0.0 ni, 73.4 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu15 :  1.3 us, 29.5 sy,  0.0 ni, 65.4 id,  0.0 wa,  0.0 hi,  3.8 si,  0.0 st
+%Cpu16 :  1.4 us, 32.4 sy,  0.0 ni, 63.5 id,  0.0 wa,  0.0 hi,  2.7 si,  0.0 st
+%Cpu17 :  1.0 us, 23.5 sy,  0.0 ni, 75.5 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu18 :  1.4 us, 31.9 sy,  0.0 ni, 63.9 id,  0.0 wa,  0.0 hi,  2.8 si,  0.0 st
+%Cpu19 :  0.0 us, 18.4 sy,  0.0 ni, 80.6 id,  0.0 wa,  0.0 hi,  1.0 si,  0.0 st
+%Cpu20 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu21 :  0.0 us, 33.8 sy,  0.0 ni, 62.0 id,  0.0 wa,  0.0 hi,  4.2 si,  0.0 st
+%Cpu22 :  0.0 us, 21.3 sy,  0.0 ni, 66.7 id,  0.0 wa,  0.0 hi, 12.0 si,  0.0 st
+%Cpu23 :  0.0 us,  3.1 sy,  0.0 ni, 96.9 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+
+[SUM]  0.0- 2.0 sec  1.97 GBytes  8.48 Gbits/sec
+[SUM]  2.0- 4.0 sec  2.07 GBytes  8.88 Gbits/sec
+[SUM]  4.0- 6.0 sec  2.03 GBytes  8.72 Gbits/sec
+[SUM]  6.0- 8.0 sec  2.02 GBytes  8.68 Gbits/sec
+[SUM]  8.0-10.0 sec  2.09 GBytes  8.96 Gbits/sec
+[SUM] 10.0-12.0 sec  2.02 GBytes  8.68 Gbits/sec
+[SUM] 12.0-14.0 sec  2.06 GBytes  8.83 Gbits/sec
+[SUM] 14.0-16.0 sec  2.08 GBytes  8.92 Gbits/sec
+[SUM] 16.0-18.0 sec  2.07 GBytes  8.90 Gbits/sec
+[SUM] 18.0-20.0 sec  2.11 GBytes  9.06 Gbits/sec
+[SUM] 20.0-22.0 sec  2.07 GBytes  8.91 Gbits/sec
+[SUM] 22.0-24.0 sec  2.08 GBytes  8.95 Gbits/sec
+[SUM] 24.0-26.0 sec  2.09 GBytes  8.99 Gbits/sec
+[SUM] 26.0-28.0 sec  2.05 GBytes  8.80 Gbits/sec
+[SUM] 28.0-30.0 sec  2.03 GBytes  8.71 Gbits/sec
+[SUM] 30.0-32.0 sec  2.07 GBytes  8.89 Gbits/sec
+[SUM] 32.0-34.0 sec  2.08 GBytes  8.95 Gbits/sec
+[SUM] 34.0-36.0 sec  2.08 GBytes  8.95 Gbits/sec
+[SUM] 36.0-38.0 sec  2.09 GBytes  8.99 Gbits/sec
+[SUM] 38.0-40.0 sec  2.03 GBytes  8.73 Gbits/sec
+[SUM] 40.0-42.0 sec  2.05 GBytes  8.80 Gbits/sec
+[SUM] 42.0-44.0 sec  2.06 GBytes  8.84 Gbits/sec
+[SUM] 44.0-46.0 sec  2.08 GBytes  8.94 Gbits/sec
+[SUM] 46.0-48.0 sec  2.09 GBytes  8.97 Gbits/sec
+[SUM] 48.0-50.0 sec  2.09 GBytes  8.99 Gbits/sec
+
+
+
+
+netronome ovs:
+netvf是netrome网卡的vf通过加载nfp_netvf驱动生成的虚拟网卡. 
+发送:  如果有报文协议栈路由后通过netvf设备发送, 相当于发送给通过vf发送报文. 
+接收: nic上也跑了一个ovs. 物理网卡接收报文, 如果是发送给vf的, 将报文的接收dev修改为netvf虚拟网卡, 放入协议栈
+
+			HOST1												HOST2
+netvf<---->br0<----tunnel---->                   <----tunnel---->br0<----->netvf  
+
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+# ovs-ofctl add-port br0 sdn_v0.0 --  set Interface internal ofport_request=7
+
+#./dpdk-devbind.py --bind=nfp_netvf 0000:xx:0x.0
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 "in_port=7 actions=set_tunnel:1000,set_field:remote_ip_ntr->tun_dst,output:1"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=remote_ip_ntr tun_id=1000 actions=7"
+
+host1-->host2
+single flow
+Host1
+%Cpu2  :  0.0 us, 80.2 sy,  0.0 ni,  0.0 id,  0.0 wa,  0.0 hi, 19.8 si,  0.0 st
+Host2
+%Cpu22 :  2.1 us, 50.0 sy,  0.0 ni, 35.4 id,  0.0 wa,  2.1 hi, 10.4 si,  0.0 st
+[  3] 72.0-74.0 sec  1.88 GBytes  8.06 Gbits/sec
+[  3] 74.0-76.0 sec  1.87 GBytes  8.05 Gbits/sec
+[  3] 76.0-78.0 sec  1.87 GBytes  8.05 Gbits/sec
+[  3] 78.0-80.0 sec  1.87 GBytes  8.02 Gbits/sec
+[  3] 80.0-82.0 sec  1.87 GBytes  8.02 Gbits/sec
+[  3] 82.0-84.0 sec  1.87 GBytes  8.02 Gbits/sec
+[  3] 84.0-86.0 sec  1.86 GBytes  8.00 Gbits/sec
+[  3] 86.0-88.0 sec  1.86 GBytes  7.97 Gbits/sec
+[  3] 88.0-90.0 sec  1.85 GBytes  7.95 Gbits/sec
+[  3] 90.0-92.0 sec  1.85 GBytes  7.95 Gbits/sec
+[  3] 92.0-94.0 sec  1.85 GBytes  7.95 Gbits/sec
+[  3] 94.0-96.0 sec  1.85 GBytes  7.95 Gbits/sec
+[  3] 96.0-98.0 sec  1.85 GBytes  7.95 Gbits/sec
+[  3] 98.0-100.0 sec  1.86 GBytes  7.98 Gbits/sec
+[  3]  0.0-100.0 sec  92.1 GBytes  7.91 Gbits/sec
+
+
+multiple flow
+HOST1
+Tasks: 333 total,   1 running, 332 sleeping,   0 stopped,   0 zombie
+%Cpu0  :  0.0 us,  7.0 sy,  0.0 ni, 93.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu1  :  1.0 us,  8.2 sy,  0.0 ni, 90.8 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu2  :  0.0 us,  6.5 sy,  0.0 ni,  3.9 id,  0.0 wa,  0.0 hi, 89.6 si,  0.0 st  #WHY? sender?
+%Cpu3  :  0.0 us, 11.1 sy,  0.0 ni, 88.9 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu4  :  0.0 us,  9.9 sy,  0.0 ni, 90.1 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu5  :  0.0 us,  9.0 sy,  0.0 ni, 91.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu6  :  0.0 us,  1.0 sy,  0.0 ni, 99.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu7  :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu8  :  0.0 us,  1.0 sy,  0.0 ni, 99.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu9  :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu10 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu11 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu12 :  0.0 us,  2.0 sy,  0.0 ni, 98.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu13 :  0.0 us,  1.0 sy,  0.0 ni, 99.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu14 :  0.0 us,  2.0 sy,  0.0 ni, 98.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu15 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu16 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu17 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu18 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu19 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu20 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu21 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu22 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu23 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+
+HOST2
+Tasks: 321 total,   1 running, 320 sleeping,   0 stopped,   0 zombie
+%Cpu0  :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu1  :  0.0 us,  1.0 sy,  0.0 ni, 99.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu2  :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu3  :  0.0 us,  1.0 sy,  0.0 ni, 99.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu4  :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu5  :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu6  :  0.0 us,  4.1 sy,  0.0 ni, 95.9 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu7  :  0.0 us,  6.1 sy,  0.0 ni, 93.9 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu8  :  0.0 us,  6.0 sy,  0.0 ni, 94.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu9  :  0.0 us,  6.0 sy,  0.0 ni, 94.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu10 :  0.0 us,  6.0 sy,  0.0 ni, 94.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu11 :  0.0 us,  7.2 sy,  0.0 ni, 92.8 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu12 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu13 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu14 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu15 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu16 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu17 :  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu18 :  0.0 us,  3.0 sy,  0.0 ni, 97.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu19 :  0.0 us,  2.0 sy,  0.0 ni, 98.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu20 :  0.0 us,  3.0 sy,  0.0 ni, 97.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu21 :  1.0 us,  3.0 sy,  0.0 ni, 96.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu22 :  0.0 us,  1.0 sy,  0.0 ni, 99.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu23 :  0.0 us,  8.7 sy,  0.0 ni, 89.1 id,  0.0 wa,  0.0 hi,  2.2 si,  0.0 st
+
+
+[SUM] 50.0-52.0 sec  2.11 GBytes  9.08 Gbits/sec
+[SUM] 52.0-54.0 sec  2.11 GBytes  9.07 Gbits/sec
+[SUM] 54.0-56.0 sec  2.12 GBytes  9.12 Gbits/sec
+[SUM] 56.0-58.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 58.0-60.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 60.0-62.0 sec  2.13 GBytes  9.13 Gbits/sec
+[SUM] 62.0-64.0 sec  2.13 GBytes  9.13 Gbits/sec
+[SUM] 64.0-66.0 sec  2.12 GBytes  9.11 Gbits/sec
+[SUM] 66.0-68.0 sec  2.12 GBytes  9.13 Gbits/sec
+[SUM] 68.0-70.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 70.0-72.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 72.0-74.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 74.0-76.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 76.0-78.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 78.0-80.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 80.0-82.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 82.0-84.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 84.0-86.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 86.0-88.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 88.0-90.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 90.0-92.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 92.0-94.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 94.0-96.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 96.0-98.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM] 98.0-100.0 sec  2.13 GBytes  9.14 Gbits/sec
+[SUM]  0.0-100.0 sec   106 GBytes  9.12 Gbits/sec
+
+
+2. meter
+classic ovs: 不支持
+
+netrome ovs:
+			HOST1												HOST2
+netvf<---->br0<----tunnel---->                   <----tunnel---->br0<----->netvf  
+
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+# ovs-ofctl add-port br0 sdn_v0.0 --  set Interface internal ofport_request=7
+
+#./dpdk-devbind.py --bind=nfp_netvf 0000:xx:0x.0
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=remote_ip_ntr tun_id=1000 actions=7"
+
+# ovs-ofctl -OOpenFlow13 add-meter br0 meter=7,kbps,burst,bands='type=drop,rate=200000,burst_size=50000'
+# ovs-ofctl add-flow br0 "in_port=7 actions=meter:7,set_tunnel:1000,set_field:remote_ip_ntr->tun_dst,output:1"
+
+限速功能正常
+
+tips:
+a. del-meter后, 相关flow的报文被drop
+b. del后重新添加meter, 相关flow应该删除再添加
+
+
+
+3. gateway forward
+classic ovs:
+			HOST												GATEWAY
+netns1 :ovs-internal1<---->br0<----tunnel---->           
+														<----tunnel---->br0<---tunnel--->  
+netns2 :ovs-internal2<---->br0<----tunnel---->           
+
+HOST:
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+# ovs-ofctl add-port br0 internal1 --  set Interface internal1 ofport_request=11 type=internal
+# ovs-ofctl add-port br0 internal2 --  set Interface internal2 ofport_request=12 type=internal
+
+# ip netns ns1
+# ip netns ns2
+# ip link set dev internal1 ns1
+# ip link set dev internal2 ns2
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 "in_port=11,dl_dst=fa:ff:ff:ff:ff:ff actions=set_tunnel:1000,set_field:gateway_ip->tun_dst,output:1"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=gateway_ip tun_id=1000,nw_dst=netns1_ip actions=mod_dl_dst:x:x:x:x:x:x,output:11"
+# ovs-ofctl add-flow br0 "in_port=12,dl_dst=fa:ff:ff:ff:ff:ff actions=set_tunnel:1000,set_field:gateway_ip->tun_dst,output:1"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=gateway_ip tun_id=1000,nw_dst=netns2_ip actions=mod_dl_dst:x:x:x:x:x:x,output:12"
+
+
+GATEWAY:
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=host_ip tun_id=1000,nw_dst=netns1_ip actions=set_tunnel:1000,set_field:host_ip->tun_dst,output:in_port"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=host_ip tun_id=1000,nw_dst=netns2_ip actions=set_tunnel:1000,set_field:host_ip->tun_dst,output:in_port"
+
+
+2G多的流量将一个core打满
+
+[SUM]  0.0- 2.0 sec   525 MBytes  2.20 Gbits/sec
+[SUM]  2.0- 4.0 sec   573 MBytes  2.40 Gbits/sec
+[SUM]  4.0- 6.0 sec   570 MBytes  2.39 Gbits/sec
+[SUM]  6.0- 8.0 sec   598 MBytes  2.51 Gbits/sec
+[SUM]  8.0-10.0 sec   574 MBytes  2.41 Gbits/sec
+[SUM] 10.0-12.0 sec   565 MBytes  2.37 Gbits/sec
+[SUM] 12.0-14.0 sec   551 MBytes  2.31 Gbits/sec
+[SUM] 14.0-16.0 sec   571 MBytes  2.39 Gbits/sec
+[SUM] 16.0-18.0 sec   583 MBytes  2.45 Gbits/sec
+[SUM] 18.0-20.0 sec   568 MBytes  2.38 Gbits/sec
+[SUM] 20.0-22.0 sec   561 MBytes  2.35 Gbits/sec
+[SUM] 22.0-24.0 sec   574 MBytes  2.41 Gbits/sec
+[SUM] 24.0-26.0 sec   557 MBytes  2.33 Gbits/sec
+GATEWAY
+%Cpu8  :  0.0 us,  0.0 sy,  0.0 ni,  0.0 id,  0.0 wa,  0.0 hi,100.0 si,  0.0 st
+
+
+netronome ovs:
+			HOST												GATEWAY
+netns1 :netvf1<---->br0<----tunnel---->           
+														<----tunnel---->br0<---tunnel--->  
+netns2 :netvf2<---->br0<----tunnel---->           
+
+HOST:
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+# ovs-ofctl add-port br0 sdn_v0.0 --  set Interface sdn_v0.0 ofport_request=21
+# ovs-ofctl add-port br0 sdn_v0.1 --  set Interface sdn_v0.1 ofport_request=22 
+
+
+# ip netns ns3
+# ip netns ns4
+# ip link set dev netvf1 ns3
+# ip link set dev netvf2 ns4
+
+#./dpdk-devbind.py --bind=nfp_netvf 0000:xx:0x.0
+#./dpdk-devbind.py --bind=nfp_netvf 0000:xx:0x.1
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 "in_port=21,dl_dst=fa:ff:ff:ff:ff:ff actions=set_tunnel:2000,set_field:gateway_ip_ntr->tun_dst,output:1"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=gateway_ip_ntr tun_id=2000,nw_dst=netns3_ip actions=mod_dl_dst:x:x:x:x:x:x,output:21"
+# ovs-ofctl add-flow br0 "in_port=22,dl_dst=fa:ff:ff:ff:ff:ff actions=set_tunnel:2000,set_field:gateway_ip_ntr->tun_dst,output:1"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=gateway_ip_ntr tun_id=2000,nw_dst=netns4_ip actions=mod_dl_dst:x:x:x:x:x:x,output:22"
+
+
+GATEWAY:
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=host_ip_ntr tun_id=2000,nw_dst=netns3_ip actions=set_tunnel:2000,set_field:host_ip_ntr->tun_dst,output:in_port"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=host_ip_ntr tun_id=2000,nw_dst=netns4_ip actions=set_tunnel:2000,set_field:host_ip_ntr->tun_dst,output:in_port"
+
+
+
+GATEWAY 没消耗任何cpu
+
+[SUM] 18.0-20.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 20.0-22.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 22.0-24.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 24.0-26.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 26.0-28.0 sec  2.12 GBytes  9.10 Gbits/sec
+[SUM] 28.0-30.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 30.0-32.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 32.0-34.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 34.0-36.0 sec  2.12 GBytes  9.10 Gbits/sec
+[SUM] 36.0-38.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 38.0-40.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 40.0-42.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 42.0-44.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 44.0-46.0 sec  2.12 GBytes  9.10 Gbits/sec
+[SUM] 46.0-48.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 48.0-50.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 50.0-52.0 sec  2.12 GBytes  9.10 Gbits/sec
+[SUM] 52.0-54.0 sec  2.12 GBytes  9.10 Gbits/sec
+[SUM] 54.0-56.0 sec  2.12 GBytes  9.10 Gbits/sec
+[SUM] 56.0-58.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 58.0-60.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 60.0-62.0 sec  2.12 GBytes  9.10 Gbits/sec
+[SUM] 62.0-64.0 sec  2.12 GBytes  9.09 Gbits/sec
+[SUM] 64.0-66.0 sec  2.12 GBytes  9.10 Gbits/sec
+[SUM] 66.0-68.0 sec  2.12 GBytes  9.09 Gbits/sec
+
+
+
+
+4. gateway firewal 
+ns1能访问ns2
+ns2访问ns1需要过防火墙
+classic ovs:
+			HOST												GATEWAY
+netns1 :ovs-internal1<---->br0<----tunnel---->           
+														<----tunnel---->br0<---tunnel--->  
+netns2 :ovs-internal2<---->br0<----tunnel---->           
+
+HOST:
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+# ovs-ofctl add-port br0 internal1 --  set Interface internal1 ofport_request=11 type=internal
+# ovs-ofctl add-port br0 internal2 --  set Interface internal2 ofport_request=12 type=internal
+
+# ip netns ns1
+# ip netns ns2
+# ip link set dev internal1 ns1
+# ip link set dev internal2 ns2
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 "in_port=11,dl_dst=fa:ff:ff:ff:ff:ff actions=set_tunnel:1000,set_field:gateway_ip->tun_dst,output:1"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=gateway_ip tun_id=1000,nw_dst=netns1_ip actions=mod_dl_dst:x:x:x:x:x:x,output:11"
+# ovs-ofctl add-flow br0 "in_port=12,dl_dst=fa:ff:ff:ff:ff:ff actions=set_tunnel:1000,set_field:gateway_ip->tun_dst,output:1"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=gateway_ip tun_id=1000,nw_dst=netns2_ip actions=mod_dl_dst:x:x:x:x:x:x,output:12"
+
+
+GATEWAY:
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 -Oopenflow13 'ip,tun_id=2000,tun_src=host_ip,in_port=1,nw_dst=ns1_ip,ct_state=-trk actions=ct(table=2,zone=2)
+# ovs-ofctl add-flow br0 -Oopenflow13 'ip,tun_id=2000,tun_src=host_ip,in_port=1,nw_dst=ns2_ip,ct_state=-trk actions=ct(table=2,zone=2)
+# ovs-ofctl add-flow br0 -Oopenflow13 'table=2,ip,nw_dst=ns2_ip,ct_state=+new+trk actions=set_tunnel:2000,set_field:host_ip->tun_dst,output:in_port'
+# ovs-ofctl add-flow br0 -Oopenflow13 'table=2,ip,nw_dst=ns2_ip,ct_state=+est+trk actions=set_tunnel:2000,set_field:host_ip->tun_dst,output:in_port'
+# ovs-ofctl add-flow br0 -Oopenflow13 'table=2,ip,nw_dst=ns1_ip,ct_state=+est+trk actions=set_tunnel:2000,set_field:host_ip->tun_dst,output:in_port'
+# ovs-ofctl add-flow br0 -Oopenflow13 'table=2,ip,nw_dst=ns1_ip,ct_state=+new+trk actions=resubmit(,12)'
+
+
+netrome ovs:
+ns11能访问ns12
+ns12访问ns12需要过防火墙
+			HOST												GATEWAY
+netns1 :netvf1<---->br0<----tunnel---->           
+														<----tunnel---->br0<---tunnel--->  
+netns2 :netvf2<---->br0<----tunnel---->           
+
+HOST:
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+# ovs-ofctl add-port br0 sdn_v0.0 --  set Interface sdn_v0.0 ofport_request=21
+# ovs-ofctl add-port br0 sdn_v0.1 --  set Interface sdn_v0.1 ofport_request=22 
+
+
+# ip netns ns11
+# ip netns ns12
+# ip link set dev netvf1 ns11
+# ip link set dev netvf2 ns12
+
+#./dpdk-devbind.py --bind=nfp_netvf 0000:xx:0x.0
+#./dpdk-devbind.py --bind=nfp_netvf 0000:xx:0x.1
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 "in_port=21,dl_dst=fa:ff:ff:ff:ff:ff actions=set_tunnel:2000,set_field:gateway_ip_ntr->tun_dst,output:1"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=gateway_ip_ntr tun_id=1000,nw_dst=netns3_ip actions=mod_dl_dst:x:x:x:x:x:x,output:21"
+# ovs-ofctl add-flow br0 "in_port=22,dl_dst=fa:ff:ff:ff:ff:ff actions=set_tunnel:2000,set_field:gateway_ip_ntr->tun_dst,output:1"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=gateway_ip_ntr tun_id=2000,nw_dst=netns4_ip actions=mod_dl_dst:x:x:x:x:x:x,output:22"
+
+
+GATEWAY:
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 -Oopenflow13 'ip,tun_id=1000,tun_src=host_ip_ntr,in_port=1,nw_dst=ns11_ip,ct_state=-trk actions=ct(table=1,zone=1)
+# ovs-ofctl add-flow br0 -Oopenflow13 'ip,tun_id=1000,tun_src=host_ip_ntr,in_port=1,nw_dst=ns12_ip,ct_state=-trk actions=ct(table=1,zone=1)
+# ovs-ofctl add-flow br0 -Oopenflow13 'table=1,ip,nw_dst=ns12_ip,ct_state=+new+trk actions=set_tunnel:1000,set_field:host_ip_ntr->tun_dst,output:in_port'
+# ovs-ofctl add-flow br0 -Oopenflow13 'table=1,ip,nw_dst=ns12_ip,ct_state=+est+trk actions=set_tunnel:1000,set_field:host_ip_ntr->tun_dst,output:in_port'
+# ovs-ofctl add-flow br0 -Oopenflow13 'table=1,ip,nw_dst=ns11_ip,ct_state=+est+trk actions=set_tunnel:1000,set_field:host_ip_ntr->tun_dst,output:in_port'
+# ovs-ofctl add-flow br0 -Oopenflow13 'table=1,ip,nw_dst=ns11_ip,ct_state=+new+trk actions=resubmit(,11)'
+
+
+
+
+
+
+5. virtio-relay
+用户可以将vf assign给虚拟机器使用, 但是这种方法让虚拟机不能迁移. 所以netromone提出了一个virtio-relay的(其实就是vhost-user啦)
+她与ovs-dpdk的优势在于 ovs-dpdk从物理网卡接收报文, 做解封装, 连接追踪会消耗额外的cpu. 然后再通过vhost-user转发给虚拟机. 发送同理
+
+而netromone网卡可以把物理网卡接收报文, 做解封装, 连接追踪放到网卡上做. 需要一个用户态的virtio_relay纯转发就行了. 实现方法很取巧,netromone把一个vf逻辑上与一个虚拟机网卡相关联, 所以任何qos, nat, conntrack的功能都在网卡上完成后就转给vf, virtio_relay程序分为两端, 一端模拟虚拟机的backen就是vhost-user, 另外一端就是一个vf的uio dpdk程序.
+
+
+ovs classic
+			HOST1												HOST2
+vm<---->br0<----tunnel---->           <----tunnel---->br0<----->vm  
+
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+# ovs-vsctl set Interface vnet1 ofport_request=31 
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 "in_port=31 actions=set_tunnel:3000,set_field:remote_ip->tun_dst,output:1"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=remote_ip tun_id=3000 actions=31"
+
+[  3] local 10.0.1.61 port 42270 connected with 10.0.1.63 port 5001
+[ ID] Interval       Transfer     Bandwidth
+[  3]  0.0- 2.0 sec  1.08 GBytes  4.62 Gbits/sec
+[  3]  2.0- 4.0 sec  1.02 GBytes  4.37 Gbits/sec
+[  3]  4.0- 6.0 sec  1.03 GBytes  4.42 Gbits/sec
+[  3]  6.0- 8.0 sec   913 MBytes  3.83 Gbits/sec
+[  3]  8.0-10.0 sec  1.03 GBytes  4.41 Gbits/sec
+[  3] 10.0-12.0 sec  1.01 GBytes  4.35 Gbits/sec
+[  3] 12.0-14.0 sec   746 MBytes  3.13 Gbits/sec
+[  3] 14.0-16.0 sec   940 MBytes  3.94 Gbits/sec
+[  3] 16.0-18.0 sec   836 MBytes  3.50 Gbits/sec
+[  3] 18.0-20.0 sec   735 MBytes  3.08 Gbits/sec
+[  3] 20.0-22.0 sec  1.01 GBytes  4.35 Gbits/sec
+[  3]  0.0-23.5 sec  11.0 GBytes  4.02 Gbits/sec
+
+发送端消耗接近一个cpu的vhost线程
+接收端消耗一个softirq和vhost线程
+
+延时
+64 bytes from 10.0.1.63: icmp_seq=1 ttl=64 time=0.612 ms
+64 bytes from 10.0.1.63: icmp_seq=2 ttl=64 time=0.606 ms
+64 bytes from 10.0.1.63: icmp_seq=3 ttl=64 time=0.514 ms
+64 bytes from 10.0.1.63: icmp_seq=4 ttl=64 time=0.530 ms
+64 bytes from 10.0.1.63: icmp_seq=5 ttl=64 time=0.550 ms
+64 bytes from 10.0.1.63: icmp_seq=6 ttl=64 time=0.541 ms
+64 bytes from 10.0.1.63: icmp_seq=7 ttl=64 time=0.571 ms
+64 bytes from 10.0.1.63: icmp_seq=8 ttl=64 time=0.567 ms
+64 bytes from 10.0.1.63: icmp_seq=9 ttl=64 time=0.455 ms
+64 bytes from 10.0.1.63: icmp_seq=10 ttl=64 time=0.519 ms
+64 bytes from 10.0.1.63: icmp_seq=11 ttl=64 time=0.565 ms
+
+
+ 
+netronome ovs:
+			HOST1												HOST2
+vm<---->br0<----tunnel---->                   <----tunnel---->br0<----->vm  
+
+#./dpdk-devbind.py --bind=nfp_uio 0000:xx:0x.0
+
+# ovs-vsctl add-br br0
+# ovs-vsctl add-port br0 gre -- set Interface gre ofport_request=1 type=gre options:remote_ip=flow options:key=flow
+# ovs-ofctl add-port br0 sdn_v0.21 --  set Interface internal ofport_request=41 external_ids:virtio_relay=1 
+
+
+# ovs-ofctl del-flows br0
+# ovs-ofctl add-flow br0 "in_port=41 actions=set_tunnel:4000,set_field:remote_ip_ntr->tun_dst,output:1"
+# ovs-ofctl add-flow br0 "in_port=1 tun_src=remote_ip tun_id=4000 actions=41"
+
+------------------------------------------------------------
+[  3] local 10.0.2.61 port 47825 connected with 10.0.2.63 port 5001
+[ ID] Interval       Transfer     Bandwidth
+[  3]  0.0- 2.0 sec  1.17 GBytes  5.03 Gbits/sec
+[  3]  2.0- 4.0 sec  1.19 GBytes  5.11 Gbits/sec
+[  3]  4.0- 6.0 sec  1.19 GBytes  5.11 Gbits/sec
+[  3]  6.0- 8.0 sec  1.18 GBytes  5.08 Gbits/sec
+[  3]  8.0-10.0 sec  1.18 GBytes  5.06 Gbits/sec
+[  3] 10.0-12.0 sec  1.17 GBytes  5.02 Gbits/sec
+[  3] 12.0-14.0 sec  1.19 GBytes  5.11 Gbits/sec
+[  3] 14.0-16.0 sec  1.21 GBytes  5.21 Gbits/sec
+[  3]  0.0-17.2 sec  10.0 GBytes  5.00 Gbits/sec
+
+接收和发送 只有一个virtio_relay 100%cpu进程(dpdk程序绑定了一个core) 
+
+延时
+64 bytes from 10.0.2.63: icmp_seq=1 ttl=64 time=0.288 ms
+64 bytes from 10.0.2.63: icmp_seq=2 ttl=64 time=0.265 ms
+64 bytes from 10.0.2.63: icmp_seq=3 ttl=64 time=0.269 ms
+64 bytes from 10.0.2.63: icmp_seq=4 ttl=64 time=0.263 ms
+64 bytes from 10.0.2.63: icmp_seq=5 ttl=64 time=0.242 ms
+64 bytes from 10.0.2.63: icmp_seq=6 ttl=64 time=0.278 ms
+64 bytes from 10.0.2.63: icmp_seq=7 ttl=64 time=0.242 ms
+64 bytes from 10.0.2.63: icmp_seq=8 ttl=64 time=0.289 ms
+64 bytes from 10.0.2.63: icmp_seq=9 ttl=64 time=0.278 ms
+64 bytes from 10.0.2.63: icmp_seq=10 ttl=64 time=0.240 ms
+64 bytes from 10.0.2.63: icmp_seq=1 ttl=64 time=0.288 ms
+64 bytes from 10.0.2.63: icmp_seq=2 ttl=64 time=0.265 ms
+64 bytes from 10.0.2.63: icmp_seq=3 ttl=64 time=0.269 ms
+64 bytes from 10.0.2.63: icmp_seq=4 ttl=64 time=0.263 ms
+64 bytes from 10.0.2.63: icmp_seq=5 ttl=64 time=0.242 ms
+64 bytes from 10.0.2.63: icmp_seq=6 ttl=64 time=0.278 ms
+64 bytes from 10.0.2.63: icmp_seq=7 ttl=64 time=0.242 ms
+64 bytes from 10.0.2.63: icmp_seq=8 ttl=64 time=0.289 ms
+64 bytes from 10.0.2.63: icmp_seq=9 ttl=64 time=0.278 ms
+64 bytes from 10.0.2.63: icmp_seq=10 ttl=64 time=0.240 ms
+
+
+
+
+
+
