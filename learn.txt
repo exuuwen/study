@@ -134,20 +134,6 @@ grub2-set-default 2
 grub2-mkconfig -o /boot/grub2/grub.cfg
 
 
-//contrack
-//第一条+trk是本地发出额原因
-
-[root@10-10-28-238 ~]# ovs-ofctl dump-flows br0
-NXST_FLOW reply (xid=0x4):
- cookie=0x0, duration=828.177s, table=0, n_packets=691, n_bytes=67718, idle_age=0, ct_state=+trk,ip,in_port=LOCAL actions=ct(table=1,zone=1)
- cookie=0x0, duration=676.802s, table=0, n_packets=1020, n_bytes=99960, idle_age=0, ct_state=-trk,ip,tun_id=0x1,tun_src=10.10.59.233,in_port=1 actions=ct(table=1,zone=1)
- cookie=0x0, duration=2265.694s, table=1, n_packets=136, n_bytes=13328, idle_age=407, ct_state=+new+trk,in_port=LOCAL actions=ct(commit,zone=1),set_tunnel:0x1,load:0xa0a3be9->NXM_NX_TUN_IPV4_DST[],output:1
- cookie=0x0, duration=2199.285s, table=1, n_packets=555, n_bytes=54390, idle_age=0, ct_state=+est+trk,in_port=LOCAL actions=set_tunnel:0x1,load:0xa0a3be9->NXM_NX_TUN_IPV4_DST[],output:1
- cookie=0x0, duration=1986.365s, table=1, n_packets=463, n_bytes=45374, idle_age=1, ct_state=+new+trk,tun_id=0x1,tun_src=10.10.59.233,in_port=1 actions=resubmit(,2)
- cookie=0x0, duration=1945.910s, table=1, n_packets=557, n_bytes=54586, idle_age=0, ct_state=+est+trk,tun_id=0x1,tun_src=10.10.59.233,in_port=1 actions=LOCAL
-
-
-
 
 //////////////////////////
 
@@ -186,26 +172,5 @@ NXST_FLOW reply (xid=0x4):
  cookie=0x0, duration=684.149s, table=4, n_packets=3, n_bytes=146, idle_age=67, udp,tun_id=0x1,tun_src=10.10.59.233,tp_dst=2152 actions=LOCAL
 
 
-ovs2.6 nat
-//////////////////////////////////////////////////////
-# ip  netns
-target (id: 2)
-c2 (id: 1)
-c1 (id: 0)
-
-netns c1和c2都有ip192.168.0.7, 在host的ovs上分别snat到192.168.0.17(zone=1),27(zone2), 主动访问172.168.0.7, 而172.168.0.7 不能主动访问他们.
-# ovs-ofctl dump-flows br0
-table=0,priority=100,ct_state=-trk,ip,in_port=1,dl_src=ba:23:62:78:ce:d2,dl_dst=fa:ff:ff:ff:ff:ff,nw_dst=172.168.0.7 actions=ct(table=1,zone=1)
-table=0, priority=100,ct_state=-trk,ip,in_port=3,dl_src=ba:60:bd:9b:27:a7,dl_dst=fa:ff:ff:ff:ff:ff,nw_dst=192.168.0.17 actions=ct(table=1,zone=1)
-table=0,ct_state=-trk,ip,in_port=2,dl_src=ca:7a:93:97:f9:40,dl_dst=fa:ff:ff:ff:ff:ff,nw_dst=172.168.0.7 actions=ct(table=2,zone=2)
-table=0,ct_state=-trk,ip,in_port=3,dl_src=ba:60:bd:9b:27:a7,dl_dst=fa:ff:ff:ff:ff:ff,nw_dst=192.168.0.27 actions=ct(table=2,zone=2)
-table=0, priority=1 actions=drop
-
-table=1, ct_state=+trk,ip,in_port=1 actions=ct(commit,zone=1,nat(src=192.168.0.17)),mod_dl_dst:ba:60:bd:9b:27:a7,output:3
-table=1, ct_state=+est+trk,ip,in_port=3 actions=ct(commit,zone=1,nat(dst=192.168.0.7)),mod_dl_dst:ba:23:62:78:ce:d2,output:1
-table=2, ct_state=+trk,ip,in_port=2 actions=ct(commit,zone=2,nat(src=192.168.0.27)),mod_dl_dst:ba:60:bd:9b:27:a7,output:3
-table=2, ct_state=+est+trk,ip,in_port=3 actions=ct(commit,zone=2,nat(dst=192.168.0.7)),mod_dl_dst:ca:7a:93:97:f9:40,output:2
-
-
-
 intel_iommu=on iommu=pt
+gcc -Q -O0 --help=optimizers

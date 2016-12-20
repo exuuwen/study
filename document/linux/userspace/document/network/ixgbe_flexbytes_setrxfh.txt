@@ -1,0 +1,62 @@
+1.  flexbytes
+flexbytes: 报文前64个字节中的偶数开始任意两个byte匹配可以通过flow-dir指定到特定queue
+默认发了下bytes在内核指向的是offset是12, 指向ether_type, 用户态通过vlan-etype去指定匹配值
+
+ixgbe_init_fdir_signature_82599
+{
+	fdirctrl |= (0x6 << IXGBE_FDIRCTRL_FLEX_SHIFT) | (0xA << IXGBE_FDIRCTRL_MAX_LENGTH_SHIFT) | (4 << IXGBE_FDIRCTRL_FULL_THRESH_SHIFT);
+ 	修改0x6(WORD)为18指向dst-port
+}
+
+ethtool -K net2 ntuple on
+ethtool -N net2 flow-type tcp4 vlan-etype 5001 action 7
+tcp and dst-port 5001导向7队列
+
+2.  set_rxfh
+https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=1c7cf0784e4d448ed8a07c5fc1e3aac1528272f1
+ixgbe: support for ethtool set_rxfh
+
+# ethtool -x net3
+RX flow hash indirection table for net2 with 8 RX ring(s):
+    0:      0     1     2     3     4     5     6     7
+    8:      0     1     2     3     4     5     6     7
+   16:      0     1     2     3     4     5     6     7
+   24:      0     1     2     3     4     5     6     7
+   32:      0     1     2     3     4     5     6     7
+   40:      0     1     2     3     4     5     6     7
+   48:      0     1     2     3     4     5     6     7
+   56:      0     1     2     3     4     5     6     7
+   64:      0     1     2     3     4     5     6     7
+   72:      0     1     2     3     4     5     6     7
+   80:      0     1     2     3     4     5     6     7
+   88:      0     1     2     3     4     5     6     7
+   96:      0     1     2     3     4     5     6     7
+  104:      0     1     2     3     4     5     6     7
+  112:      0     1     2     3     4     5     6     7
+  120:      0     1     2     3     4     5     6     7
+RSS hash key:
+97:72:6a:3a:60:59:bb:e1:a8:3f:e7:37:b6:d0:fe:4f:c5:d2:f2:22:1e:46:b3:d6:0c:ad:22:c8:93:6b:a7:e5:ca:92:08:ea:f5:2b:f6:d1
+
+
+ethtool -X net3 equal 7
+# ethtool -x net3
+RX flow hash indirection table for net2 with 8 RX ring(s):
+    0:      0     1     2     3     4     5     6     0
+    8:      1     2     3     4     5     6     0     1
+   16:      2     3     4     5     6     0     1     2
+   24:      3     4     5     6     0     1     2     3
+   32:      4     5     6     0     1     2     3     4
+   40:      5     6     0     1     2     3     4     5
+   48:      6     0     1     2     3     4     5     6
+   56:      0     1     2     3     4     5     6     0
+   64:      1     2     3     4     5     6     0     1
+   72:      2     3     4     5     6     0     1     2
+   80:      3     4     5     6     0     1     2     3
+   88:      4     5     6     0     1     2     3     4
+   96:      5     6     0     1     2     3     4     5
+   104:      6     0     1     2     3     4     5     6
+   112:      0     1     2     3     4     5     6     0
+   120:      1     2     3     4     5     6     0     1
+RSS hash key:
+97:72:6a:3a:60:59:bb:e1:a8:3f:e7:37:b6:d0:fe:4f:c5:d2:f2:22:1e:46:b3:d6:0c:ad:22:c8:93:6b:a7:e5:ca:92:08:ea:f5:2b:f6:d1
+

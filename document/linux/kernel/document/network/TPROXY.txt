@@ -1,0 +1,28 @@
+做透明代理但是需要改变ip或者port的话就需要引入TPROXY
+
+本地监听192.168.0.1:2152, 并开启IP_TRANSPARENT
+
+ip route add local 0.0.0.0/0 dev lo table 100
+iptables -t mangle -A PREROUTING -d 172.168.0.1 -j MARK --set-mark 100
+iptables -t mangle -A PREROUTING -d 172.168.0.1 -p tcp --dport 3152 -j TPROXY --on-ip 192.168.0.1 --on-port 2152 --tproxy-mark 100
+ip rule add fwmark 100 table 100
+
+
+另一台connect 172.168.0.1:3152可以连接到本地监听socket
+
+tproxy_tg4 {
+	//新建连接到一个监听端口, 必须为transparent(IP_TRANSPARENT)
+	/* NOTE: assign_sock consumes our sk reference */
+	if (sk && tproxy_sk_is_transparent(sk)) {
+		/* This should be in a separate target, but we don't do multiple
+		   targets on the same rule yet */
+		skb->mark = (skb->mark & ~mark_mask) ^ mark_value;
+
+		pr_debug("redirecting: proto %hhu %pI4:%hu -> %pI4:%hu, mark: %x\n",
+			 iph->protocol, &iph->daddr, ntohs(hp->dest),
+			 &laddr, ntohs(lport), skb->mark);
+		//提前设置skb->sk, tcp4_rcv就直接利用该sk
+		nf_tproxy_assign_sock(skb, sk);
+		return NF_ACCEPT;
+	}
+}

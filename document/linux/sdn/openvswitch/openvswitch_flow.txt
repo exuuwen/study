@@ -1,0 +1,143 @@
+openvswitch 用户态rule与内核态flow的转化
+
+As Open vSwitch processes a packet through userspace flow tables, classifying the  packet at every table, it tracks the packet field bits that were consulted as part of the classification algorithm. The generated megaflow must match any field (or part of a field) whose value was used as part of the decision. For example, if the classifier looks at the IP destination field in any OpenFlow table as part of its pipeline, then the  megaflow cache entry’s condition must match on the destination IP as well.
+
+The solution we implemented statically divides fields into four groups, in decreasing order of traffic granularity: metadata (e.g., the switch ingress port), L2, L3, and L4. We changed each tuple from a single hash table to an array of four hash tables, called stages: one over metadata fields only, one over metadata and L2 fields, one over metadata, L2, and L3 fields, and one over all fields. (The latter is the same as the single hash table in the previous implementation.) A lookup in a tuple searches each of its stages in order. If any search turns up no match, then the overall search of the tuple also fails, and only the fields included in the stage last searched must be added to the megaflow match.
+
+# ovs-vsctl show
+27ab502f-1a87-431a-9607-2e8b84483f37
+    Bridge "br0"
+        Port "c1"
+            Interface "c1"
+        Port "s2"
+            Interface "s2"
+        Port "c2"
+            Interface "c2"
+        Port "s1"
+            Interface "s1"
+        Port "br0"
+            Interface "br0"
+                type: internal
+    ovs_version: "2.3.0
+
+
+    ofport dpport
+c1:  1       2
+c2:  2       3
+s1:  11      4
+s2:  12      5
+
+# ovs-dpctl show
+system@ovs-system:
+	lookups: hit:5128 missed:228 lost:0
+	flows: 0
+	masks: hit:7799 total:0 hit/pkt:1.46
+	port 0: ovs-system (internal)
+	port 1: br0 (internal)
+	port 2: c1 (internal)
+	port 3: c2 (internal)
+	port 4: s1 (internal)
+	port 5: s2 (internal)
+
+
+#ovs-ofctl dump-flows br0
+NXST_FLOW reply (xid=0x4):
+ cookie=0x0, duration=222.808s, table=0, n_packets=3, n_bytes=138, idle_age=105, in_port=12 actions=output:2
+ cookie=0x0, duration=494.531s, table=0, n_packets=46, n_bytes=4316, idle_age=312, in_port=1 actions=output:11
+ cookie=0x0, duration=489.246s, table=0, n_packets=46, n_bytes=4296, idle_age=312, in_port=11 actions=output:1
+ cookie=0x0, duration=217.966s, table=0, n_packets=3, n_bytes=158, idle_age=105, in_port=2 actions=output:12
+
+ 
+1. ovs-ofctl add-flow br0 'priority=65535,tcp,tcp_dst=80,action=drop'
+
+# ovs-dpctl dump-flows
+recirc_id(0),skb_priority(0),in_port(3),eth_type(0x0800),ipv4(src=172.168.0.1/0.0.0.0,dst=172.168.0.2/0.0.0.0,proto=6/0xff,tos=0/0,ttl=64/0,frag=no/0xff),tcp(src=59285/0,dst=22/0xffc0), packets:0, bytes:0, used:never, actions:5
+recirc_id(0),skb_priority(0),in_port(5),eth_type(0x0800),ipv4(src=172.168.0.2/0.0.0.0,dst=172.168.0.1/0.0.0.0,proto=6/0xff,tos=0/0,ttl=64/0,frag=no/0xff),tcp(src=22/0,dst=59285/0x8000), packets:0, bytes:0, used:never, actions:3
+
+recirc_id(0),skb_priority(0),in_port(4),eth_type(0x0800),ipv4(src=192.168.0.2/0.0.0.0,dst=192.168.0.1/0.0.0.0,proto=6/0xff,tos=0/0,ttl=64/0,frag=no/0xff),tcp(src=22/0,dst=45049/0x8000), packets:0, bytes:0, used:never, actions:2
+recirc_id(0),skb_priority(0),in_port(2),eth_type(0x0800),ipv4(src=192.168.0.1/0.0.0.0,dst=192.168.0.2/0.0.0.0,proto=6/0xff,tos=0/0,ttl=64/0,frag=no/0xff),tcp(src=45049/0,dst=22/0xffc0), packets:0, bytes:0, used:never, actions:4
+
+----------------------------------------------------------------------------------------------------
+
+2. ovs-ofctl add-flow br0 'priority=65535,ip_src=192.168.0.1,tcp,tcp_dst=80,action=drop'
+
+# ovs-dpctl dump-flows
+recirc_id(0),skb_priority(0),in_port(2),eth_type(0x0800),ipv4(src=192.168.0.1/255.255.255.255,dst=192.168.0.2/0.0.0.0,proto=6/0xff,tos=0/0,ttl=64/0,frag=no/0xff),tcp(src=45058/0,dst=22/0xffc0), packets:0, bytes:0, used:never, actions:4
+recirc_id(0),skb_priority(0),in_port(4),eth_type(0x0800),ipv4(src=192.168.0.2/255.255.255.255,dst=192.168.0.1/0.0.0.0,proto=6/0xff,tos=0/0,ttl=64/0,frag=no/0xff), packets:0, bytes:0, used:never, actions:2
+
+recirc_id(0),skb_priority(0),in_port(5),eth_type(0x0800),ipv4(src=172.168.0.2/255.255.255.255,dst=172.168.0.1/0.0.0.0,proto=6/0xff,tos=0/0,ttl=64/0,frag=no/0xff), packets:0, bytes:0, used:never, actions:3
+recirc_id(0),skb_priority(0),in_port(3),eth_type(0x0800),ipv4(src=172.168.0.1/255.255.255.255,dst=172.168.0.2/0.0.0.0,proto=6/0xff,tos=0/0,ttl=64/0,frag=no/0xff), packets:0, bytes:0, used:never, actions:5
+
+
+------------------------------------------------------------------------------------------------------
+
+
+3. ovs-ofctl add-flow br0 'priority=65535,dl_src=3A:CB:75:B0:D2:60,ip_src=192.168.0.1,tcp,tcp_dst=80,action=drop'
+
+# ovs-dpctl dump-flows
+recirc_id(0),skb_priority(0),in_port(2),eth(src=3a:cb:75:b0:d2:60/ff:ff:ff:ff:ff:ff,dst=02:a1:fd:fa:f8:d0/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=192.168.0.1/255.255.255.255,dst=192.168.0.2/0.0.0.0,proto=6/0xff,tos=0/0,ttl=64/0,frag=no/0xff),tcp(src=45060/0,dst=22/0xffc0), packets:0, bytes:0, used:never, actions:4
+recirc_id(0),skb_priority(0),in_port(4),eth(src=02:a1:fd:fa:f8:d0/ff:ff:ff:ff:ff:ff,dst=3a:cb:75:b0:d2:60/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=192.168.0.2/0.0.0.0,dst=192.168.0.1/0.0.0.0,proto=6/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:0, bytes:0, used:never, actions:2
+
+recirc_id(0),skb_priority(0),in_port(5),eth(src=56:88:bc:a8:30:64/ff:ff:ff:ff:ff:ff,dst=0a:11:76:3d:59:e4/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=172.168.0.2/0.0.0.0,dst=172.168.0.1/0.0.0.0,proto=6/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:0, bytes:0, used:never, actions:3
+recirc_id(0),skb_priority(0),in_port(3),eth(src=0a:11:76:3d:59:e4/ff:ff:ff:ff:ff:ff,dst=56:88:bc:a8:30:64/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=172.168.0.1/0.0.0.0,dst=172.168.0.2/0.0.0.0,proto=6/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:0, bytes:0, used:never, actions:5
+
+
+------------------------------------------------------------------------------------------------------
+
+
+4. ovs-ofctl add-flow br0 'priority=65535,in_port=1,dl_src=3A:CB:75:B0:D2:60,ip_src=192.168.0.1,tcp,tcp_dst=80,action=drop'
+
+# ovs-dpctl dump-flows
+recirc_id(0),skb_priority(0),in_port(2),eth(src=3a:cb:75:b0:d2:60/ff:ff:ff:ff:ff:ff,dst=02:a1:fd:fa:f8:d0/00:00:00:00:00:00),eth_type(0x0800),ipv4(src=192.168.0.1/255.255.255.255,dst=192.168.0.2/0.0.0.0,proto=6/0xff,tos=0/0,ttl=64/0,frag=no/0xff),tcp(src=45062/0,dst=22/0xffc0), packets:0, bytes:0, used:never, actions:4
+recirc_id(0),skb_priority(0),in_port(4),eth_type(0x0800),ipv4(src=192.168.0.2/0.0.0.0,dst=192.168.0.1/0.0.0.0,proto=6/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:0, bytes:0, used:never, actions:2
+
+recirc_id(0),skb_priority(0),in_port(3),eth_type(0x0800),ipv4(src=172.168.0.1/0.0.0.0,dst=172.168.0.2/0.0.0.0,proto=6/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:0, bytes:0, used:never, actions:5
+recirc_id(0),skb_priority(0),in_port(5),eth_type(0x0800),ipv4(src=172.168.0.2/0.0.0.0,dst=172.168.0.1/0.0.0.0,proto=6/0,tos=0/0,ttl=64/0,frag=no/0xff), packets:0, bytes:0, used:never, actions:3
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------
+
+As Open vSwitch processes a packet through userspace flow tables, classifying the  packet at every table, it tracks the packet field bits that
+were consulted as part of the classification algorithm. The generated megaflow must match any field (or part of a field) whose value was used as part of the decision. For example, if the classifier looks at the IP destination field in any OpenFlow table as part of its pipeline, then the  megaflow cache entry’s condition must match on the destination IP as well.
+
+The solution we implemented statically divides fields into four groups, in decreasing order of traffic granularity: metadata (e.g., the switch ingress port), L2, L3, and L4. We changed each tuple from a single hash table to an array of four hash tables, called stages: one over metadata
+fields only, one over metadata and L2 fields, one over metadata, L2, and L3 fields, and one over all fields. (The latter is the same as the single hash table in the previous implementation.) A lookup in a tuple searches each of its stages in order. If any search turns up no match, then the overall search of the tuple also fails, and only the fields included in the stage last searched must be added to the megaflow match.
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------
+
+ovs-2.6
+这是在ovs2.6下的测试数据, flow转化思路还是一样的, 只是根据ip地址分段细化mask,  对于我们测试的一些场景优化的确明显, 减少了内核态的flow数
+
+1. ovs-ofctl add-flow br0 'priority=65535,tcp,tcp_dst=80,action=drop'
+[root@10-19-61-167 ~]# ovs-dpctl dump-flows
+recirc_id(0),in_port(4),eth_type(0x0800),ipv4(proto=6,frag=no),tcp(dst=32768/0x8000), packets:0, bytes:0, used:never, actions:2
+recirc_id(0),in_port(2),eth_type(0x0800),ipv4(proto=6,frag=no),tcp(dst=0/0xffc0), packets:0, bytes:0, used:never, actions:4
+recirc_id(0),in_port(5),eth_type(0x0800),ipv4(proto=6,frag=no),tcp(dst=32768/0x8000), packets:0, bytes:0, used:never, actions:3
+recirc_id(0),in_port(3),eth_type(0x0800),ipv4(proto=6,frag=no),tcp(dst=0/0xffc0), packets:0, bytes:0, used:never, actions:5
+
+
+2. ovs-ofctl add-flow br0 'priority=65535,ip_src=192.168.0.1,tcp,tcp_dst=80,action=drop'
+[root@10-19-61-167 ~]# ovs-dpctl dump-flows
+recirc_id(0),in_port(4),eth_type(0x0800),ipv4(src=192.168.0.2/255.255.255.254,frag=no), packets:0, bytes:0, used:never, actions:2
+recirc_id(0),in_port(3),eth_type(0x0800),ipv4(src=128.0.0.0/192.0.0.0,frag=no), packets:0, bytes:0, used:never, actions:5
+recirc_id(0),in_port(5),eth_type(0x0800),ipv4(src=128.0.0.0/192.0.0.0,frag=no), packets:0, bytes:0, used:never, actions:3
+recirc_id(0),in_port(2),eth_type(0x0800),ipv4(src=192.168.0.1,proto=6,frag=no),tcp(dst=0/0xffc0), packets:0, bytes:0, used:never, actions:4
+
+
+3. ovs-ofctl add-flow br0 'priority=65535,dl_src=d6:97:6e:84:74:13,ip_src=192.168.0.1,tcp,tcp_dst=80,action=drop'
+[root@10-19-61-167 ~]# ovs-dpctl dump-flows
+recirc_id(0),in_port(5),eth(src=2a:8c:9a:f0:e6:0e),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:3
+recirc_id(0),in_port(3),eth(src=7a:2b:b6:e3:e6:91),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:5
+recirc_id(0),in_port(2),eth(src=d6:97:6e:84:74:13),eth_type(0x0800),ipv4(src=192.168.0.1,proto=6,frag=no),tcp(dst=0/0xffc0), packets:0, bytes:0, used:never, actions:4
+recirc_id(0),in_port(4),eth(src=06:ca:00:46:f2:7a),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:2
+
+
+4. ovs-ofctl add-flow br0 'priority=65535,in_port=1,dl_src=d6:97:6e:84:74:13,ip_src=192.168.0.1,tcp,tcp_dst=80,action=drop'
+[root@10-19-61-167 ~]# ovs-dpctl dump-flows
+recirc_id(0),in_port(3),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:5
+recirc_id(0),in_port(2),eth(src=d6:97:6e:84:74:13),eth_type(0x0800),ipv4(src=192.168.0.1,proto=6,frag=no),tcp(dst=0/0xffc0), packets:0, bytes:0, used:never, actions:4
+recirc_id(0),in_port(5),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:3
+recirc_id(0),in_port(4),eth_type(0x0800),ipv4(frag=no), packets:0, bytes:0, used:never, actions:2
+
