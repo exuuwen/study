@@ -1,0 +1,152 @@
+1. arp 状态
+#define NUD_INCOMPLETE	0x01
+#define NUD_REACHABLE	0x02
+#define NUD_STALE	0x04
+#define NUD_DELAY	0x08
+#define NUD_PROBE	0x10
+#define NUD_FAILED	0x20
+
+/* Dummy states */
+#define NUD_NOARP	0x40
+#define NUD_PERMANENT	0x80
+#define NUD_NONE	0x00
+
+
+ARP entry在几个状态下变迁, 从而决定entry是否有效. 
+
+有效的状态: 在这些状态中可以使用entry里面的mac进行发送
+#define NUD_VALID (NUD_PERMANENT|NUD_NOARP|NUD_REACHABLE|NUD_PROBE|NUD_STALE|NUD_DELAY)
+处于timer中的状态
+#define NUD_IN_TIMER	 (NUD_INCOMPLETE|NUD_REACHABLE|NUD_DELAY|NUD_PROBE)
+
+连接状态: 在发送的时候可以直接发送, 不需要作状态变化
+#define NUD_CONNECTED	(NUD_PERMANENT|NUD_NOARP|NUD_REACHABLE)
+
+2. 发送数据状态
+ip_finish_output2() {
+	//查找daddr的nexthop arp entry,  如果没有就创建一个
+	nexthop = (__force u32) rt_nexthop(rt, ip_hdr(skb)->daddr);
+	neigh = __ipv4_neigh_lookup_noref(dev, nexthop);
+	if (unlikely(!neigh))
+		neigh = __neigh_create(&arp_tbl, &nexthop, dev, false);
+	dst_neigh_output(dst, neigh, skb);
+}
+
+dst_neigh_output() {
+	//连接状态的直接发送
+	if ((n->nud_state & NUD_CONNECTED) && hh->hh_len) 
+		 return neigh_hh_output(hh, skb); 
+	else 	
+		//neigh_resolve_output
+		return n->output(n, skb);
+}
+
+发送时候其他状态进行处理 :NUD_NONE/INCOMPLETE/STALE/FAILED会做状态转化,其他的都会直接利用entry里的mac发送
+neigh_resolve_output->neigh_event_send()
+	unsigned long now = jiffies; 
+	//更新used
+	if (neigh->used != now) 
+		neigh->used = now; 
+	
+	 if (!(neigh->nud_state&(NUD_CONNECTED|NUD_DELAY|NUD_PROBE))) 
+		 return __neigh_event_send(neigh, skb);
+}
+a.  FAILED/NONE: 第一次或者已经fail过了的
+     如果mcast_solicit + app_solicit不为0改状态为INCOMPLETE, 设置updated 开启重传timer,  设置probes次数, 发送arp请求然后转入INCOMPLETE状态, 否则丢弃
+	//mcast_solicit + app_solicit: 3+0
+	if (NEIGH_VAR(neigh->parms, MCAST_PROBES) +
+		    NEIGH_VAR(neigh->parms, APP_PROBES)) {
+		//ucast_solicit: 3
+		atomic_set(&neigh->probes, NEIGH_VAR(neigh->parms, UCAST_PROBES)); 
+		neigh->nud_state = NUD_INCOMPLETE; 
+		 neigh->updated = now; 
+		//retrans_time: 1s
+		 next = now + max(NEIGH_VAR(neigh->parms, RETRANS_TIME), HZ/2); 
+		 neigh_add_timer(neigh, next); 
+		 neigh_probe(neigh);
+	}
+	else { 
+		 neigh->nud_state = NUD_FAILED; 
+		neigh->updated = jiffies; 
+		kfree_skb(skb); 
+	}
+
+b. STALE  状态变成DELAY设置updated, 开启DELAY timer: delay_first_probe_time, 返回后neigh_resolve_output使用entry里的mac发送报文
+	neigh->nud_state = NUD_DELAY; 
+	neigh->updated = jiffies;
+	// delay_first_probe_time:  5s
+	neigh_add_timer(neigh, jiffies + NEIGH_VAR(neigh->parms, DELAY_PROBE_TIME));
+c. INCOMPLETE
+	skb放入neigh->arp_queue, 如果neigh->arp_queue_len_bytes > unres_qlen_bytes(65536)  free掉直到不大于unres_qlen_bytes
+
+3. timer状态: 只会处理NUD_IN_TIMER状态中的
+a.  REACHABLE
+1.) 如果被confirmed, 再开启下次timer
+	//reachable_time由base_reachable_time计算获得
+	if (time_before_eq(now, neigh->confirmed + neigh->parms->reachable_time)) {  
+		next = neigh->confirmed + neigh->parms->reachable_time;
+	 }
+2).  否则转变为STALE
+	neigh->nud_state = NUD_STALE; 
+	 neigh->updated = jiffies;
+b. DELAY
+1). 如果已经confirm了
+	if (time_before_eq(now, neigh->confirmed + NEIGH_VAR(neigh->parms, DELAY_PROBE_TIME))) { 
+		neigh->nud_state = NUD_REACHABLE; 
+		neigh->updated = jiffies;
+		next = neigh->confirmed + neigh->parms->reachable_time;
+	}
+2).  否则转变为PROBE
+	neigh->nud_state = NUD_PROBE;
+	neigh->updated = jiffies;
+	atomic_set(&neigh->probes, 0);
+	next = now + NEIGH_VAR(neigh->parms, RETRANS_TIME);
+
+c. PROBE/INCOMPLETE
+1). 如果probe次数大于max就变为FAIL
+	//app_solicit+mcast_solicit+ucast_solicit: 在INCOMPELETE状态下为max_probe值, 默认0+3+3
+	//app_solicit+mcast_resolicit+ucast_solicit: 在PROBE状态下为max_probe值,默认0+0+3
+	if (atomic_read(&neigh->probes) >= neigh_max_probes(neigh)) { 
+		neigh->nud_state = NUD_FAILED;
+	}
+2). 否则: 发起arp请求, 开启下次timer
+	next = now + NEIGH_VAR(neigh->parms, RETRANS_TIME);
+	neigh_probe
+
+3. receive arp
+1). arp reply:   针对发起的arp request的回复, 将entry变为REACHABLE, 开启timer
+neigh->confirmed = jiffies;
+neigh->updated = jiffies;
+
+2). arp request: sip enrty如果没有或者不是 NUD_VALID, 则状态变为STALE
+
+
+4. gc
+1). timer gc
+rechable_time 执行一次
+INIT_DEFERRABLE_WORK(&tbl->gc_work, neigh_periodic_work);
+queue_delayed_work(system_power_efficient_wq, &tbl->gc_work,
+			tbl->parms.reachable_time);
+在if (atomic_read(&tbl->entries) < tbl->gc_thresh1) 下 //proc/sys/net/ipv4/neigh/default/gc_thresh1
+1). refcnt为1且状态为NUD_FAILED会被删除
+2). refcnt为1且状态为NUD_STALE, time_after(jiffies, n->used + NEIGH_VAR(n->parms, GC_STALETIME)) // gc_stale_time, 60s
+
+2. force gc
+//proc/sys/net/ipv4/neigh/default/gc_thresh2
+//proc/sys/net/ipv4/neigh/default/gc_thresh3
+neigh_alloc() {
+if (entries >= tbl->gc_thresh3 ||
+	    (entries >= tbl->gc_thresh2 &&
+	     time_after(now, tbl->last_flush + 5 * HZ))) {
+		neigh_forced_gc(tbl)
+	}
+}
+
+neigh_forced_gc (){
+	非PERMANENT且refcnt为1的都干掉
+	if (atomic_read(&n->refcnt) == 1 && !(n->nud_state & NUD_PERMANENT)) {
+		n->dead = 1; 
+		neigh_cleanup_and_release(n);
+	}
+}
+

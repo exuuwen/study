@@ -1,0 +1,29 @@
+
+测试示例
+server1有一台vm1连接到openvswitch br0桥接到gre-tunnel1
+server2有一台vm2连接到openvswitch br0桥接到gre-tunnel2
+
+vm1---->tunnel1----------tunnel2<-----vm2
+
+虚拟机的网卡mtu为1500， 物理机网卡mtu为1500. 
+发现相互scp速率很慢， 调小虚拟机网卡mtu为1452或者关掉虚拟网卡tso后恢复
+
+在函数ip_finish_output_gso
+if (((IPCB(skb)->flags & IPSKB_FRAG_SEGS) == 0) ||
+              skb_gso_validate_mtu(skb, mtu))
+                return ip_finish_output2(net, sk, skb);
+
+物理机收到虚拟网卡发出tso的大包后如果发现每个segment+外层tunnel所需长度大于网卡， 这时候就必须要(即使网卡支持tx-gre-segmentation)1. 分拆tso报文 2.加上tunnel后分片
+
+但是ip_tunnel_xmit里面并没有设置flags IPSKB_FRAG_SEGS
+https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=c0451fe1f27b815b3f400df2a63b9aecf589b7b0
+fix了这个问题
+
+if (skb_iif && !(df & htons(IP_DF))) {
++		/* Arrived from an ingress interface, got encapsulated, with
++		 * fragmentation of encapulating frames allowed.
++		 * If skb is gso, the resulting encapsulated network segments
++		 * may exceed dst mtu.
+ 		 * Allow IP Fragmentation of segments.
+ 		 */
+ 		IPCB(skb)->flags |= IPSKB_FRAG_SEGS

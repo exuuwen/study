@@ -1,0 +1,44 @@
+1. 路由查询
+ip_route_output_key () {
+	fib_lookup(net, fl4, &res);
+
+	if (res.type == RTN_LOCAL) { 
+		 if (!fl4->saddr) { 
+			 if (res.fi->fib_prefsrc) 
+				 fl4->saddr = res.fi->fib_prefsrc; 
+			 else 
+				 fl4->saddr = fl4->daddr; 
+		 } 
+		//发送dev为loopback
+		 dev_out = net->loopback_dev; 
+		 fl4->flowi4_oif = dev_out->ifindex; 
+		 flags |= RTCF_LOCAL; 
+		 goto make_route; 
+	 }
+
+	make_route: 
+	 rth = __mkroute_output(&res, fl4, orig_oif, dev_out, flags);
+	/*if (flags & RTCF_LOCAL)
+		//除了分配output为ip_output，也分配rtable dst.input
+		rth->dst.input = ip_local_deliver;
+	*/
+}
+
+2. loopback 发送
+loopback_xmit(){
+	//重新放回协议栈， 继续保存skb_dst
+	netif_rx(skb);
+}
+
+发向本地地址的报文不会再查找路由表
+3. 接收路由报文
+ip_rcv_finish(){
+	//skb_dst已经存在不用查询路由
+	if (!skb_dst(skb)) { 
+		 int err = ip_route_input_noref(skb, iph->daddr, iph->saddr, iph->tos, skb->dev);
+	}
+	//直接ip_local_deliver
+	return dst_input(skb);
+}
+
+所有daddr为127.0.0.0/8的地址都不能通过ip_route_input_noref， 会别drop掉.

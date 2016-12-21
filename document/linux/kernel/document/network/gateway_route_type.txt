@@ -1,0 +1,64 @@
+1. 路由的gateway为本地地址
+# ip addr add dev eth0 10.0.0.1/24
+# ip route add default via 10.0.0.1
+
+这个时候访问外部任何地址都是直连路由， 需要对目的地址发起arp 请求（即使后面10.0.0.1/24的地址被删除了）
+在创建路由的时候
+fib_check_nh () {
+	if (nh->gw) {
+	struct flowi4 fl4 = { .daddr = nh->nh_gw, 
+					.flowi4_scope = cfg->fc_scope + 1,
+					.flowi4_oif = nh->nh_oif, 
+					.flowi4_iif = LOOPBACK_IFINDEX, };
+	fib_lookup(net, &fl4, &res);
+	nh->nh_scope = res.scope;
+	//所以nh_scope为RT_SCOPE_HOST
+	}
+}
+
+路由查找的时候, 因为nh_scope不为RT_SCOPE_LINK， 所以没有设置网关
+ip_route_output--->rt_set_nexthop(){
+	if (nh->nh_gw && nh->nh_scope == RT_SCOPE_LINK) {
+			rt->rt_gateway = nh->nh_gw;
+			rt->rt_uses_gateway = 1;
+	}		
+}
+
+最后发送 
+ip_finish_output2--->rt_nexthop(){
+	if (rt->rt_gateway)
+		return rt->rt_gateway; 
+	return daddr
+}
+
+
+2. onlink类型gateway路由
+有时候我们只需要32位的地址， 但是需要设置网关的时候，设置会出现问题
+# ip addr add dev eth0 10.0.0.7/32
+# ip route add default via 10.0.0.1
+第二条命令会失败，因为没有到10.0.0.1的直连路由
+通过以下命令可以成功
+# ip route add default via 192.168.0.1 dev eth0 onlink 
+fib_check_nh () {
+if (nh->gw) {
+	if (nh->nh_flags & RTNH_F_ONLINK) {
+			if (cfg->fc_scope >= RT_SCOPE_LINK)
+				return -EINVAL;
+			if (inet_addr_type(net, nh->nh_gw) != RTN_UNICAST)
+				return -EINVAL;
+			dev = __dev_get_by_index(net, nh->nh_oif);
+			if (!dev)
+				return -ENODEV;
+			if (!(dev->flags & IFF_UP))
+				return -ENETDOWN;
+			nh->nh_dev = dev;
+			dev_hold(dev);
+			nh->nh_scope = RT_SCOPE_LINK;
+			return 0;
+		}
+	}
+}
+
+3. output chain与route的关系
+如果从本地发出报文想通过设置mark走不通的策略路由，唯一的方法就是通过设置socket的SO_MARK. 
+在mangle的output chain上设置mark是不可行的， 因为路由实际上是在output chain之前进行.

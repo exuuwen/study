@@ -1,0 +1,45 @@
+在内核中不指定port的snat/dnat中， snat会尽量不改变sport，而dnat是不会去改变dport的. snat通常是内网访问外部资源， 所以只需要daddr以及dport不改变就能保证访问到服务. 而对于dnat通常是外部访问内部资源，因而daddr需要转换为内部的ip， dport是不能转换的(非指定port dnat, 内部服务listen于该端口)
+
+nf_nat_setup_info-->get_unique_tuple() {
+	// snat
+	if (maniptype == NF_NAT_MANIP_SRC && !(range->flags & NF_NAT_RANGE_PROTO_RANDOM_ALL)) { 
+	 	/* 尝试原始tuple是否在范围内 */
+		if (in_range(l3proto, l4proto, orig_tuple, range)) { 
+			if (!nf_nat_used_tuple(orig_tuple, ct)) { 
+				*tuple = *orig_tuple; 
+				goto out; 
+			} 
+		} else if (find_appropriate_src(net, zone, l3proto, l4proto, orig_tuple, tuple, range)) { 
+			//原始tuple cache的转换， 以前转换过
+			if (!nf_nat_used_tuple(tuple, ct)) 
+			 	goto out; 
+		} 
+	 }
+
+	/* 2) Select the least-used IP/proto combination in the given range */ 
+	//第一步没找到， 先找一个合适的ip从ip range中，换掉tuple里的
+	*tuple = *orig_tuple; 
+	 find_best_ips_proto(zone, tuple, range, ct, maniptype);
+
+	/* Only bother mapping if it's not already in range and unique */ 
+	 if (!(range->flags & NF_NAT_RANGE_PROTO_RANDOM_ALL)) { 
+		if (range->flags & NF_NAT_RANGE_PROTO_SPECIFIED) { 
+			 if (l4proto->in_range(tuple, maniptype, &range->min_proto, &range->max_proto) 
+				&& (range->min_proto.all == range->max_proto.all || !nf_nat_used_tuple(tuple, ct))) 
+				 goto out; 
+			 } else if (!nf_nat_used_tuple(tuple, ct)) { 
+				//如果是没有指定的port, 就拿当前port去尝试是否唯一
+			 	goto out; 
+			 } 
+	 }
+	
+	/* Last change: get protocol to try to obtain unique tuple. */ 
+	/*前面的port还是不行, 就按规则去遍历出可以的port，对于ndat没有指定port不会去选择port*/
+	/*
+		--to-source [ipaddr[-ipaddr]][:port[-port]]
+              which  can  specify  a single new source IP address, an inclusive range of IP addresses. Optionally a port range, if the rule also specifies one of the following protocols:
+              tcp, udp, dccp or sctp.  If no port range is specified, then source ports below 512 will be mapped to other ports below 512: those between 512 and 1023  inclusive  will  be
+              mapped  to  ports  below 1024, and other ports will be mapped to 1024 or above. Where possible, no port alteration will occur. 
+	*/
+	l4proto->unique_tuple(l3proto, tuple, range, maniptype, ct);
+}

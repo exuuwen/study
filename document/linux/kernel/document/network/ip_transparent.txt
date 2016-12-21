@@ -1,0 +1,47 @@
+实现代理非本地ip的服务，比如192.168.0.7:1234
+a. 启动tcp连接0.0.0.0:1234
+b. ip route add local 192.168.0.7 dev lo table local
+通常回复syn-ack的时候将收到的daddr作为srcip去发送，在查找路由的时候会判断srcip是否为本地ip或者在local表中有本地路由
+ip_route_output(){
+  if (fl4->saddr) {
+	//如果没有设置IP_TRANSPARENT
+	if (!(fl4->flowi4_flags & FLOWI_FLAG_ANYSRC)) {
+			/* It is equivalent to inet_addr_type(saddr) == RTN_LOCAL */
+			if (!__ip_dev_find(net, fl4->saddr, false))
+				goto out;
+	}
+  }
+}
+struct net_device *__ip_dev_find(struct net *net, __be32 addr, bool devref)
+{
+	//是否为本地ip
+	hlist_for_each_entry_rcu(ifa, &inet_addr_lst[hash], hash) {
+		if (ifa->ifa_local == addr) {
+			struct net_device *dev = ifa->ifa_dev->dev;
+			result = dev;
+			break;
+		}
+	}
+	//或者有本地路由
+	if (!result) {
+		struct flowi4 fl4 = { .daddr = addr };
+		struct fib_result res = { 0 };
+		struct fib_table *local;
+
+		/* Fallback to FIB local table so that communication
+		 * over loopback subnets work.
+		 */
+		local = fib_get_table(net, RT_TABLE_LOCAL);
+		if (local &&
+		    !fib_table_lookup(local, &fl4, &res, FIB_LOOKUP_NOREF) &&
+		    res.type == RTN_LOCAL)
+			result = FIB_RES_DEV(res);
+	}
+
+如果是多个ip通过ip rule实现
+ip rule add iff eth0 table proxy
+iptables -t mangle -A PREROUTING xxx -j mark --set-mark xx
+ip rule add fwmark xx iff eth0 table proxy
+ip route add local default dev lo table proxy
+
+这种情况下代理服务的socket必须设置IP_TRANSPARENT， 就会绕过srcip的检查. 因为没设置的话只会去扫描local表的。

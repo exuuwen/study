@@ -1,0 +1,30 @@
+1. ip -s neigh
+172.16.0.1 dev eth0 lladdr 36:f7:9b:b3:77:e1 ref 1 used 412/0/25 probes 4 REACHABLE
+used/confirmed/updated
+
+used: 在arp entry 非NUD_CONNECTED状态下发送报文更新
+updated: 在entry状态发生变化的时候更新
+confirmed:  在收到相应的arp reply或者 被dst->confirmed(上层协议icmp, tcp, udp confirm相应的路由) 
+icmp,udp: 需要用户态程序sendmsg加上MSG_CONFIRM flag
+tcp: tcp_ack后会自动confirm
+如果tcp, udp, icmp接收到了有效的报文就可以confirm掉该路由对应的arp entry
+
+ip_output->dst_neigh_output(){
+	if (dst->pending_confirm) { 
+		unsigned long now = jiffies; 
+		dst->pending_confirm = 0; 
+		/* avoid dirtying neighbour */ 
+		if (n->confirmed != now) 
+			n->confirmed = now; 
+	}
+}
+
+2. 参数
+# ls /proc/sys/net/ipv4/neigh/eth0/             
+retrans_time: PROBE, NONE, INCOMPLETE, FAILED状态下, 下次发送(可以发送的话)arp请求的timer, 默认1s
+delay_first_probe_time: 进入DELAY状态后到PROBE的timer, 默认5s
+unres_qlen_bytes: 发送报文时arp entry状态为INCOMPLETE, 需要把报文放于neigh->arp_queue中, queue中存放最多的字节数, 默认65535
+base_reachable_time: arp entry进入REACHABLE后的老化确认timer
+app_solicit+mcast_solicit: FAILED/NONE时, 该值为0就不能去PROBE, 默认0+3
+app_solicit+mcast_solicit+ucast_solicit: 在INCOMPELETE状态下为max_retry值, 默认0+3+3
+app_solicit+mcast_resolicit+ucast_solicit: 在PROBE状态下为max_retry值,默认0+0+3

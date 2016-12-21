@@ -1,0 +1,62 @@
+udp socket无论是client还是server， 一旦建立后源port会固定下来不会改变， 但是源IP就不一定
+1. 源port的选择
+a. 手动bind一个port
+inet_bind-->udp_prot->get_port
+b. 第一次sendmsg时候选择
+inet_sendmsg->inet_autobind->get_port
+get_port如果提供一个port会检查是否唯一的，如果开启resue_addr或者resue_port允许重复. 因为udp非面向连接， 是否唯一只需要查看源IP以及源port
+
+2.  源IP选择
+socket的源IP分为两个接收源ip， 发送源ip.  通常情况下两者是相同的. 但是如果bind的地址类型为multicast或者broadcast
+则ip只会设置为接收源ip. 地址类型根据查找local路由表获取
+a. 手动bind一个单播ip address (非0.0.0.0）
+inet_bind() {
+	inet->inet_rcv_saddr = inet->inet_saddr = addr->sin_addr.s_addr; 
+	if (chk_addr_ret == RTN_MULTICAST || chk_addr_ret == RTN_BROADCAST) 
+		 inet->inet_saddr = 0; /* Use device */
+}
+
+b. 手动bind了一个广播： 通过IP_MTCAST_IF设置发送的源ip和设置oif
+
+
+在bind的情况会接收所指定ip的报文， 非多/广播bind发送报文也会使用指定ip为源ip. 多/广播地址bind的接收ip和发送的源ip是不同的.
+
+b. 在没有bind或者多/广播bind的情况下， 每次发送报文： 根据路由选择
+1). 发送单播报文
+udp_sendmsg->ip_route_output_flow() {
+    if (!fl4->saddr)
+		fl4->saddr = FIB_RES_PREFSRC(net, res);
+    在udp_sendmsg中: saddr = fl4->saddr;
+}
+
+2). 发送非单播报文
+1. 0xffffffff ：只能设置oif来选择源ip，不能通过路由
+udp_sendmsg(){
+	//如果oif和IP_MTCAST_IF同时设置， IP_MTCAST_IF优先级高
+	ipc.oif = sk->sk_bound_dev_if;
+	...
+	//mc_index,mc_addr通过IP_MTCAST_IF设置
+	if (ipv4_is_multicast(daddr)) { 
+		if (!ipc.oif) 
+			ipc.oif = inet->mc_index; 
+		 if (!saddr) 
+			 saddr = inet->mc_addr;
+	}
+	.....
+	flowi4_oif = ipc.oif;
+}
+udp_sendmsg->ip_route_output_flow() {
+	if (fl4->flowi4_oif) {
+		if (ipv4_is_local_multicast(fl4->daddr) || ipv4_is_lbcast(fl4->daddr)) { 
+			if (!fl4->saddr) 
+				fl4->saddr = inet_select_addr(dev_out, 0, RT_SCOPE_LINK); 
+			 goto make_route; 
+		 }
+	}
+}
+2. 本地广播 
+同1)一样通过路由获取: local表的broadcast路由
+
+3). 多播：不能通过路由
+i). 设置oif来选择源ip
+ii). IP_MTCAST_IF设置
