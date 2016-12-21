@@ -1,0 +1,21 @@
+iptables -A OUTPUT -m conntrack --ctstatus EXPECTED -j ACCEPT
+iptables -A OUTPUT -d 192.168.0.2 -j ACCEPT
+iptables -A OUTPUT -j DROP
+
+iptables -t raw -A OUTPUT -d 192.168.0.2 -p tcp --dport 12345 -j CT  --helper test
+
+
+struct test_proto {
+        int type;
+        int port;
+        in_addr_t addr;
+};
+
+struct test_proto ap = {0};
+ap.addr = inet_addr("192.168.0.3");
+ap.type = 12;
+ap.port = 2152;
+len = sizeof(struct aa_proto);
+sbuf = &ap;
+
+write(sock, (char *)sbuf, len);

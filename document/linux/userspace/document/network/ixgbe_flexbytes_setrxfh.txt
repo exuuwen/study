@@ -60,3 +60,6 @@ RX flow hash indirection table for net2 with 8 RX ring(s):
 RSS hash key:
 97:72:6a:3a:60:59:bb:e1:a8:3f:e7:37:b6:d0:fe:4f:c5:d2:f2:22:1e:46:b3:d6:0c:ad:22:c8:93:6b:a7:e5:ca:92:08:ea:f5:2b:f6:d1
 
+3. set the rxtx queues
+
+ethtool -L net2 combined 16
