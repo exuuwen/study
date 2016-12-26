@@ -1,6 +1,5 @@
-
-
 1. recieve
+1). 接收过程
 when packet is handled in the driver, it will be deliverd to softirq
 example:
 a.  retrieve a buffer from the ring 
@@ -136,6 +135,9 @@ softnet_break:
 	__raise_softirq_irqoff(NET_RX_SOFTIRQ);
 }
 
+// 没有napi的或者一些virtual nic以及rps处理的都是扔给一个backlog poll去处理
+netif_rx_internal--->enqueue_to_backlog
+
 int process_backlog(struct napi_struct *napi, int quota)
 {
 	while (1) {
@@ -166,7 +168,17 @@ int process_backlog(struct napi_struct *napi, int quota)
 	}
 }
 
+2). napi state
+NAPI_STATE_DISABLE: 
+	napi_enable: enable the napi_poll, mostly in dev->open
+	napi_disable: disable the napi_poll, mostly in dev->close
+NAPI_STATE_SCHED
+	napi_schedule: 如果napi_poll没有disable, 也没有处于SCHED状态就把poll放入到本地cpu softnet_data的poll_list上. 通常在接收硬中断
+	napi_complete: 如果poll发现没有报文了, 就去掉SCHED状态, 并且从本地cpu softnet_data pool_list上去掉
+
+
 2. send
+1). 发送过程
 dev_queue_xmit-->__dev_queue_xmit
 {
 	/*chosee the txq*/
@@ -275,6 +287,21 @@ void net_tx_action(struct softirq_action *h)
 		}
 	}
 }
+
+2). 发送状态
+a. netqueue state
+__QUEUE_STATE_DRV_XOFF
+	netif_wake_subqueue: 如果状态是XOFF就clear, 然后调用__netif_schedule. 一般在open的时候发送中断中, 表明发送成功了
+	netif_stop_subqueue: 设置netqueue状态为XOFF. 一般在dev->ndo_start_xmit中发送出了问题时候调用
+
+b. qdisc state
+__QDISC_STATE_SCHED
+	__netif_schedule:把qdisc加入到sd->output_queue, 这样发送softirq(net_tx_action)能从qdisc deque报文
+	在net_tx_action中去掉__QDISC_STATE_SCHED.
+
+	qdisc_run从qdisc里dequeue报文, 然后通过队列发送, 如果netqueue state为XOFF, 就重新requeue进qdisc.
+
+__QDISC_STATE_DEACTIVATED: disable qdisc, 通常在close的时候
 
 
 
