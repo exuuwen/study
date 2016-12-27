@@ -1,0 +1,108 @@
+1. 配置
+a. xml
+	<memoryBacking>
+      <hugepages>
+        <page size='1048576' unit='KiB' nodeset='0'/>
+      </hugepages>
+    </memoryBacking>
+    <cpu mode='custom' match='exact'>
+      <model fallback='allow'>kvm64</model>
+      <feature policy='require' name='avx'/>
+	  ....
+      <feature policy='require' name='ssse3'/>
+    <numa>
+      <cell id='0' cpus='0-3' memory='16777216' unit='KiB' memAccess='shared'/>
+    </numa>
+
+	 <interface type='vhostuser'>
+      <mac address='52:54:11:88:2:61'/>
+      <source type='unix' path='/tmp/vhostuser.sock' mode='client'/>
+      <model type='virtio'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x06' function='0x0'/>
+    </interface>
+
+b. qemu 
+-chardev socket,id=char0,path=test/vhostuser.sock -netdev type=vhost-user,id=mynet1,chardev=char0,vhostforce -device virtio-net-pci,mac=52:54:11:88:2:61,netdev=mynet1,object memory-backend-file,id=mem,size=$GUEST_MEM,mem-path=/dev/hugepages,share=on -numa node,memdev=mem -mem-prealloc
+
+由于vhost_user进程与qemu并没有在同一个进程中, 所以数据的传递就需要内存共享的方式. 所以通常虚拟机内存的分配需要使用hugepage方式.
+
+2. 
+在vhost模式下, 整个虚拟网网卡包括三部分
+
+a. virtio_net: 虚拟机里面的网卡驱动
+b. virtio_user: qemu里面模拟的virtio device后端
+c. vhost_user: 数据面接收转发模块
+
+vhost_user主要由dpdk提供的支持
+
+vhost_user
+1). create unix_socket and listen on it
+	rte_vhost_driver_register()-->vhost_user_create_server()
+	{
+		建立unix_socket, 设置fd的callback为vhost_user_server_new_connection:a. accept b. accept_fd 建立信息通道  
+	}
+	
+2). 创建线程接收fd的消息, 设置创建/删除device(vhost_user) callback 
+	vhost_driver_session_start() 
+
+virtio_user
+3). 初始化backend
+	virtio_user_dev_init()
+{
+	a. 连接到unix sock, vhost user会accept 然后建立消息通道
+	vhost_user_setup
+
+	b. 消息VHOST_USER_SET_OWNER: 空设置
+
+	c. 消息VHOST_USER_GET_FEATURES: 获取vhost_user feature
+		virtio_user->features = vhost_user features
+}
+
+virtio_net
+
+pcidev:  device  sub_device  vender  sub_vender
+         0x1000     0x1      0xfaf4    0xfaf4
+
+virtiodev: device = pcidev->sub_device  vender = pcidev->sub_vender
+
+4).  virtio_net init
+virtio_pci_probe---->virtio_dev_probe---->virtio_net->probe
+
+	virtio_dev_probe()
+{
+	a. set status VIRTIO_CONFIG_S_DRIVER
+
+	b. 获取virtio_user(device) feture
+		dev->config->get_features: 其实就是device_feature = virtio_user->features
+		driver_feature = virtio_net->feature_table;
+
+	c. dev->features = driver_features & device_features;
+	   如果 device_feature 有VIRTIO_RING_F_INDIRECT_DESC, VIRTIO_RING_F_EVENT_IDX. dev->features也设置上(这两个feature由device决定)
+
+	d. 通知virtio_user(device) 最终协商的feature
+	  dev->config->finalize_features: 其实就是virtio_user->features = dev->features;
+
+	e. drv->probe: 初始化virtio_net, init queues
+
+	f. set status VIRTIO_CONFIG_S_DRIVER_OK
+}
+
+virtio_user
+5). virtio_user set vhost_user
+	virtio_user_start_device 
+{
+	a. virtio_user_create_queue --->VHOST_USER_SET_VRING_CALL
+
+	b. set virtio_user->features to vhost_user -----> VHOST_USER_SET_FEATURES
+
+	c. VHOST_USER_SET_FEATURES, 告知vhost_user共享内存文件打开的fd. 所以vhost_user也能映射出共享文件的内存
+
+	d. virtio_user_kick_queue--->VHOST_USER_SET_VRING_NUM, VHOST_USER_SET_VRING_BASE, VHOST_USER_SET_VRING_ADDR,VHOST_USER_SET_VRING_KICK.
+		告诉vhost_user每个queue的vring的虚拟地址, 让vhost_user在共享内存中找到并构建出vring
+
+	e. new_device: 当最后一个queue kick后就回调new_device
+
+	f. VHOST_USER_SET_VRING_ENABLE: enable queues
+}
+
+

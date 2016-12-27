@@ -1,0 +1,199 @@
+1. status
+工作区     |     暂存区    |    仓库
+
+# git status -s
+untracked: 在工作区, 并未add到暂存区, 显示为: ??
+modified: 在暂存区的文件(也可能在仓库了), 在工作区被修改了, 显示为:   M
+stage: 在暂存区修改了还未commit到仓库, 显示为:  A
+
+git rm --cached s # Git 仓库中删除（亦即从暂存区域移除, 在工作区保留）
+git rm s #Git 仓库中删除（亦即从暂存区域, 工作区移除）
+
+git reset HEAD files #把把暂存区的变成untracked, 不能改变仓库中的 只能改变add了,还没commit的(简爱入暂存区,还未进仓库的);
+
+diff 暂存区和仓库的
+# git diff --cached
+diff 工作区和暂存区
+# git diff
+
+2. remote
+git remote add test git@xxx:~/xxx.git
+git fetch test
+#把test/master变成当前master
+# git checkout -b master test/master
+git checkout test/master && git checkout -b master
+git push test master 
+git remote rename test origin
+git remote rm origin
+
+! [remote rejected] master -> master (branch is currently checked out)  
+a. git config receive.denyCurrentBranch ignore
+b. 在初始化远程仓库时最好使用 git --bare init, 没有工作目录
+
+
+3. pull vs fetch
+git fetch:更新远程分支origin/master等,不会修改本地分支master等. 必须注意git fetch命令会将数据拉取到你的本地仓库(修改本地远程分支), 它并不会自动合并或修改你当前的工作分支, 当准备好时你必须手动将其合并入你的工作分支
+git pull origin branch-name 把远程branch-name跟新到本地branch-name,  自动merge到当前branch
+
+
+4. alias:
+$ git config --global alias.co checkout
+$ git config --global alias.br branch
+$ git config --global alias.ci commit
+$ git config --global alias.st status
+$ git config --global alias.unstage 'reset HEAD --'
+
+
+5. merge vs rebase
+a. 
+git merge test
+git branch --merge  branch_name
+git branch --no-merge branch_name
+
+b. vs
+1). merge
+# git log --oneline --decorate --graph --all #查看分支分叉情况
+* 287c9a6 (HEAD, master) mmmm
+| * 083570d (test) www
+|/  
+* 8bfac17 sss
+* 897ebb2 aaa
+
+# git merge test
+Merge made by the 'recursive' strategy.
+ www | 1 +
+ 1 file changed, 1 insertion(+)
+ create mode 100644 www
+
+# git log --oneline --decorate --graph --all
+*   c7d4be0 (HEAD, master) Merge branch 'test'
+|\  
+| * 083570d (test) www
+* | 287c9a6 mmmm
+|/  
+* 8bfac17 sss
+* 897ebb2 aaa
+
+2). rebase:
+# git log --oneline --decorate --graph --all
+* 287c9a6 (HEAD, master) mmmm
+| * 083570d (test) www
+|/  
+* 8bfac17 sss
+* 897ebb2 aaa
+
+# git rebase test
+First, rewinding head to replay your work on top of it...
+Applying: mmmm
+[root@10-19-61-167 test]#  git log --oneline --decorate --graph --all
+* 2062d37 (HEAD, master) mmmm
+* 083570d (test) www
+* 8bfac17 sss
+* 897ebb2 aaa
+
+git rebase [basebranch] [topicbranch] 命令可以直接将特性分支(即本例中的server)变基到基本分支(即master作为基)上。
+git rebase master server
+
+git rebase target: 命令可以直接将当前分支变基到目标分支(即target)上(target作为基)
+
+总的原则是，只对尚未推送或分享给别人的本地修改执行变基操作清理历史，从不对已推送至别处的提交执行变基操作
+
+
+6. sendmail
+# vim ~/.gitconfig
+[user]
+    name = user0
+    email = user0@test.cn
+
+[sendemail]
+    mtpencryption = tls
+    smtpuser = user0@163.com
+    from = user0@163.com
+    smtpserverport = 25
+    smtpserver = smtp.163.com
+    smtppass = xxxxx
+    suppresscc = all
+
+[sendemail "test"]
+    mtpencryption = tls
+    smtpuser = test@test.cn
+    from = test@test.cn
+    smtpserverport = 25
+    smtpserver = smtp.qiye.163.com
+    smtppass = xxxx
+    suppresscc = all
+    chainreplayto = false
+
+# ./scripts/get_maintainer.pl -f net/ipv4/ip_tunnel_core.c
+# ./scripts/checkpatch.pl ./0001-xxxx.patch
+# git send-email [--identity=test] 0001-xxxx.patch --to xxx@163.com
+
+
+7. server example
+a. 新仓库
+server:
+a. server
+$ sudo adduser git
+$ su git
+$ cd
+$ mkdir .ssh && chmod 700 .ssh
+$ touch .ssh/authorized_keys && chmod 600 .ssh/authorized_keys
+$ add key
+$ cd /opt/git
+$ mkdir project.git
+$ cd project.git
+$ git init --bare
+Initialized empty Git repository in /opt/git/project.git/
+
+b. maintainer
+# on maintainer computer
+$ cd myproject
+$ git init
+$ git add .
+$ git commit -m 'initial commit'
+$ git remote add origin git@gitserver:/opt/git/project.git
+$ git push origin master
+
+c. other developer
+$ git clone git@gitserver:/opt/git/project.git
+$ cd project
+$ vim README
+$ git commit -am 'fix for the README file'
+$ git push origin master
+
+
+b. 旧仓库
+server:
+# cp -Rf test/.git my_project.git
+
+mantainer:
+# git remote add origin git@gitserver:/opt/git/project.git
+
+other developer:
+# git clone user@xxxx:~/my_project.git
+
+
+8. others
+a. archive
+git archive  --format=tar.gz `git log --max-count=1 --pretty=format:%H` -o a.tar.gz
+git get-tar-commit-id < a.tar.gz
+
+b. branch
+git branch -d c2
+error: The branch 'c2' is not fully merged.
+If you are sure you want to delete it, run 'git branch -D c2'
+
+HEAD为当前分支的别名 cat .git/HEAD
+
+c. log
+git log --max-count=1 --pretty=format:%H    //get git id
+git log --pretty=format:"%H %h %s"
+git log --author 'wx'
+git log -2
+
+d. misc
+git push origin --tags
+git tag -l 'v1.8.5*'
+git checkout -b [branchname] [tagname]
+git checkout -b [branchname] [ori-branch]
+
