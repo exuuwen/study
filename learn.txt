@@ -174,3 +174,19 @@ NXST_FLOW reply (xid=0x4):
 
 intel_iommu=on iommu=pt
 gcc -Q -O0 --help=optimizers
+
+# ovs-vsctl create qos type=linux-htb other-config:max-rate=900000000
+69897202-385d-4b99-95b3-1523e86c6605
+# ovs-vsctl create Queue other-config:min-rate=400000 other-config:max-rate=800000
+2cad42af-fd6e-4e33-aa4e-8935dc452886
+# ovs-vsctl add qos 69897202-385d-4b99-95b3-1523e86c6605 queues 0=2cad42af-fd6e-4e33-aa4e-8935dc452886
+# ovs-vsctl set Port gre qos=69897202-385d-4b99-95b3-1523e86c660
+
+
+//
+tc qdisc add dev gre_sys root handle 1: htb default 10 r2q 10
+tc class add dev gre_sys classid 1:1 root htb rate 100Mbit ceil 100Mbit burst 100Mbit cburst 100Mbit
+tc class add dev gre_sys classid 1:2 root htb rate 200Mbit ceil 200Mbit burst 200Mbit cburst 200Mbit
+
+in_port=LOCAL actions=set_queue:0,output:2
+in_port=LOCAL actions=set_queue:1,output:2
