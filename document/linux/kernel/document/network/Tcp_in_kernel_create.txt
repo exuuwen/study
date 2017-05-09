@@ -187,9 +187,10 @@ inet_listen
 			// set sk state to listen
 			sk->sk_state = TCP_LISTEN;
 	
-			//check the src port that bind. if non-src port chose one and hash it
+			//check the src port that bind. if non-src port chose one and hash it to bhash
 			if (!sk->sk_prot->get_port(sk, inet->inet_num)) {
 				inet->inet_sport = htons(inet->inet_num);
+				//hash sk to listen hash
 				sk->sk_prot->hash(sk);
 			}
 		*/

@@ -69,7 +69,7 @@ tcp_v4_connect
 
 inet_hash_connect(&tcp_death_row, sk);
 {
-	/*get tb and hash it*/
+	/*get tb and hash it to bhash*/
 	inet_bind_hash(sk, tb, port);	
 	
 	inet->inet_sport = htons(lport);
@@ -298,6 +298,13 @@ struct sock* tcp_check_req()
 	/*add the the req to the server sk recieve queue: rqe->child = sk*/
 	inet_csk_reqsk_queue_add(sk, req, child);
 	return child;
+
+/*rest if tcp_abort_on_overflow enabel*/
+listen_overflow:
+	if (sysctl_tcp_abort_on_overflow) {
+		if (!(flg & TCP_FLAG_RST))
+			req->rsk_ops->send_reset(sk, skb);
+	}
 }
 
 struct sock *tcp_v4_syn_recv_sock()

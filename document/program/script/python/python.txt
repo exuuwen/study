@@ -45,8 +45,8 @@
 	True
 
 	
-5. flow comultiple ntrol
-        a. assignment
+5. flow control
+    a. assignment
 	>>> a, b, c = 1, 2, 3
 	>>> a,b,c
 	(1, 2, 3)
@@ -140,7 +140,7 @@
 	scope[sqrt]
 	1
 	
-	2) eval£º calculate a expression from string 
+	2) eval calculate a expression from string 
 	alg = '2*3'
 	print alg, '=', eval(alg)
 
@@ -549,7 +549,6 @@
 	>>> x = {}
 	>>> y
 	{ "name":'wx' }
-	ii)
 	>>> x = { "name":'wx' }
 	>>> y = x
 	>>> x.clear()

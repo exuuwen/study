@@ -1,0 +1,171 @@
+1. 结构
+vring是 virtio 传输机制的实现，vring 引入 ring buffers 来作为我们数据传输的载体。
+
+/* The standard layout for the ring is a continuous chunk of memory which looks
+ * like this.  We assume num is a power of 2.
+
+ struct vring
+ {
+	// The actual descriptors (16 bytes each)
+	struct vring_desc desc[num];
+
+	// A ring of available descriptor heads with free-running index.
+	__virtio16 avail_flags;
+	__virtio16 avail_idx;
+	__virtio16 available[num];
+	__virtio16 used_event_idx;
+
+	// Padding to the next align boundary.
+	char pad[];
+
+	// A ring of used descriptor heads with free-running index.
+	__virtio16 used_flags;
+	__virtio16 used_idx;
+	struct vring_used_elem used[num];
+	__virtio16 avail_event_idx;
+ };
+vring 包含 3 部分：
+a. 描述符数组（descriptor table）用于存储一些关联的描述符，每个描述符都是一个对 buffer 的描述，包含一个 address/length 的配对。
+ring 的数目必须是 2 的次幂
+/* Virtio ring descriptors: 16 bytes.  These can chain together via "next". */
+struct vring_desc {
+	/* Address (guest-physical). */
+	__virtio64 addr;
+	/* Length. */
+	__virtio32 len;
+	/* The flags as indicated above. */
+	__virtio16 flags;
+	/* We chain unused descriptors via this, too */
+	__virtio16 next;
+};
+
+vring descriptor 用于指向 guest 使用的 buffer。
+addr：guest 物理地址
+len：buffer 的长度
+flags：flags 的值含义包括：
+VRING_DESC_F_NEXT：用于表明当前 buffer 的下一个域是否有效，也间接表明当前 buffer 是否是 buffers list 的最后一个。
+VRING_DESC_F_WRITE：当前 buffer 是 read-only 还是 write-only。
+VRING_DESC_F_INDIRECT：表明这个 buffer 中包含一个 buffer 描述符的 list
+next：所有的 buffers 通过 next 串联起来组成 descriptor table
+多个 buffer 组成一个 list 由 descriptor table 指向这些 list。
+
+图1
+
+indirect Descriptors
+有些设备可能需要同时完成大量数据传输的大量请求，设备 VIRTIO_RING_F_INDIRECT_DESC 特性能够满足这种需求。为了增加 ring 的容量，vring 可以指向一个可以处于内存中任何位置 indirect descriptors table，而这个 table 指向一组 vring descriptors，而这些 vring descriptor 分别指向一组 buffer list（如图所示）
+
+图2
+
+
+b. 可用的 ring(available ring)用于 guest 端表示那些描述符链当前是可用的。
+Available ring 指向 guest 提供给设备的描述符,它指向一个 descriptor 链表的头。Available ring 结构如下图所示。其中标识 flags 值为 0 或者 1，1 表明 Guest 不需要 device 使用完这些 descriptor 时上报中断。idx 指向我们下一个 descriptor 入口处，idx 从 0 开始，一直增加，使用时需要取模：
+idx=idx&(vring.num-1)
+
+struct vring_avail {
+	__virtio16 flags;
+	__virtio16 idx;
+	__virtio16 ring[];
+};
+
+图3
+
+
+c. 使用过的 ring(used ring)用于表示 Host 端表示那些描述符已经使用。
+Used ring 指向 device(host)使用过的 buffers。Used ring 和 Available ring 之间在内存中的分布会有一定间隙，从而避免了 host 和 guest 两端由于 cache 的影响而会写入到 virtqueue 结构体的同一部分的情况。
+Used vring element 包含 id 和 len，id 指向 descriptor chain 的入口,与之前 guest 写入到 available ring 的入口项一致。
+len 为写入到 buffer 中的字节数。
+flags 用于 device 告诉 guest 再次添加 buffer 到 available ring 时不再提醒，也就是说 guest 添加 buffers 到 available ring 时不必进行 kick 操作。
+
+/* u32 is used here for ids for padding reasons. */
+struct vring_used_elem {
+	/* Index of start of used descriptor chain. */
+	__virtio32 id;
+	/* Total length of the descriptor chain which was used (written to) */
+	__virtio32 len;
+};
+
+struct vring_used {
+	__virtio16 flags;
+	__virtio16 idx;
+	struct vring_used_elem ring[];
+};
+
+
+2. 传输
+由于虚拟机与qemu内存共享, 虚拟机与vhost-net/user内存共享. 虚拟机网卡virtio_net与vhost共享vring结构体.
+
+虚拟机通过virtqueue_add从vring_desc取下一个(indirect buff list)或者多个free desc(buffer list), 把data的physical地址添加到desc->addr. 然后设置avail->ring[avail->idx] = desc_idx; avail->idx++; 如果used->flags没有设置VRING_USED_F_NO_NOTIFY, 就notify vhost. 维护一个本地last_used_idx, 虚拟机收到通知(可能是自身:发送, 也可能是host:接收. 有必要的话设置VRING_AVAIL_F_NO_INTERRUPT:比如接收), 读取used->ring[last _used_idx]到used->ring[used->idx - 1], 然后根据读取的idx值去拿去vring_desc, 回收(发送)或者使用数据(接收)
+
+vhost维护一个本地last_desc_idx, 收到通知(可能是虚拟机通知:发送, 也可能是host的通知:接收, 有必要的话VRING_USED_F_NO_NOTIFY: 比如发送)后,  读取avail->ring[last_desc_idx]到avail->ring[avail->idx - 1], 然后根据读取的idx值去拿去vring_desc的对于desc->addr, 然后转化地址(虚拟机物理地址)为本地地址使用data. 最后, used->ring[used->idx] = desc_idx; used->idx++; 表示用完. 如果avail->flags没有设置VRING_AVAIL_F_NO_INTERRUPT, 就kick虚拟机 
+
+
+
+3. virtio_net
+a. 发送
+feature有VIRTIO_F_ANY_LAYOUT或者VIRTIO_F_VERSION_1(为1.0版本). 支持vnet_hdr和data在连续的buf
+
+1). xmit
+{
+	/*headromm有足够的空间*/
+	can_push = vi->any_header_sg &&
+		!((unsigned long)skb->data & (__alignof__(*hdr) - 1)) &&
+		!skb_header_cloned(skb) && skb_headroom(skb) >= hdr_len;
+
+	/*如果can_push, vnet_hdr不用单独使用一个sg*/
+	if (can_push) {
+		__skb_push(skb, hdr_len);
+		num_sg = skb_to_sgvec(skb, sq->sg, 0, skb->len);
+		/* Pull header back to avoid skew in tx bytes calculations. */
+		__skb_pull(skb, hdr_len);
+	} else {
+		sg_set_buf(sq->sg, hdr, hdr_len);
+		num_sg = skb_to_sgvec(skb, sq->sg + 1, 0, skb->len) + 1;
+	}
+
+	/*虽然每个sg需要一个desc, 但是在indrict table支持下只需要一个desc*/
+	return virtqueue_add_outbuf(sq->vq, sq->sg, num_sg, skb, GFP_ATOMIC);
+}
+
+2). 回收: virtqueue_get_buf: 处理used_ring获取skb free掉
+
+
+b. 接收
+如果支持tso就可以接收big_packets, 如果有VIRTIO_NET_F_MRG_RXBUF feature就支持mergeable_rx_bufs. 上述都不支持的话只能small_packet
+	/* If we can receive ANY GSO packets, we must allocate large ones. */
+	if (virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_TSO4) ||
+	    virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_TSO6) ||
+	    virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_ECN) ||
+	    virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_UFO))
+		vi->big_packets = true;
+
+	if (virtio_has_feature(vdev, VIRTIO_NET_F_MRG_RXBUF))
+		vi->mergeable_rx_bufs = true;
+1). 预分配desc
+small packet: 分配好skb, data为#define GOOD_PACKET_LEN (ETH_HLEN:14 + VLAN_HLEN:4 + ETH_DATA_LEN:1500).
+big_packet: 分配好(65536/PAGE_SIZE + 1)个page(65536/PAGE_SIZE存放数据, 1放vnet_hdr), 这种方法比较浪费内存(把每个包当满报文长度来处理)
+mergeable_rx_bufs: 每个desc分配一个page, 表面上是独立的. 在vhost端第一个desc的vnet_hdr里会写明有多少个desc聚合为一个packet
+
+		if (vi->mergeable_rx_bufs)
+			err = add_recvbuf_mergeable(rq, gfp);
+		else if (vi->big_packets)
+			/*虽然每个sg需要一个desc, 但是在indrict table支持下只需要一个desc*/
+			err = add_recvbuf_big(vi, rq, gfp);
+		else
+			/*skb->data转为sg. 虽然有2个sg, 在indrect table下只需要一个desc*/
+			err = add_recvbuf_small(vi, rq, gfp);
+
+2). 收报文
+	buf = virtqueue_get_buf(rq->vq, &len)):获取buf
+
+	if (vi->mergeable_rx_bufs)
+		/*根据第一个desc数据的vnet_hdr指定后续的desc数, 把后面desc对应的page逐个dskb->frag_list上*/
+		skb = receive_mergeable(dev, vi, rq, (unsigned long)buf, len);
+	else if (vi->big_packets)
+		/*把有数据的page逐个加到skb->frag_list上*/
+		skb = receive_big(dev, vi, rq, buf, len);
+	else
+		/*直接拿去skb*/
+		skb = receive_small(vi, buf, len);
+
+
+
