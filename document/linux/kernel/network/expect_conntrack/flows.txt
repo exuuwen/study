@@ -1,0 +1,8 @@
+
+table=0,ip actions=ct(table=1,zone=1)
+table=1,ct_state=+est+trk,ip,in_port=7,nw_dst=192.168.0.1 actions=output:1
+table=1,ct_state=+est+trk,ip,in_port=7,nw_dst=192.168.0.2 actions=output:2
+table=1,ct_state=+est+trk,ip,nw_dst=192.168.0.7 actions=output:7
+table=1,ct_state=+new+trk,tcp,nw_dst=192.168.0.1,tp_dst=12345 actions=ct(commit,zone=1),output:1
+table=1,ct_state=+new+rel+trk,ip,nw_dst=192.168.0.2 actions=ct(commit,zone=1),output:2
+table=0,arp,action=normal

@@ -2,9 +2,11 @@ iptables -A OUTPUT -m conntrack --ctstatus EXPECTED -j ACCEPT
 iptables -A OUTPUT -d 192.168.0.2 -j ACCEPT
 iptables -A OUTPUT -j DROP
 
-iptables -t raw -A OUTPUT -d 192.168.0.2 -p tcp --dport 12345 -j CT  --helper test
+#iptables -t raw -A OUTPUT -d 192.168.0.2 -p tcp --dport 12345 -j CT  --helper test
+# can auto help
 
 
+client:
 struct test_proto {
         int type;
         int port;
@@ -19,3 +21,15 @@ len = sizeof(struct aa_proto);
 sbuf = &ap;
 
 write(sock, (char *)sbuf, len);
+
+./client 192.168.0.2 12345
+
+server listen on 12345
+./server 192.168.0.2 12345
+
+
+
+
+for openvswitch 
+
+./start.sh

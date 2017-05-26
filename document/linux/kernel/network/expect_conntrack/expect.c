@@ -32,6 +32,8 @@ static int test_help(struct sk_buff *skb,
     uint16_t port = ntohs((uint16_t)prot.port);
     char test_buffer[512];
 
+    printk("hahaha in teh help 1\n");
+
     if (ctinfo != IP_CT_ESTABLISHED
         && ctinfo != IP_CT_ESTABLISHED+IP_CT_IS_REPLY) {
         return NF_ACCEPT;
@@ -47,6 +49,7 @@ static int test_help(struct sk_buff *skb,
         ret = NF_ACCEPT;
         goto out;
     }
+    printk("hahaha in teh help 2\n");
 
     exp = nf_ct_expect_alloc(ct);
     port = ntohs((uint16_t)prot.port);
@@ -65,13 +68,13 @@ static const struct nf_conntrack_expect_policy test_policy = {
     .timeout    = 50 * 60,
 };
 
-#define PORT 5000
+#define PORT 12345
 
 static struct nf_conntrack_helper test = {
     .name = "test",
     .me = THIS_MODULE,
     .tuple.src.l3num = AF_INET,
-    .tuple.src.u.tcp.port = cpu_to_be16(5000),
+    .tuple.src.u.tcp.port = cpu_to_be16(PORT),
     .tuple.dst.protonum = IPPROTO_TCP,
     .help = test_help,
     .expect_policy = &test_policy,
