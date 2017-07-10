@@ -1,0 +1,12 @@
+on client
+1. yum install xorg-x11-utils xorg-x11-fonts xorg-x11-xauth
+2. sshd_config
+X11Forwarding yes
+X11DisplayOffset 10
+X11UseLocalhost no
+
+
+on local server
+3. ssh -X user@client
+4. try
+xclock

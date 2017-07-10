@@ -1,0 +1,20 @@
+a=IP(dst="192.168.0.2")/TCP(sport=22345,dport=80,flags="S")/Padding('\x01\x02')
+send(a)
+a.show2()
+
+a=IP(dst="192.168.0.2")/TCP(sport=22345,dport=80,flags="S")/'\x01\x02'
+
+a=IP(dst="192.168.0.2")/ICMP()/'\x01\x02'
+
+hexdump(a)
+
+>>> a=Ether(src='fa:ff:ff:ff:ff:ff',dst='fb:ff:ff:ff:ff:ff')/IP(src='1.1.1.1', dst="172.168.0.2")/TCP(sport=22345,dport=80,flags="S")/Padding('\x01\x02')
+>>> sendp(a, iface='eth0')
+sendp():layer2 send
+
+
+sendp(a, iface='eth0', loop=1, inter=0.2) : 0.2 second per packet
+
+
+raw send:
+sendp('\xfb\xaf\xff\xff\xff\xff\xfa\xff\xff\xff\xff\xff\x08\x00E\x00\x00(\x00\x01\x00\x00@\x06\xcc#\x01\x01\x01\x01\xac\xa8\x00\x02WI\x00P\x00\x00\x00\x00\x00\x00\x00\x00P\x02 \x00\x89\x9d\x00\x00\x01\x02')

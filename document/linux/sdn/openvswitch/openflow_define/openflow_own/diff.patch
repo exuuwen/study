@@ -1,0 +1,423 @@
+diff --git a/datapath/actions.c b/datapath/actions.c
+index 82833d0..58b8c10 100644
+--- a/datapath/actions.c
++++ b/datapath/actions.c
+@@ -265,6 +265,12 @@ static int push_vlan(struct sk_buff *skb, struct sw_flow_key *key,
+ 			     ntohs(vlan->vlan_tci) & ~VLAN_TAG_PRESENT);
+ }
+ 
++static int handle_example(struct sk_buff *skb, const struct ovs_action_handle_example *handle)
++{
++	printk("haha pkt len %u, with data: 0x%x\n", skb->len, ntohl(handle->data));
++	return 0;
++}
++
+ /* 'src' is already properly masked. */
+ static void ether_addr_copy_masked(u8 *dst_, const u8 *src_, const u8 *mask_)
+ {
+@@ -1136,6 +1142,10 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
+ 			err = push_vlan(skb, key, nla_data(a));
+ 			break;
+ 
++		case OVS_ACTION_ATTR_HANDLE_EXAMPLE:
++			err = handle_example(skb, nla_data(a));
++			break;
++
+ 		case OVS_ACTION_ATTR_POP_VLAN:
+ 			err = pop_vlan(skb, key);
+ 			break;
+diff --git a/datapath/flow_netlink.c b/datapath/flow_netlink.c
+index 0f32664..f849f63 100644
+--- a/datapath/flow_netlink.c
++++ b/datapath/flow_netlink.c
+@@ -2235,6 +2235,7 @@ static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
+ 			[OVS_ACTION_ATTR_HASH] = sizeof(struct ovs_action_hash),
+ 			[OVS_ACTION_ATTR_CT] = (u32)-1,
+ 			[OVS_ACTION_ATTR_TRUNC] = sizeof(struct ovs_action_trunc),
++			[OVS_ACTION_ATTR_HANDLE_EXAMPLE] = sizeof(struct ovs_action_handle_example),
+ 		};
+ 		const struct ovs_action_push_vlan *vlan;
+ 		int type = nla_type(a);
+@@ -2298,6 +2299,9 @@ static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
+ 		case OVS_ACTION_ATTR_RECIRC:
+ 			break;
+ 
++		case OVS_ACTION_ATTR_HANDLE_EXAMPLE:
++			break;
++
+ 		case OVS_ACTION_ATTR_PUSH_MPLS: {
+ 			const struct ovs_action_push_mpls *mpls = nla_data(a);
+ 
+diff --git a/datapath/linux/compat/include/linux/openvswitch.h b/datapath/linux/compat/include/linux/openvswitch.h
+index 12260d8..1490adf 100644
+--- a/datapath/linux/compat/include/linux/openvswitch.h
++++ b/datapath/linux/compat/include/linux/openvswitch.h
+@@ -639,6 +639,10 @@ struct ovs_action_push_vlan {
+ 	__be16 vlan_tci;	/* 802.1Q TCI (VLAN ID and priority). */
+ };
+ 
++struct ovs_action_handle_example {
++	__be32 data;	
++};
++
+ /* Data path hash algorithm for computing Datapath hash.
+  *
+  * The algorithm type only specifies the fields in a flow
+@@ -814,6 +818,7 @@ enum ovs_action_attr {
+ 				       * bits. */
+ 	OVS_ACTION_ATTR_CT,           /* Nested OVS_CT_ATTR_* . */
+ 	OVS_ACTION_ATTR_TRUNC,        /* u32 struct ovs_action_trunc. */
++        OVS_ACTION_ATTR_HANDLE_EXAMPLE,
+ 
+ #ifndef __KERNEL__
+ 	OVS_ACTION_ATTR_TUNNEL_PUSH,   /* struct ovs_action_push_tnl*/
+diff --git a/include/openvswitch/flow.h b/include/openvswitch/flow.h
+index df80dfe..dcbe465 100644
+--- a/include/openvswitch/flow.h
++++ b/include/openvswitch/flow.h
+@@ -94,7 +94,7 @@ struct flow {
+     uint16_t ct_state;          /* Connection tracking state. */
+     uint16_t ct_zone;           /* Connection tracking zone. */
+     uint32_t ct_mark;           /* Connection mark.*/
+-    uint8_t pad1[4];            /* Pad to 64 bits. */
++    ovs_be32 handle_example;            /* Pad to 64 bits. */
+     ovs_u128 ct_label;          /* Connection label. */
+     uint32_t conj_id;           /* Conjunction ID. */
+     ofp_port_t actset_output;   /* Output port in action set. */
+diff --git a/include/openvswitch/ofp-actions.h b/include/openvswitch/ofp-actions.h
+index 01b1790..4335a3c 100644
+--- a/include/openvswitch/ofp-actions.h
++++ b/include/openvswitch/ofp-actions.h
+@@ -60,6 +60,7 @@
+     OFPACT(ENQUEUE,         ofpact_enqueue,     ofpact, "enqueue")      \
+     OFPACT(OUTPUT_REG,      ofpact_output_reg,  ofpact, "output_reg")   \
+     OFPACT(BUNDLE,          ofpact_bundle,      slaves, "bundle")       \
++    OFPACT(HANDLE_EXAMPLE,  ofpact_handle_example, ofpact, "handle_example")       \
+                                                                         \
+     /* Header changes. */                                               \
+     OFPACT(SET_FIELD,       ofpact_set_field,   ofpact, "set_field")    \
+@@ -287,6 +288,11 @@ struct ofpact_output {
+     uint16_t max_len;           /* Max send len, for port OFPP_CONTROLLER. */
+ };
+ 
++struct ofpact_handle_example {
++    struct ofpact ofpact;
++    uint32_t data;
++};
++
+ /* OFPACT_CONTROLLER.
+  *
+  * Used for NXAST_CONTROLLER. */
+diff --git a/lib/dpif-netdev.c b/lib/dpif-netdev.c
+index ecc7cea..3bfe50f 100644
+--- a/lib/dpif-netdev.c
++++ b/lib/dpif-netdev.c
+@@ -4606,6 +4606,7 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
+     }
+ 
+     case OVS_ACTION_ATTR_PUSH_VLAN:
++    case OVS_ACTION_ATTR_HANDLE_EXAMPLE:
+     case OVS_ACTION_ATTR_POP_VLAN:
+     case OVS_ACTION_ATTR_PUSH_MPLS:
+     case OVS_ACTION_ATTR_POP_MPLS:
+diff --git a/lib/dpif.c b/lib/dpif.c
+index 53958c5..03106ac 100644
+--- a/lib/dpif.c
++++ b/lib/dpif.c
+@@ -1181,6 +1181,7 @@ dpif_execute_helper_cb(void *aux_, struct dp_packet_batch *packets_,
+     case OVS_ACTION_ATTR_PUSH_VLAN:
+     case OVS_ACTION_ATTR_POP_VLAN:
+     case OVS_ACTION_ATTR_PUSH_MPLS:
++    case OVS_ACTION_ATTR_HANDLE_EXAMPLE:
+     case OVS_ACTION_ATTR_POP_MPLS:
+     case OVS_ACTION_ATTR_SET:
+     case OVS_ACTION_ATTR_SET_MASKED:
+diff --git a/lib/odp-execute.c b/lib/odp-execute.c
+index 5a43904..2e25408 100644
+--- a/lib/odp-execute.c
++++ b/lib/odp-execute.c
+@@ -498,6 +498,7 @@ requires_datapath_assistance(const struct nlattr *a)
+     case OVS_ACTION_ATTR_SET:
+     case OVS_ACTION_ATTR_SET_MASKED:
+     case OVS_ACTION_ATTR_PUSH_VLAN:
++    case OVS_ACTION_ATTR_HANDLE_EXAMPLE:
+     case OVS_ACTION_ATTR_POP_VLAN:
+     case OVS_ACTION_ATTR_SAMPLE:
+     case OVS_ACTION_ATTR_HASH:
+@@ -639,6 +640,7 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
+ 
+         case OVS_ACTION_ATTR_OUTPUT:
+         case OVS_ACTION_ATTR_TUNNEL_PUSH:
++        case OVS_ACTION_ATTR_HANDLE_EXAMPLE:
+         case OVS_ACTION_ATTR_TUNNEL_POP:
+         case OVS_ACTION_ATTR_USERSPACE:
+         case OVS_ACTION_ATTR_RECIRC:
+diff --git a/lib/odp-util.c b/lib/odp-util.c
+index 6d29b67..dc151cc 100644
+--- a/lib/odp-util.c
++++ b/lib/odp-util.c
+@@ -112,6 +112,7 @@ odp_action_len(uint16_t type)
+     case OVS_ACTION_ATTR_TUNNEL_POP: return sizeof(uint32_t);
+     case OVS_ACTION_ATTR_USERSPACE: return ATTR_LEN_VARIABLE;
+     case OVS_ACTION_ATTR_PUSH_VLAN: return sizeof(struct ovs_action_push_vlan);
++    case OVS_ACTION_ATTR_HANDLE_EXAMPLE: return sizeof(struct ovs_action_handle_example);
+     case OVS_ACTION_ATTR_POP_VLAN: return 0;
+     case OVS_ACTION_ATTR_PUSH_MPLS: return sizeof(struct ovs_action_push_mpls);
+     case OVS_ACTION_ATTR_POP_MPLS: return sizeof(ovs_be16);
+@@ -841,6 +842,12 @@ format_odp_action(struct ds *ds, const struct nlattr *a)
+     case OVS_ACTION_ATTR_POP_VLAN:
+         ds_put_cstr(ds, "pop_vlan");
+         break;
++    case OVS_ACTION_ATTR_HANDLE_EXAMPLE: {
++        const struct ovs_action_handle_example *handle = nl_attr_get(a);
++        ds_put_cstr(ds, "handle_example:");
++        ds_put_format(ds, "0x%"PRIx16, ntohl(handle->data));
++        break;
++    }
+     case OVS_ACTION_ATTR_PUSH_MPLS: {
+         const struct ovs_action_push_mpls *mpls = nl_attr_get(a);
+         ds_put_cstr(ds, "push_mpls(");
+@@ -5930,6 +5937,17 @@ commit_set_pkt_mark_action(const struct flow *flow, struct flow *base_flow,
+     }
+ }
+ 
++static void commit_set_handle_example(ovs_be32 data, struct ofpbuf *odp_actions) 
++{
++    struct ovs_action_handle_example handle;
++
++    if (data) {
++        handle.data = data;
++        nl_msg_put_unspec(odp_actions, OVS_ACTION_ATTR_HANDLE_EXAMPLE,
++                          &handle, sizeof handle);
++    }
++}
++
+ /* If any of the flow key data that ODP actions can modify are different in
+  * 'base' and 'flow', appends ODP actions to 'odp_actions' that change the flow
+  * key from 'base' into 'flow', and then changes 'base' the same way.  Does not
+@@ -5954,6 +5972,7 @@ commit_odp_actions(const struct flow *flow, struct flow *base,
+     commit_vlan_action(flow->vlan_tci, base, odp_actions, wc);
+     commit_set_priority_action(flow, base, odp_actions, wc, use_masked);
+     commit_set_pkt_mark_action(flow, base, odp_actions, wc, use_masked);
++    commit_set_handle_example(flow->handle_example, odp_actions);
+ 
+     return slow1 ? slow1 : slow2;
+ }
+diff --git a/lib/ofp-actions.c b/lib/ofp-actions.c
+index 15dbdec..9aa9d2d 100644
+--- a/lib/ofp-actions.c
++++ b/lib/ofp-actions.c
+@@ -211,6 +211,14 @@ enum ofp_raw_action_type {
+     OFPAT_RAW12_SET_FIELD,
+     /* OF1.5+(25): struct ofp12_action_set_field, ... */
+     OFPAT_RAW15_SET_FIELD,
++    
++    /* OF1.0(28): ovs_be32. */
++    OFPAT_RAW10_HANDLE_EXAMPLE,
++    /* OF1.1(28): ovs_be32. */
++    OFPAT_RAW11_HANDLE_EXAMPLE,
++    /* OF1.2-1.4(28): ovs_be32. */
++    OFPAT_RAW12_HANDLE_EXAMPLE,
++
+     /* NX1.0-1.4(7): struct nx_action_reg_load.
+      *
+      * [In OpenFlow 1.5, set_field is a superset of reg_load functionality, so
+@@ -383,6 +391,7 @@ ofpact_next_flattened(const struct ofpact *ofpact)
+ {
+     switch (ofpact->type) {
+     case OFPACT_OUTPUT:
++    case OFPACT_HANDLE_EXAMPLE:
+     case OFPACT_GROUP:
+     case OFPACT_CONTROLLER:
+     case OFPACT_ENQUEUE:
+@@ -2915,6 +2924,8 @@ set_field_parse__(char *arg, struct ofpbuf *ofpacts,
+     return NULL;
+ }
+ 
++
++
+ /* Parses 'arg' as the argument to a "set_field" action, and appends such an
+  * action to 'ofpacts'.
+  *
+@@ -3031,6 +3042,61 @@ ofpact_put_set_field(struct ofpbuf *ofpacts, const struct mf_field *field,
+     return sf;
+ }
+ 
++static enum ofperr
++decode_OFPAT_RAW10_HANDLE_EXAMPLE(ovs_be32 data,
++                            enum ofp_version ofp_version OVS_UNUSED,
++                            struct ofpbuf *out)
++{
++    ofpact_put_HANDLE_EXAMPLE(out)->data = ntohl(data);
++    return 0;
++}
++ 
++static enum ofperr
++decode_OFPAT_RAW11_HANDLE_EXAMPLE(ovs_be32 data,
++                            enum ofp_version ofp_version OVS_UNUSED,
++                            struct ofpbuf *out)
++{
++    ofpact_put_HANDLE_EXAMPLE(out)->data = ntohl(data);
++    return 0;
++}
++ 
++static enum ofperr
++decode_OFPAT_RAW12_HANDLE_EXAMPLE(ovs_be32 data,
++                            enum ofp_version ofp_version OVS_UNUSED,
++                            struct ofpbuf *out)
++{
++    ofpact_put_HANDLE_EXAMPLE(out)->data = ntohl(data);
++    return 0;
++}
++
++static void
++encode_HANDLE_EXAMPLE(const struct ofpact_handle_example *ofpact,
++                  enum ofp_version ofp_version, struct ofpbuf *out)
++{
++    if (ofp_version == OFP10_VERSION) {
++        put_OFPAT10_HANDLE_EXAMPLE(out, htonl(ofpact->data));
++    } else if (ofp_version == OFP11_VERSION) {
++        put_OFPAT11_HANDLE_EXAMPLE(out, htonl(ofpact->data));
++    } else {
++        put_OFPAT12_HANDLE_EXAMPLE(out, htonl(ofpact->data));
++    }
++}
++ 
++static char * OVS_WARN_UNUSED_RESULT
++parse_HANDLE_EXAMPLE(char *arg, struct ofpbuf *ofpacts,
++                 enum ofputil_protocol *usable_protocols OVS_UNUSED)
++{
++    return str_to_u32(arg, &ofpact_put_HANDLE_EXAMPLE(ofpacts)->data);
++}
++ 
++static void
++format_HANDLE_EXAMPLE(const struct ofpact_handle_example *a, struct ds *s)
++{
++    ds_put_format(s, "%shandle_example:%s0x%x",
++                  colors.param, colors.end, a->data);
++}
++ 
++
+ /* Appends an OFPACT_SET_FIELD ofpact to 'ofpacts' and returns it.  The ofpact
+  * is marked such that, if possible, it will be translated to OpenFlow as
+  * NXAST_REG_LOAD extension actions rather than OFPAT_SET_FIELD, either because
+@@ -6165,6 +6231,7 @@ ofpact_is_set_or_move_action(const struct ofpact *a)
+     case OFPACT_DEC_TTL:
+     case OFPACT_ENQUEUE:
+     case OFPACT_EXIT:
++    case OFPACT_HANDLE_EXAMPLE:
+     case OFPACT_UNROLL_XLATE:
+     case OFPACT_FIN_TIMEOUT:
+     case OFPACT_GOTO_TABLE:
+@@ -6236,6 +6303,7 @@ ofpact_is_allowed_in_actions_set(const struct ofpact *a)
+      * in the action set is undefined. */
+     case OFPACT_BUNDLE:
+     case OFPACT_CONTROLLER:
++    case OFPACT_HANDLE_EXAMPLE:
+     case OFPACT_CT:
+     case OFPACT_NAT:
+     case OFPACT_ENQUEUE:
+@@ -6429,6 +6497,7 @@ ovs_instruction_type_from_ofpact_type(enum ofpact_type type)
+     case OFPACT_GROUP:
+     case OFPACT_CONTROLLER:
+     case OFPACT_ENQUEUE:
++    case OFPACT_HANDLE_EXAMPLE:
+     case OFPACT_OUTPUT_REG:
+     case OFPACT_OUTPUT_TRUNC:
+     case OFPACT_BUNDLE:
+@@ -6847,6 +6916,9 @@ ofpact_check__(enum ofputil_protocol *usable_protocols, struct ofpact *a,
+     case OFPACT_CONTROLLER:
+         return 0;
+ 
++    case OFPACT_HANDLE_EXAMPLE:
++        return 0;
++
+     case OFPACT_ENQUEUE:
+         enqueue = ofpact_get_ENQUEUE(a);
+         if (ofp_to_u16(enqueue->port) >= ofp_to_u16(max_ports)
+@@ -7407,6 +7479,7 @@ get_ofpact_map(enum ofp_version version)
+         { OFPACT_SET_L4_SRC_PORT, 9 },
+         { OFPACT_SET_L4_DST_PORT, 10 },
+         { OFPACT_ENQUEUE, 11 },
++        { OFPACT_HANDLE_EXAMPLE, 28 },
+         { 0, -1 },
+     };
+ 
+@@ -7437,6 +7510,7 @@ get_ofpact_map(enum ofp_version version)
+         { OFPACT_GROUP, 22 },
+         { OFPACT_SET_IP_TTL, 23 },
+         { OFPACT_DEC_TTL, 24 },
++        { OFPACT_HANDLE_EXAMPLE, 28 },
+         { 0, -1 },
+     };
+ 
+@@ -7458,6 +7532,7 @@ get_ofpact_map(enum ofp_version version)
+         { OFPACT_SET_FIELD, 25 },
+         /* OF1.3+ OFPAT_PUSH_PBB (26) not supported. */
+         /* OF1.3+ OFPAT_POP_PBB (27) not supported. */
++        { OFPACT_HANDLE_EXAMPLE, 28 },
+         { 0, -1 },
+     };
+ 
+@@ -7549,6 +7624,7 @@ ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
+     case OFPACT_STRIP_VLAN:
+     case OFPACT_PUSH_VLAN:
+     case OFPACT_SET_ETH_SRC:
++    case OFPACT_HANDLE_EXAMPLE:
+     case OFPACT_SET_ETH_DST:
+     case OFPACT_SET_IPV4_SRC:
+     case OFPACT_SET_IPV4_DST:
+diff --git a/ofproto/ofproto-dpif-sflow.c b/ofproto/ofproto-dpif-sflow.c
+index c3234ee..34ddd74 100644
+--- a/ofproto/ofproto-dpif-sflow.c
++++ b/ofproto/ofproto-dpif-sflow.c
+@@ -1139,6 +1139,7 @@ dpif_sflow_read_actions(const struct flow *flow,
+ 	case OVS_ACTION_ATTR_RECIRC:
+ 	case OVS_ACTION_ATTR_HASH:
+         case OVS_ACTION_ATTR_CT:
++        case OVS_ACTION_ATTR_HANDLE_EXAMPLE:
+ 	    break;
+ 
+ 	case OVS_ACTION_ATTR_SET_MASKED:
+diff --git a/ofproto/ofproto-dpif-xlate.c b/ofproto/ofproto-dpif-xlate.c
+index a17047d..73e7c77 100644
+--- a/ofproto/ofproto-dpif-xlate.c
++++ b/ofproto/ofproto-dpif-xlate.c
+@@ -4453,6 +4453,7 @@ freeze_unroll_actions(const struct ofpact *a, const struct ofpact *end,
+         case OFPACT_PUSH_VLAN:
+         case OFPACT_SET_ETH_SRC:
+         case OFPACT_SET_ETH_DST:
++        case OFPACT_HANDLE_EXAMPLE:
+         case OFPACT_SET_IPV4_SRC:
+         case OFPACT_SET_IPV4_DST:
+         case OFPACT_SET_IP_DSCP:
+@@ -4672,6 +4673,7 @@ recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
+     /* Output actions  do not require recirculation. */
+     case OFPACT_OUTPUT:
+     case OFPACT_OUTPUT_TRUNC:
++    case OFPACT_HANDLE_EXAMPLE:
+     case OFPACT_ENQUEUE:
+     case OFPACT_OUTPUT_REG:
+     /* Set actions that don't touch L3+ fields do not require recirculation. */
+@@ -4754,6 +4756,8 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
+     }
+     /* dl_type already in the mask, not set below. */
+ 
++    flow->handle_example = 0;
++
+     OFPACT_FOR_EACH (a, ofpacts, ofpacts_len) {
+         struct ofpact_controller *controller;
+         const struct ofpact_metadata *metadata;
+@@ -4908,6 +4912,12 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
+             }
+             break;
+ 
++        case OFPACT_HANDLE_EXAMPLE: {
++	    flow->handle_example = htonl(ofpact_get_HANDLE_EXAMPLE(a)->data);
++            VLOG_INFO("OFPACT_HANDLE_EXAMPLE......................hahahahha 0x%x", flow->handle_example);
++            break;
++        }
++
+         case OFPACT_RESUBMIT:
+             /* Freezing complicates resubmit.  Some action in the flow
+              * entry found by resubmit might trigger freezing.  If that

@@ -173,10 +173,17 @@ mkswap /swapfile1
 swapon /swapfile1
 
 virtualenv for python
-virtualenv my27project
+virtualenv my27project -p /usr/bin/python3.4
 # Activate the my27project sandbox and check the version of the default Python interpreter in it:
 source my27project/bin/activate
 deactivate
+
+pip安装报错
+将当前环境需求导出
+pip freeze > requirements.txt
+根据导出的需求安装需要的包
+pip install -r requirements.txt
+
 
 grub:
 # vim /etc/sysconfig/grub

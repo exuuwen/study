@@ -1,0 +1,17 @@
+[root@10-19-61-167 ~]# ovs-ofctl add-flow br0 'table=1,
+ct_state=+new+trk,tcp,in_port=3,tp_dst=123
+actions=ct(commit,zone=1,nat2(dst=192.168.0.3:192.168.0.2:192.168.0.4:192.168.0.5)),output:2'
+parser_NAT2 count 4
+encode_NAT2 count 4
+[root@10-19-61-167 ~]# 
+[root@10-19-61-167 ~]# 
+[root@10-19-61-167 ~]# ovs-ofctl dump-flows br0 
+decode_NAT2 count 4
+format_NAT2 count 4
+NXST_FLOW reply (xid=0x4):
+ cookie=0x0, duration=7.732s, table=0, n_packets=0, n_bytes=0, idle_age=7,
+ priority=0 actions=NORMAL
+  cookie=0x0, duration=3.888s, table=1, n_packets=0, n_bytes=0, idle_age=3,
+  ct_state=+new+trk,tcp,in_port=3,tp_dst=123
+  actions=ct(commit,zone=1,nat2(dst=192.168.0.3:192.168.0.2:192.168.0.4:192.168.0.5:)),output:2
+

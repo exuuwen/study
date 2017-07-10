@@ -1,0 +1,1042 @@
+diff --git a/datapath/conntrack.c b/datapath/conntrack.c
+index ddfb0c4..0608bc9 100644
+--- a/datapath/conntrack.c
++++ b/datapath/conntrack.c
+@@ -21,6 +21,7 @@
+ #include <linux/tcp.h>
+ #include <linux/udp.h>
+ #include <linux/sctp.h>
++#include <linux/jhash.h>
+ #include <net/ip.h>
+ #include <net/netfilter/nf_conntrack_core.h>
+ #include <net/netfilter/nf_conntrack_helper.h>
+@@ -60,8 +61,14 @@ struct md_labels {
+ 
+ enum ovs_ct_nat {
+ 	OVS_CT_NAT = 1 << 0,     /* NAT for committed connections only. */
+-	OVS_CT_SRC_NAT = 1 << 1, /* Source NAT for NEW connections. */
+-	OVS_CT_DST_NAT = 1 << 2, /* Destination NAT for NEW connections. */
++	OVS_CT_NAT2 = 1 << 1,     /* NAT for committed connections only. */
++	OVS_CT_SRC_NAT = 1 << 2, /* Source NAT for NEW connections. */
++	OVS_CT_DST_NAT = 1 << 3, /* Destination NAT for NEW connections. */
++};
++
++struct ovs_nat_array {
++    uint16_t count;
++    uint32_t addr[OVS_MAX_CT_NAT2_ARRAY];
+ };
+ 
+ /* Conntrack action context for execution. */
+@@ -70,13 +77,14 @@ struct ovs_conntrack_info {
+ 	struct nf_conntrack_zone zone;
+ 	struct nf_conn *ct;
+ 	u8 commit : 1;
+-	u8 nat : 3;                 /* enum ovs_ct_nat */
++	u8 nat : 4;                 /* enum ovs_ct_nat */
+ 	u8 random_fully_compat : 1; /* bool */
+ 	u16 family;
+ 	struct md_mark mark;
+ 	struct md_labels labels;
+ #ifdef CONFIG_NF_NAT_NEEDED
+ 	struct nf_nat_range range;  /* Only present for SRC NAT and DST NAT. */
++	struct ovs_nat_array *array;
+ #endif
+ };
+ 
+@@ -675,6 +683,33 @@ static void ovs_nat_update_key(struct sw_flow_key *key,
+ 	}
+ }
+ 
++static void get_range(struct nf_conn *ct, const struct ovs_nat_array *array, struct nf_nat_range *newrange) 
++{
++	uint32_t sip, dip;
++	uint32_t port = 0;
++	uint32_t sport = 0, dport = 0;
++	uint8_t  protonum;
++	uint32_t index;
++
++	sip = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u3.ip;
++	dip = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u3.ip;
++	protonum = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.protonum;
++	if (protonum == IPPROTO_TCP || protonum == IPPROTO_UDP) {
++		sport = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.src.u.all;
++		dport = ct->tuplehash[IP_CT_DIR_ORIGINAL].tuple.dst.u.all;
++		port = (sport << 16) | dport;
++	}
++
++	index = jhash_3words(sip, dip, port, 0);
++	index %= array->count;
++
++	memset(newrange, 0, sizeof(*newrange));
++
++	newrange->min_addr.ip = array->addr[index];
++	newrange->max_addr.ip = array->addr[index];
++	newrange->flags = NF_NAT_RANGE_MAP_IPS;
++}
++
+ /* Returns NF_DROP if the packet should be dropped, NF_ACCEPT otherwise. */
+ static int ovs_ct_nat(struct net *net, struct sw_flow_key *key,
+ 		      const struct ovs_conntrack_info *info,
+@@ -683,6 +718,7 @@ static int ovs_ct_nat(struct net *net, struct sw_flow_key *key,
+ {
+ 	enum nf_nat_manip_type maniptype;
+ 	int err;
++	struct nf_nat_range newrange;
+ 
+ 	if (nf_ct_is_untracked(ct)) {
+ 		/* A NAT action may only be performed on tracked packets. */
+@@ -698,7 +734,7 @@ static int ovs_ct_nat(struct net *net, struct sw_flow_key *key,
+ 	 * Make sure new expected connections (IP_CT_RELATED) are NATted only
+ 	 * when committing.
+ 	 */
+-	if (info->nat & OVS_CT_NAT && ctinfo != IP_CT_NEW &&
++	if (info->nat & (OVS_CT_NAT | OVS_CT_NAT2) && ctinfo != IP_CT_NEW &&
+ 	    ct->status & IPS_NAT_MASK &&
+ 	    (ctinfo != IP_CT_RELATED || info->commit)) {
+ 		/* NAT an established or related connection like before. */
+@@ -719,7 +755,14 @@ static int ovs_ct_nat(struct net *net, struct sw_flow_key *key,
+ 	} else {
+ 		return NF_ACCEPT; /* Connection is not NATed. */
+ 	}
+-	err = ovs_ct_nat_execute(skb, ct, ctinfo, &info->range, maniptype);
++
++	if (info->nat & OVS_CT_NAT) {
++		err = ovs_ct_nat_execute(skb, ct, ctinfo, &info->range, maniptype);
++	}
++	else {
++		get_range(ct, info->array, &newrange);
++		err = ovs_ct_nat_execute(skb, ct, ctinfo, &newrange, maniptype);
++	}
+ 
+ 	/* Mark NAT done if successful and update the flow key. */
+ 	if (err == NF_ACCEPT)
+@@ -1107,6 +1150,105 @@ static int parse_nat(const struct nlattr *attr,
+ 	}
+ 	return 0;
+ }
++
++static int parse_nat2(const struct nlattr *attr,
++		     struct ovs_conntrack_info *info, bool log)
++{
++	struct nlattr *a;
++	const struct nlattr *old = attr;
++	int rem;
++
++	info->array = kmalloc(sizeof(struct ovs_nat_array), GFP_KERNEL | __GFP_NOWARN | __GFP_REPEAT);
++	if (!info->array) {
++		info->array = vmalloc(sizeof(struct ovs_nat_array));
++		if (!info->array) {
++			OVS_NLERR(log, "error no array .");
++           return -ENOMEM;
++		}
++	}
++
++	nla_for_each_nested(a, attr, rem) {
++		int type = nla_type(a);
++		if (type == OVS_NAT2_ATTR_ADDR_COUNT && nla_len(a) == sizeof(u16)) {
++			info->array->count = nla_get_u16(a);
++			if (info->array->count > 0 && info->array->count <= OVS_MAX_CT_NAT2_ARRAY) {
++				goto out;
++			}
++		}
++	}
++	
++	OVS_NLERR(log,
++				  "error count %u).\n", info->array->count);
++	return -EINVAL;
++
++out:
++	nla_for_each_nested(a, old, rem) {
++		const int ovs_nat_attr_lens[OVS_NAT2_ATTR_MAX + 1] = {
++			[OVS_NAT2_ATTR_SRC] = 0,
++			[OVS_NAT2_ATTR_DST] = 0,
++			[OVS_NAT2_ATTR_ADDR_ARRAY] = info->array->count*sizeof(u32),
++			[OVS_NAT2_ATTR_ADDR_COUNT] = sizeof(u16),
++		};
++		int type = nla_type(a);
++
++		if (type > OVS_NAT2_ATTR_MAX) {
++			OVS_NLERR(log,
++				  "Unknown NAT2 attribute (type=%d, max=%d).\n",
++				  type, OVS_NAT_ATTR_MAX);
++			return -EINVAL;
++		}
++
++		if (nla_len(a) != ovs_nat_attr_lens[type]) {
++			OVS_NLERR(log,
++				  "NAT attribute type %d has unexpected length (%d != %d).\n",
++				  type, nla_len(a),
++				  ovs_nat_attr_lens[type]);
++			return -EINVAL;
++		}
++
++		switch (type) {
++		case OVS_NAT2_ATTR_SRC:
++		case OVS_NAT2_ATTR_DST:
++			if (info->nat) {
++				OVS_NLERR(log,
++					  "Only one type of NAT may be specified.\n"
++					  );
++				return -ERANGE;
++			}
++			info->nat |= OVS_CT_NAT2;
++			info->nat |= ((type == OVS_NAT_ATTR_SRC)
++					? OVS_CT_SRC_NAT : OVS_CT_DST_NAT);
++			break;
++
++		case OVS_NAT2_ATTR_ADDR_ARRAY:
++			nla_memcpy(info->array->addr, a,
++				   sizeof(uint32_t)*info->array->count);
++			break;
++
++		case OVS_NAT2_ATTR_ADDR_COUNT:
++            break;
++
++		default:
++			OVS_NLERR(log, "Unknown nat2 attribute (%d).\n", type);
++			return -EINVAL;
++		}
++	}
++
++	if (rem > 0) {
++		OVS_NLERR(log, "NAT2 attribute has %d unknown bytes.\n", rem);
++		return -EINVAL;
++	}
++	if (!info->nat) {
++		OVS_NLERR(log, "NAT2 must set SRC or DST .\n");
++			return -EINVAL;
++		
++	} else if (!info->commit) {
++		OVS_NLERR(log, "NAT2 attributes must set commit\n");
++		return -EINVAL;
++	}
++
++	return 0;
++}
+ #endif
+ 
+ static const struct ovs_ct_len_tbl ovs_ct_attr_lens[OVS_CT_ATTR_MAX + 1] = {
+@@ -1122,6 +1264,7 @@ static const struct ovs_ct_len_tbl ovs_ct_attr_lens[OVS_CT_ATTR_MAX + 1] = {
+ #ifdef CONFIG_NF_NAT_NEEDED
+ 	/* NAT length is checked when parsing the nested attributes. */
+ 	[OVS_CT_ATTR_NAT]	= { .minlen = 0, .maxlen = INT_MAX },
++	[OVS_CT_ATTR_NAT2]	= { .minlen = 0, .maxlen = INT_MAX },
+ #endif
+ };
+ 
+@@ -1197,6 +1340,13 @@ static int parse_ct(const struct nlattr *attr, struct ovs_conntrack_info *info,
+ 				return err;
+ 			break;
+ 		}
++		case OVS_CT_ATTR_NAT2: {
++			int err = parse_nat2(a, info, log);
++
++			if (err)
++				return err;
++			break;
++		}
+ #endif
+ 		default:
+ 			OVS_NLERR(log, "Unknown conntrack attr (%d)",
+@@ -1369,6 +1519,44 @@ out:
+ 
+ 	return true;
+ }
++
++static bool ovs_ct_nat2_to_attr(const struct ovs_conntrack_info *info,
++			       struct sk_buff *skb)
++{
++	struct nlattr *start;
++
++	start = nla_nest_start(skb, OVS_CT_ATTR_NAT2);
++	if (!start)
++		return false;
++
++	if (info->nat & OVS_CT_SRC_NAT) {
++		if (nla_put_flag(skb, OVS_NAT2_ATTR_SRC))
++			return false;
++	} else if (info->nat & OVS_CT_DST_NAT) {
++		if (nla_put_flag(skb, OVS_NAT2_ATTR_DST))
++			return false;
++	} else {
++        return false;
++	}
++
++	if (!info->array)
++        return false;
++
++	if (info->array->count == 0 || info->array->count > OVS_MAX_CT_NAT2_ARRAY)
++        return false;
++
++	if (nla_put_u16(skb, OVS_NAT2_ATTR_ADDR_COUNT,
++					    info->array->count))
++        return false;
++
++    if (nla_put(skb, OVS_NAT2_ATTR_ADDR_ARRAY, sizeof(uint32_t)*info->array->count, 
++                info->array->addr))
++        return false;
++
++	nla_nest_end(skb, start);
++
++	return true;
++}
+ #endif
+ 
+ int ovs_ct_action_to_attr(const struct ovs_conntrack_info *ct_info,
+@@ -1400,7 +1588,9 @@ int ovs_ct_action_to_attr(const struct ovs_conntrack_info *ct_info,
+ 			return -EMSGSIZE;
+ 	}
+ #ifdef CONFIG_NF_NAT_NEEDED
+-	if (ct_info->nat && !ovs_ct_nat_to_attr(ct_info, skb))
++	if ((ct_info->nat & OVS_CT_NAT) && !ovs_ct_nat_to_attr(ct_info, skb))
++		return -EMSGSIZE;
++    else if ((ct_info->nat & OVS_CT_NAT2) && !ovs_ct_nat2_to_attr(ct_info, skb))
+ 		return -EMSGSIZE;
+ #endif
+ 	nla_nest_end(skb, start);
+@@ -1415,12 +1605,22 @@ void ovs_ct_free_action(const struct nlattr *a)
+ 	__ovs_ct_free_action(ct_info);
+ }
+ 
++static void ovs_array_free(void *addr)
++{
++	if (is_vmalloc_addr(addr))
++		vfree(addr);
++	else
++		kfree(addr);
++}
++
+ static void __ovs_ct_free_action(struct ovs_conntrack_info *ct_info)
+ {
+ 	if (ct_info->helper)
+ 		module_put(ct_info->helper->me);
+ 	if (ct_info->ct)
+ 		nf_ct_tmpl_free(ct_info->ct);
++	if (ct_info->array)
++		ovs_array_free(ct_info->array);
+ }
+ 
+ void ovs_ct_init(struct net *net)
+diff --git a/datapath/linux/compat/include/linux/openvswitch.h b/datapath/linux/compat/include/linux/openvswitch.h
+index 12260d8..88d1473 100644
+--- a/datapath/linux/compat/include/linux/openvswitch.h
++++ b/datapath/linux/compat/include/linux/openvswitch.h
+@@ -706,11 +706,14 @@ enum ovs_ct_attr {
+ 	OVS_CT_ATTR_HELPER,     /* netlink helper to assist detection of
+ 				   related connections. */
+ 	OVS_CT_ATTR_NAT,        /* Nested OVS_NAT_ATTR_* */
++	OVS_CT_ATTR_NAT2,        /* Nested OVS_NAT2_ATTR_* */
+ 	__OVS_CT_ATTR_MAX
+ };
+ 
+ #define OVS_CT_ATTR_MAX (__OVS_CT_ATTR_MAX - 1)
+ 
++#define OVS_MAX_CT_NAT2_ARRAY 64
++
+ /**
+  * enum ovs_nat_attr - Attributes for %OVS_CT_ATTR_NAT.
+  *
+@@ -748,6 +751,17 @@ enum ovs_nat_attr {
+ 
+ #define OVS_NAT_ATTR_MAX (__OVS_NAT_ATTR_MAX - 1)
+ 
++enum ovs_nat2_attr {
++	OVS_NAT2_ATTR_UNSPEC,
++	OVS_NAT2_ATTR_SRC,
++	OVS_NAT2_ATTR_DST,
++	OVS_NAT2_ATTR_ADDR_COUNT,
++	OVS_NAT2_ATTR_ADDR_ARRAY,
++	__OVS_NAT2_ATTR_MAX,
++};
++
++#define OVS_NAT2_ATTR_MAX (__OVS_NAT2_ATTR_MAX - 1)
++
+ /**
+  * enum ovs_action_attr - Action types.
+  *
+diff --git a/include/openvswitch/ofp-actions.h b/include/openvswitch/ofp-actions.h
+index 01b1790..1970fbc 100644
+--- a/include/openvswitch/ofp-actions.h
++++ b/include/openvswitch/ofp-actions.h
+@@ -25,6 +25,7 @@
+ #include "openvswitch/ofp-util.h"
+ #include "openvswitch/ofp-errors.h"
+ #include "openvswitch/types.h"
++#include "odp-netlink.h"
+ 
+ /* List of OVS abstracted actions.
+  *
+@@ -108,6 +109,7 @@
+     OFPACT(UNROLL_XLATE,    ofpact_unroll_xlate, ofpact, "unroll_xlate") \
+     OFPACT(CT,              ofpact_conntrack,   ofpact, "ct")           \
+     OFPACT(NAT,             ofpact_nat,         ofpact, "nat")          \
++    OFPACT(NAT2,             ofpact_nat2,         ofpact, "nat2")          \
+     OFPACT(OUTPUT_TRUNC,    ofpact_output_trunc,ofpact, "output_trunc") \
+                                                                         \
+     /* Debugging actions.                                               \
+@@ -652,6 +654,16 @@ struct ofpact_nat {
+     } range;
+ };
+ 
++/* OFPACT_NAT2.
++ *
++ * Used for NXAST_NAT2. */
++struct ofpact_nat2 {
++    struct ofpact ofpact;
++    uint16_t count;
++    uint16_t flags;  /* NX_NAT_F_* */
++    ovs_be32 addr[OVS_MAX_CT_NAT2_ARRAY];
++};
++
+ 
+ /* OFPACT_RESUBMIT.
+  *
+diff --git a/lib/dpif-netdev.c b/lib/dpif-netdev.c
+index ecc7cea..b09dfac 100644
+--- a/lib/dpif-netdev.c
++++ b/lib/dpif-netdev.c
+@@ -4594,6 +4594,7 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
+                 setlabel = nl_attr_get(b);
+                 break;
+             case OVS_CT_ATTR_NAT:
++            case OVS_CT_ATTR_NAT2:
+             case OVS_CT_ATTR_UNSPEC:
+             case __OVS_CT_ATTR_MAX:
+                 OVS_NOT_REACHED();
+diff --git a/lib/odp-util.c b/lib/odp-util.c
+index 6d29b67..c76a674 100644
+--- a/lib/odp-util.c
++++ b/lib/odp-util.c
+@@ -550,6 +550,81 @@ format_odp_tnl_push_action(struct ds *ds, const struct nlattr *attr)
+     ds_put_format(ds, ",out_port(%"PRIu32"))", data->out_port);
+ }
+ 
++static const struct nl_policy ovs_nat2_policy[] = {
++    [OVS_NAT2_ATTR_SRC] = { .type = NL_A_FLAG, .optional = true, },
++    [OVS_NAT2_ATTR_DST] = { .type = NL_A_FLAG, .optional = true, },
++    [OVS_NAT2_ATTR_ADDR_COUNT] = { .type = NL_A_U16, .optional = true, },
++    [OVS_NAT2_ATTR_ADDR_ARRAY] = { .type = NL_A_UNSPEC, .optional = true, },
++};
++
++static void
++format_odp_ct_nat2(struct ds *ds, const struct nlattr *attr)
++{
++    struct nlattr *a[ARRAY_SIZE(ovs_nat2_policy)];
++    uint16_t count, i;
++    uint32_t *array_be;
++
++    if (!nl_parse_nested(attr, ovs_nat2_policy, a, ARRAY_SIZE(a))) {
++        ds_put_cstr(ds, "nat2(error: nl_parse_nested() failed.)");
++        return;
++    }
++    
++    /* Both SNAT & DNAT may  be specified. */
++    if (a[OVS_NAT2_ATTR_SRC] && a[OVS_NAT2_ATTR_DST]) {
++        ds_put_cstr(ds, "nat2(error: Only one of \"src\" or \"dst\" may be present.)");
++        return;
++    }
++
++    /* Both SNAT & DNAT not be specified. */
++    if (!a[OVS_NAT2_ATTR_SRC] && !a[OVS_NAT2_ATTR_DST]) {
++        ds_put_cstr(ds, "nat2(error: Must one of \"src\" or \"dst\" may be present.)");
++        return;
++    }
++
++    /* MAX may not appear without MIN. */
++    if (!a[OVS_NAT2_ATTR_ADDR_COUNT] || !a[OVS_NAT2_ATTR_ADDR_ARRAY]) {
++        ds_put_cstr(ds, "nat2(error: no account and array.)");
++        return;
++    }
++
++    if (nl_attr_get_size(a[OVS_NAT2_ATTR_ADDR_COUNT]) != sizeof(uint16_t)) {
++        ds_put_cstr(ds, "nat2(error: count size)");
++        return;
++    }
++
++    count = nl_attr_get_u16(a[OVS_NAT2_ATTR_ADDR_COUNT]);
++	if (count == 0 || count > OVS_MAX_CT_NAT2_ARRAY) {
++        ds_put_cstr(ds, "nat2(error: count num)");
++        return;
++    }
++
++    if (nl_attr_get_size(a[OVS_NAT2_ATTR_ADDR_ARRAY]) != sizeof(ovs_be32)*count) {
++        ds_put_cstr(ds, "nat2(error: IP array size)");
++        return;
++    }
++
++    array_be = (uint32_t*)nl_attr_get(a[OVS_NAT2_ATTR_ADDR_ARRAY]);
++
++    ds_put_cstr(ds, "nat2");
++    ds_put_char(ds, '(');
++    if (a[OVS_NAT2_ATTR_SRC]) {
++        ds_put_cstr(ds, "src");
++    } else {
++        ds_put_cstr(ds, "dst");
++    }
++
++    if (count > 0) {
++        ds_put_cstr(ds, "=");
++        for (i=0; i<count; i++) {
++            ds_put_format(ds, IP_FMT, IP_ARGS(array_be[i]));
++            ds_put_format(ds, ":");
++        }
++        ds_chomp(ds, ':');
++    }
++    ds_put_char(ds, ')');
++}
++
++
+ static const struct nl_policy ovs_nat_policy[] = {
+     [OVS_NAT_ATTR_SRC] = { .type = NL_A_FLAG, .optional = true, },
+     [OVS_NAT_ATTR_DST] = { .type = NL_A_FLAG, .optional = true, },
+@@ -704,6 +779,7 @@ static const struct nl_policy ovs_conntrack_policy[] = {
+     [OVS_CT_ATTR_HELPER] = { .type = NL_A_STRING, .optional = true,
+                              .min_len = 1, .max_len = 16 },
+     [OVS_CT_ATTR_NAT] = { .type = NL_A_UNSPEC, .optional = true },
++    [OVS_CT_ATTR_NAT2] = { .type = NL_A_UNSPEC, .optional = true },
+ };
+ 
+ static void
+@@ -716,6 +792,7 @@ format_odp_conntrack_action(struct ds *ds, const struct nlattr *attr)
+     uint16_t zone;
+     bool commit;
+     const struct nlattr *nat;
++    const struct nlattr *nat2;
+ 
+     if (!nl_parse_nested(attr, ovs_conntrack_policy, a, ARRAY_SIZE(a))) {
+         ds_put_cstr(ds, "ct(error)");
+@@ -728,6 +805,7 @@ format_odp_conntrack_action(struct ds *ds, const struct nlattr *attr)
+     label = a[OVS_CT_ATTR_LABELS] ? nl_attr_get(a[OVS_CT_ATTR_LABELS]): NULL;
+     helper = a[OVS_CT_ATTR_HELPER] ? nl_attr_get(a[OVS_CT_ATTR_HELPER]) : NULL;
+     nat = a[OVS_CT_ATTR_NAT];
++    nat2 = a[OVS_CT_ATTR_NAT2];
+ 
+     ds_put_format(ds, "ct");
+     if (commit || zone || mark || label || helper || nat) {
+@@ -753,6 +831,9 @@ format_odp_conntrack_action(struct ds *ds, const struct nlattr *attr)
+         if (nat) {
+             format_odp_ct_nat(ds, nat);
+         }
++        else if (nat2) {
++            format_odp_ct_nat2(ds, nat2);
++        }
+         ds_chomp(ds, ',');
+         ds_put_cstr(ds, ")");
+     }
+@@ -1362,6 +1443,7 @@ scan_ct_nat(const char *s, struct ct_nat_params *p)
+     return n;
+ }
+ 
++//wx wx wx1
+ static void
+ nl_msg_put_ct_nat(struct ct_nat_params *p, struct ofpbuf *actions)
+ {
+diff --git a/lib/ofp-actions.c b/lib/ofp-actions.c
+index 15dbdec..0175a37 100644
+--- a/lib/ofp-actions.c
++++ b/lib/ofp-actions.c
+@@ -300,6 +300,8 @@ enum ofp_raw_action_type {
+ 
+     /* NX1.0+(36): struct nx_action_nat, ... */
+     NXAST_RAW_NAT,
++    /* NX1.0+(41): struct nx_action_nat2, ... */
++    NXAST_RAW_NAT2,
+ 
+     /* NX1.0+(39): struct nx_action_output_trunc. */
+     NXAST_RAW_OUTPUT_TRUNC,
+@@ -431,6 +433,7 @@ ofpact_next_flattened(const struct ofpact *ofpact)
+     case OFPACT_WRITE_METADATA:
+     case OFPACT_GOTO_TABLE:
+     case OFPACT_NAT:
++    case OFPACT_NAT2:
+         return ofpact_next(ofpact);
+ 
+     case OFPACT_CT:
+@@ -5205,8 +5208,9 @@ decode_NXAST_RAW_CT(const struct nx_action_conntrack *nac,
+         size_t ofpacts_len = conntrack->ofpact.len - sizeof(*conntrack);
+ 
+         OFPACT_FOR_EACH (a, conntrack->actions, ofpacts_len) {
+-            if (a->type != OFPACT_NAT || ofpact_get_NAT(a)->flags
+-                || ofpact_get_NAT(a)->range_af != AF_UNSPEC) {
++            if ((a->type != OFPACT_NAT || ofpact_get_NAT(a)->flags
++                || ofpact_get_NAT(a)->range_af != AF_UNSPEC) 
++                && (a->type != OFPACT_NAT2 || ofpact_get_NAT2(a)->flags)) {
+                 VLOG_WARN_RL(&rl, "CT action requires commit flag if actions "
+                              "other than NAT without arguments are specified.");
+                 error = OFPERR_OFPBAC_BAD_ARGUMENT;
+@@ -5251,6 +5255,8 @@ encode_CT(const struct ofpact_conntrack *conntrack,
+ 
+ static char * OVS_WARN_UNUSED_RESULT parse_NAT(char *arg, struct ofpbuf *,
+                                                enum ofputil_protocol * OVS_UNUSED);
++static char * OVS_WARN_UNUSED_RESULT parse_NAT2(char *arg, struct ofpbuf *,
++                                               enum ofputil_protocol * OVS_UNUSED);
+ 
+ /* Parses 'arg' as the argument to a "ct" action, and appends such an
+  * action to 'ofpacts'.
+@@ -5296,6 +5302,13 @@ parse_CT(char *arg, struct ofpbuf *ofpacts,
+             /* Update CT action pointer and length. */
+             ofpacts->header = ofpbuf_push_uninit(ofpacts, nat_offset);
+             oc = ofpacts->header;
++        } else if (!strcmp(key, "nat2")) {
++            const size_t nat_offset = ofpacts_pull(ofpacts);
++
++            error = parse_NAT2(value, ofpacts, usable_protocols);
++            /* Update CT action pointer and length. */
++            ofpacts->header = ofpbuf_push_uninit(ofpacts, nat_offset);
++            oc = ofpacts->header;
+         } else if (!strcmp(key, "exec")) {
+             /* Hide existing actions from ofpacts_parse_copy(), so the
+              * nesting can be handled transparently. */
+@@ -5334,6 +5347,7 @@ format_alg(int port, struct ds *s)
+ }
+ 
+ static void format_NAT(const struct ofpact_nat *a, struct ds *ds);
++static void format_NAT2(const struct ofpact_nat2 *a, struct ds *ds);
+ 
+ static void
+ format_CT(const struct ofpact_conntrack *a, struct ds *s)
+@@ -5363,6 +5377,11 @@ format_CT(const struct ofpact_conntrack *a, struct ds *s)
+         ds_put_char(s, ',');
+         actions_len -= OFPACT_ALIGN(action->len);
+         action = ofpact_next(action);
++    } else if (actions_len && action->type == OFPACT_NAT2) {
++        format_NAT2(ofpact_get_NAT2(action), s);
++        ds_put_char(s, ',');
++        actions_len -= OFPACT_ALIGN(action->len);
++        action = ofpact_next(action);
+     }
+     if (actions_len) {
+         ds_put_format(s, "%sexec(%s", colors.paren, colors.end);
+@@ -5727,6 +5746,198 @@ parse_NAT(char *arg, struct ofpbuf *ofpacts,
+     return NULL;
+ }
+ 
++
++/* Action structure for NXAST_NAT. */
++struct nx_action_nat2 {
++    ovs_be16 type;              /* OFPAT_VENDOR. */
++    ovs_be16 len;               /* At least 16. */
++    ovs_be32 vendor;            /* NX_VENDOR_ID. */
++    ovs_be16 subtype;           /* NXAST_NAT2. */
++    uint8_t  pad[2];            /* Must be zero. */
++    ovs_be16 flags;             /* Zero or more NX_NAT_F_* flags.
++                                 * Unspecified flag bits must be zero. */
++    ovs_be16 count;     /* NX_NAT_RANGE_* */
++    /* Followed by optional parameters as specified by 'count' */
++};
++OFP_ASSERT(sizeof(struct nx_action_nat2) == 16);
++
++static void
++encode_NAT2(const struct ofpact_nat2 *nat,
++           enum ofp_version ofp_version OVS_UNUSED,
++           struct ofpbuf *out)
++{
++    struct nx_action_nat2 *nan;
++    const size_t ofs = out->size;
++    uint16_t i;
++    uint16_t count = 0;
++
++    nan = put_NXAST_NAT2(out);
++    nan->flags = htons(nat->flags);
++    for (i=0; i<nat->count; i++)  {
++        if (nat->addr[i]) {
++            ovs_be32 *value = ofpbuf_put_uninit(out, sizeof *value);
++            *value = nat->addr[i];
++            count++;
++        }
++    }
++
++    pad_ofpat(out, ofs);
++    nan = ofpbuf_at(out, ofs, sizeof *nan);
++    nan->count = htons(count);
++}
++
++static enum ofperr
++decode_NXAST_RAW_NAT2(const struct nx_action_nat2 *nan,
++                     enum ofp_version ofp_version OVS_UNUSED,
++                     struct ofpbuf *out)
++{
++    struct ofpact_nat2 *nat;
++    const char *opts = (char *)(nan + 1);
++    uint16_t len = ntohs(nan->len) - sizeof *nan;
++    uint16_t i;
++
++    nat = ofpact_put_NAT2(out);
++    nat->flags = ntohs(nan->flags);
++    nat->count = ntohs(nan->count);
++
++    if (nat->count == 0 || nat->count > OVS_MAX_CT_NAT2_ARRAY) {
++        return OFPERR_OFPBAC_BAD_ARGUMENT;
++    }
++
++    /* Check for unknown or mutually exclusive flags. */
++    if ((nat->flags & ~NX_NAT_F_MASK)
++        || (nat->flags & NX_NAT_F_SRC && nat->flags & NX_NAT_F_DST)) {
++        return OFPERR_OFPBAC_BAD_ARGUMENT;
++    }
++
++#define NX_NAT_GET_OPT(DST, SRC, LEN, TYPE)                     \
++    (LEN >= sizeof(TYPE)                                        \
++     ? (memcpy(DST, SRC, sizeof(TYPE)), LEN -= sizeof(TYPE),    \
++        SRC += sizeof(TYPE))                                    \
++     : NULL)
++
++    for (i=0; i<nat->count && i<OVS_MAX_CT_NAT2_ARRAY; i++) {
++        if (!NX_NAT_GET_OPT(&nat->addr[i], opts, len, ovs_be32)) {
++            return OFPERR_OFPBAC_BAD_ARGUMENT;
++        }
++    }
++
++    return 0;
++}
++
++static void
++format_NAT2(const struct ofpact_nat2 *a, struct ds *ds)
++{
++    uint16_t i;
++
++    ds_put_format(ds, "%snat2%s", colors.paren, colors.end);
++
++    if (a->flags & (NX_NAT_F_SRC | NX_NAT_F_DST)) {
++        ds_put_format(ds, "%s(%s", colors.paren, colors.end);
++        ds_put_format(ds, a->flags & NX_NAT_F_SRC ? "%ssrc%s" : "%sdst%s",
++                      colors.param, colors.end);
++
++        ds_put_format(ds, "%s=%s", colors.param, colors.end);
++        for (i=0; i<a->count && i<OVS_MAX_CT_NAT2_ARRAY; i++) {
++
++            ds_put_format(ds, IP_FMT, IP_ARGS(a->addr[i]));
++            ds_put_char(ds, ':');
++        }
++
++        ds_chomp(ds, ':');
++
++        ds_put_format(ds, "%s)%s", colors.paren, colors.end);
++    }
++}
++
++static char * OVS_WARN_UNUSED_RESULT
++str_to_nat2(const char *s, struct ofpact_nat2 *on)
++{
++    int n = 0;
++    uint16_t i = 0;
++    int len = strlen(s);
++
++    while (1) {
++
++        if (ovs_scan_len(s, &n, IP_SCAN_FMT,
++                     IP_SCAN_ARGS(&on->addr[i]))) {
++            i++;
++            on->count = i;
++
++            if (n == len) {
++                break;
++            }
++
++            if (s[n] == ':') {
++                n++;
++                if (i >= OVS_MAX_CT_NAT2_ARRAY) {
++                    goto error;
++                }
++
++            }
++            else {
++                break;
++            }
++        }
++        else
++            break;
++    }
++
++    if (on->count == 0)
++        goto error;
++
++    if (strlen(s) != n) {
++        return xasprintf("garbage (%s) after nat2 \"%s\" (pos: %d)",
++                         &s[n], s, n);
++    }
++    return NULL;
++error:
++    return xasprintf("invalid nat2 \"%s\"", s);
++}
++
++/* Parses 'arg' as the argument to a "nat" action, and appends such an
++ * action to 'ofpacts'.
++ *
++ * Returns NULL if successful, otherwise a malloc()'d string describing the
++ * error.  The caller is responsible for freeing the returned string. */
++static char * OVS_WARN_UNUSED_RESULT
++parse_NAT2(char *arg, struct ofpbuf *ofpacts,
++          enum ofputil_protocol *usable_protocols OVS_UNUSED)
++{
++    struct ofpact_nat2 *on = ofpact_put_NAT2(ofpacts);
++    char *key, *value;
++
++    on->flags = 0;
++
++    while (ofputil_parse_key_value(&arg, &key, &value)) {
++        char *error = NULL;
++
++        if (!strcmp(key, "src")) {
++            on->flags |= NX_NAT_F_SRC;
++            error = str_to_nat2(value, on);
++        } else if (!strcmp(key, "dst")) {
++            on->flags |= NX_NAT_F_DST;
++            error = str_to_nat2(value, on);
++        } else {
++            error = xasprintf("invalid key \"%s\" in \"nat\" argument",
++                              key);
++        }
++        if (error) {
++            return error;
++        }
++    }
++    if (on->flags & NX_NAT_F_SRC && on->flags & NX_NAT_F_DST) {
++        return xasprintf("May only specify one of \"src\" or \"dst\".");
++    }
++    if (!(on->flags & (NX_NAT_F_SRC | NX_NAT_F_DST))) {
++            return xasprintf("Flags allowed must be with \"src\" or \"dst\".");
++        
++    }
++
++    return NULL;
++}
++
++//wenxu
+ /* Truncate output action. */
+ struct nx_action_output_trunc {
+     ovs_be16 type;              /* OFPAT_VENDOR. */
+@@ -6160,6 +6371,7 @@ ofpact_is_set_or_move_action(const struct ofpact *a)
+     case OFPACT_CLEAR_ACTIONS:
+     case OFPACT_CT:
+     case OFPACT_NAT:
++    case OFPACT_NAT2:
+     case OFPACT_CONTROLLER:
+     case OFPACT_DEC_MPLS_TTL:
+     case OFPACT_DEC_TTL:
+@@ -6238,6 +6450,7 @@ ofpact_is_allowed_in_actions_set(const struct ofpact *a)
+     case OFPACT_CONTROLLER:
+     case OFPACT_CT:
+     case OFPACT_NAT:
++    case OFPACT_NAT2:
+     case OFPACT_ENQUEUE:
+     case OFPACT_EXIT:
+     case OFPACT_UNROLL_XLATE:
+@@ -6471,6 +6684,7 @@ ovs_instruction_type_from_ofpact_type(enum ofpact_type type)
+     case OFPACT_DEBUG_RECIRC:
+     case OFPACT_CT:
+     case OFPACT_NAT:
++    case OFPACT_NAT2:
+     default:
+         return OVSINST_OFPIT11_APPLY_ACTIONS;
+     }
+@@ -7060,6 +7274,14 @@ ofpact_check__(enum ofputil_protocol *usable_protocols, struct ofpact *a,
+         return 0;
+     }
+ 
++    case OFPACT_NAT2: {
++
++        if (flow->dl_type != htons(ETH_TYPE_IP)) {
++            return OFPERR_OFPBAC_MATCH_INCONSISTENT;
++        }
++        return 0;
++    }
++
+     case OFPACT_CLEAR_ACTIONS:
+         return 0;
+ 
+@@ -7208,7 +7430,7 @@ ofpacts_verify_nested(const struct ofpact *a, enum ofpact_type outer_action)
+         VLOG_WARN("cannot set CT fields outside of ct action");
+         return OFPERR_OFPBAC_BAD_SET_ARGUMENT;
+     }
+-    if (a->type == OFPACT_NAT) {
++    if (a->type == OFPACT_NAT || a->type == OFPACT_NAT2) {
+         if (outer_action != OFPACT_CT) {
+             VLOG_WARN("Cannot have NAT action outside of \"ct\" action");
+             return OFPERR_OFPBAC_BAD_SET_ARGUMENT;
+@@ -7589,6 +7811,7 @@ ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
+     case OFPACT_DEBUG_RECIRC:
+     case OFPACT_CT:
+     case OFPACT_NAT:
++    case OFPACT_NAT2:
+     default:
+         return false;
+     }
+diff --git a/ofproto/ofproto-dpif-xlate.c b/ofproto/ofproto-dpif-xlate.c
+index a17047d..a533924 100644
+--- a/ofproto/ofproto-dpif-xlate.c
++++ b/ofproto/ofproto-dpif-xlate.c
+@@ -365,6 +365,9 @@ struct xlate_ctx {
+     /* Pointer to an embedded NAT action in a conntrack action, or NULL. */
+     struct ofpact_nat *ct_nat_action;
+ 
++    /* Pointer to an embedded NAT2 action in a conntrack action, or NULL. */
++    struct ofpact_nat2 *ct_nat2_action;
++
+     /* OpenFlow 1.1+ action set.
+      *
+      * 'action_set' accumulates "struct ofpact"s added by OFPACT_WRITE_ACTIONS.
+@@ -4479,6 +4482,7 @@ freeze_unroll_actions(const struct ofpact *a, const struct ofpact *end,
+         case OFPACT_DEBUG_RECIRC:
+         case OFPACT_CT:
+         case OFPACT_NAT:
++        case OFPACT_NAT2:
+             /* These may not generate PACKET INs. */
+             break;
+ 
+@@ -4543,56 +4547,71 @@ static void
+ put_ct_nat(struct xlate_ctx *ctx)
+ {
+     struct ofpact_nat *ofn = ctx->ct_nat_action;
++    struct ofpact_nat2 *ofn2 = ctx->ct_nat2_action;
+     size_t nat_offset;
+ 
+-    if (!ofn) {
+-        return;
+-    }
++    if (ofn) {
+ 
+-    nat_offset = nl_msg_start_nested(ctx->odp_actions, OVS_CT_ATTR_NAT);
+-    if (ofn->flags & NX_NAT_F_SRC || ofn->flags & NX_NAT_F_DST) {
+-        nl_msg_put_flag(ctx->odp_actions, ofn->flags & NX_NAT_F_SRC
++        nat_offset = nl_msg_start_nested(ctx->odp_actions, OVS_CT_ATTR_NAT);
++        if (ofn->flags & NX_NAT_F_SRC || ofn->flags & NX_NAT_F_DST) {
++            nl_msg_put_flag(ctx->odp_actions, ofn->flags & NX_NAT_F_SRC
+                         ? OVS_NAT_ATTR_SRC : OVS_NAT_ATTR_DST);
+-        if (ofn->flags & NX_NAT_F_PERSISTENT) {
+-            nl_msg_put_flag(ctx->odp_actions, OVS_NAT_ATTR_PERSISTENT);
+-        }
+-        if (ofn->flags & NX_NAT_F_PROTO_HASH) {
+-            nl_msg_put_flag(ctx->odp_actions, OVS_NAT_ATTR_PROTO_HASH);
+-        } else if (ofn->flags & NX_NAT_F_PROTO_RANDOM) {
+-            nl_msg_put_flag(ctx->odp_actions, OVS_NAT_ATTR_PROTO_RANDOM);
+-        }
+-        if (ofn->range_af == AF_INET) {
+-            nl_msg_put_be32(ctx->odp_actions, OVS_NAT_ATTR_IP_MIN,
++            if (ofn->flags & NX_NAT_F_PERSISTENT) {
++                nl_msg_put_flag(ctx->odp_actions, OVS_NAT_ATTR_PERSISTENT);
++            }
++            if (ofn->flags & NX_NAT_F_PROTO_HASH) {
++                nl_msg_put_flag(ctx->odp_actions, OVS_NAT_ATTR_PROTO_HASH);
++            } else if (ofn->flags & NX_NAT_F_PROTO_RANDOM) {
++                nl_msg_put_flag(ctx->odp_actions, OVS_NAT_ATTR_PROTO_RANDOM);
++            }
++            if (ofn->range_af == AF_INET) {
++                nl_msg_put_be32(ctx->odp_actions, OVS_NAT_ATTR_IP_MIN,
+                            ofn->range.addr.ipv4.min);
+-            if (ofn->range.addr.ipv4.max &&
+-                (ntohl(ofn->range.addr.ipv4.max)
+-                 > ntohl(ofn->range.addr.ipv4.min))) {
+-                nl_msg_put_be32(ctx->odp_actions, OVS_NAT_ATTR_IP_MAX,
++                if (ofn->range.addr.ipv4.max &&
++                    (ntohl(ofn->range.addr.ipv4.max)
++                    > ntohl(ofn->range.addr.ipv4.min))) {
++                    nl_msg_put_be32(ctx->odp_actions, OVS_NAT_ATTR_IP_MAX,
+                                 ofn->range.addr.ipv4.max);
+-            }
+-        } else if (ofn->range_af == AF_INET6) {
+-            nl_msg_put_unspec(ctx->odp_actions, OVS_NAT_ATTR_IP_MIN,
+-                              &ofn->range.addr.ipv6.min,
+-                              sizeof ofn->range.addr.ipv6.min);
+-            if (!ipv6_mask_is_any(&ofn->range.addr.ipv6.max) &&
+-                memcmp(&ofn->range.addr.ipv6.max, &ofn->range.addr.ipv6.min,
+-                       sizeof ofn->range.addr.ipv6.max) > 0) {
+-                nl_msg_put_unspec(ctx->odp_actions, OVS_NAT_ATTR_IP_MAX,
+-                                  &ofn->range.addr.ipv6.max,
+-                                  sizeof ofn->range.addr.ipv6.max);
++                }      
++            } else if (ofn->range_af == AF_INET6) {
++                nl_msg_put_unspec(ctx->odp_actions, OVS_NAT_ATTR_IP_MIN,
++                                  &ofn->range.addr.ipv6.min,
++                                  sizeof ofn->range.addr.ipv6.min);
++                if (!ipv6_mask_is_any(&ofn->range.addr.ipv6.max) &&
++                    memcmp(&ofn->range.addr.ipv6.max, &ofn->range.addr.ipv6.min,
++                           sizeof ofn->range.addr.ipv6.max) > 0) {
++                    nl_msg_put_unspec(ctx->odp_actions, OVS_NAT_ATTR_IP_MAX,
++                                      &ofn->range.addr.ipv6.max,
++                                      sizeof ofn->range.addr.ipv6.max);
++                }
++            }   
++            if (ofn->range_af != AF_UNSPEC && ofn->range.proto.min) {
++                nl_msg_put_u16(ctx->odp_actions, OVS_NAT_ATTR_PROTO_MIN,
++                               ofn->range.proto.min);
++                if (ofn->range.proto.max &&
++                    ofn->range.proto.max > ofn->range.proto.min) {
++                    nl_msg_put_u16(ctx->odp_actions, OVS_NAT_ATTR_PROTO_MAX,
++                                   ofn->range.proto.max);
++                }
+             }
+         }
+-        if (ofn->range_af != AF_UNSPEC && ofn->range.proto.min) {
+-            nl_msg_put_u16(ctx->odp_actions, OVS_NAT_ATTR_PROTO_MIN,
+-                           ofn->range.proto.min);
+-            if (ofn->range.proto.max &&
+-                ofn->range.proto.max > ofn->range.proto.min) {
+-                nl_msg_put_u16(ctx->odp_actions, OVS_NAT_ATTR_PROTO_MAX,
+-                               ofn->range.proto.max);
+-            }
++        nl_msg_end_nested(ctx->odp_actions, nat_offset);
++    } 
++    else if (ofn2) {
++        nat_offset = nl_msg_start_nested(ctx->odp_actions, OVS_CT_ATTR_NAT2);
++        if (ofn2->flags & NX_NAT_F_SRC || ofn2->flags & NX_NAT_F_DST) {
++			uint16_t count = (ofn2->count < OVS_MAX_CT_NAT2_ARRAY) ? ofn2->count : OVS_MAX_CT_NAT2_ARRAY;
++            nl_msg_put_flag(ctx->odp_actions, ofn2->flags & NX_NAT_F_SRC
++                        ? OVS_NAT2_ATTR_SRC : OVS_NAT2_ATTR_DST);
++            nl_msg_put_u16(ctx->odp_actions, OVS_NAT2_ATTR_ADDR_COUNT,
++                           ofn2->count);
++            nl_msg_put_unspec(ctx->odp_actions, OVS_NAT2_ATTR_ADDR_ARRAY,
++                           ofn2->addr, count*sizeof(ovs_be32));
+         }
++
++        nl_msg_end_nested(ctx->odp_actions, nat_offset);
+     }
+-    nl_msg_end_nested(ctx->odp_actions, nat_offset);
++
+ }
+ 
+ static void
+@@ -4611,6 +4630,7 @@ compose_conntrack_action(struct xlate_ctx *ctx, struct ofpact_conntrack *ofc)
+ 
+     /* Process nested actions first, to populate the key. */
+     ctx->ct_nat_action = NULL;
++    ctx->ct_nat2_action = NULL;
+     ctx->wc->masks.ct_mark = 0;
+     ctx->wc->masks.ct_label.u64.hi = ctx->wc->masks.ct_label.u64.lo = 0;
+     do_xlate_actions(ofc->actions, ofpact_ct_get_action_len(ofc), ctx);
+@@ -4631,6 +4651,7 @@ compose_conntrack_action(struct xlate_ctx *ctx, struct ofpact_conntrack *ofc)
+     put_ct_helper(ctx->odp_actions, ofc);
+     put_ct_nat(ctx);
+     ctx->ct_nat_action = NULL;
++    ctx->ct_nat2_action = NULL;
+     nl_msg_end_nested(ctx->odp_actions, ct_offset);
+ 
+     /* Restore the original ct fields in the key. These should only be exposed
+@@ -4727,6 +4748,7 @@ recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
+     case OFPACT_UNROLL_XLATE:
+     case OFPACT_CT:
+     case OFPACT_NAT:
++    case OFPACT_NAT2:
+     case OFPACT_DEBUG_RECIRC:
+     case OFPACT_METER:
+     case OFPACT_CLEAR_ACTIONS:
+@@ -5092,6 +5114,11 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
+             ctx->ct_nat_action = ofpact_get_NAT(a);
+             break;
+ 
++        case OFPACT_NAT2:
++            /* This will be processed by compose_conntrack_action(). */
++            ctx->ct_nat2_action = ofpact_get_NAT2(a);
++            break;
++
+         case OFPACT_DEBUG_RECIRC:
+             ctx_trigger_freeze(ctx);
+             a = ofpact_next(a);
+@@ -5429,6 +5456,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
+         .conntracked = false,
+ 
+         .ct_nat_action = NULL,
++        .ct_nat2_action = NULL,
+ 
+         .action_set_has_group = false,
+         .action_set = OFPBUF_STUB_INITIALIZER(action_set_stub),

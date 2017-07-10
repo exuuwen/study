@@ -1,0 +1,5 @@
+ip,in_port=1 actions=ct(table=1,zone=1,nat)
+ip,in_port=2 actions=ct(table=1,zone=1,nat)
+table=1, ct_state=+est+trk,ip,in_port=1 actions=output:2
+table=1, ct_state=+est+trk,ip,in_port=2 actions=output:1
+table=1, ct_state=+new+trk,icmp,in_port=1, actions=ct(commit,zone=1,nat2(src=2.2.2.1:2.2.2.2:2.2.2.3:2.2.2.4)),output:2

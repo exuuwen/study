@@ -1,0 +1,197 @@
+自定义action的工作主要有: 
+1. 定义openflow action
+所有action定义在lib/ofp-actions.c
+
+定义openflow action
++    /* OF1.0(28): ovs_be32. */
++    OFPAT_RAW10_HANDLE_EXAMPLE,
++    /* OF1.1(28): ovs_be32. */
++    OFPAT_RAW11_HANDLE_EXAMPLE,
++    /* OF1.2-1.4(28): ovs_be32. */
++    OFPAT_RAW12_HANDLE_EXAMPLE,
+
+构造出
+put_OFPATx_HANDLE_EXAMPLE: 根据ovs_be32构造出openflow消息
+
+
+2. 定义openvswitch action 
+所有action定义在include/openvswitch/ofp-actions.h中
+
++    OFPACT(HANDLE_EXAMPLE,  ofpact_handle_example, ofpact, "handle_example")       \
+构造出
+OFPACT_HANDLE_EXAMPLE
+ofpact_put_OFPACT_HANDLE_EXAMPLE: 将ofpbuf转化为struct ofpact_handle_example: openflow消息转化openvswitch action
+ofpact_get_OFPCAT_HANDLE_EXAMPLE: 从ofpact获取为struct ofpact_handle_example: 获取openvswitch action
+ 
++struct ofpact_handle_example {
++    struct ofpact ofpact;
++    uint32_t data;
++};
+
+
+3. openflow action与openvswitch action转化
+openflow action 与openvswitch action 有对应关系在ofpact_map中, 可以理解为多个版本openflow对应一个openvswitch action
++        { OFPACT_HANDLE_EXAMPLE, 28 },
+
++        { OFPACT_HANDLE_EXAMPLE, 28 },
+
++        { OFPACT_HANDLE_EXAMPLE, 28 },
+
+a. ofpact_decode---->decode_OFPAT_RAW_HANDLE_EXAMPLE: 解openflow消息生成openvswitch action
+2. encode_ofpact---->encode_HANDLE_EXAMPLE: 从ofpact_type构造openflow
+3. ofpact_parse---->parse_HANDLE_EXAMPLE: 从字符串解析构造openvswitch action
+4. ofpackt_format---->format_HANDLE_EXAMPLE: 将openvswitch action转化为string
+
+
++static enum ofperr
++decode_OFPAT_RAW10_HANDLE_EXAMPLE(ovs_be32 data,
++                            enum ofp_version ofp_version OVS_UNUSED,
++                            struct ofpbuf *out)
++{
++    ofpact_put_HANDLE_EXAMPLE(out)->data = ntohl(data);
++    return 0;
++}
++ 
++static enum ofperr
++decode_OFPAT_RAW11_HANDLE_EXAMPLE(ovs_be32 data,
++                            enum ofp_version ofp_version OVS_UNUSED,
++                            struct ofpbuf *out)
++{
++    ofpact_put_HANDLE_EXAMPLE(out)->data = ntohl(data);
++    return 0;
++}
++ 
++static enum ofperr
++decode_OFPAT_RAW12_HANDLE_EXAMPLE(ovs_be32 data,
++                            enum ofp_version ofp_version OVS_UNUSED,
++                            struct ofpbuf *out)
++{
++    ofpact_put_HANDLE_EXAMPLE(out)->data = ntohl(data);
++    return 0;
++}
++
++static void
++encode_HANDLE_EXAMPLE(const struct ofpact_handle_example *ofpact,
++                  enum ofp_version ofp_version, struct ofpbuf *out)
++{
++    if (ofp_version == OFP10_VERSION) {
++        put_OFPAT10_HANDLE_EXAMPLE(out, htonl(ofpact->data));
++    } else if (ofp_version == OFP11_VERSION) {
++        put_OFPAT11_HANDLE_EXAMPLE(out, htonl(ofpact->data));
++    } else {
++        put_OFPAT12_HANDLE_EXAMPLE(out, htonl(ofpact->data));
++    }
++}
++ 
++static char * OVS_WARN_UNUSED_RESULT
++parse_HANDLE_EXAMPLE(char *arg, struct ofpbuf *ofpacts,
++                 enum ofputil_protocol *usable_protocols OVS_UNUSED)
++{
++    return str_to_u32(arg, &ofpact_put_HANDLE_EXAMPLE(ofpacts)->data);
++}
++ 
++static void
++format_HANDLE_EXAMPLE(const struct ofpact_handle_example *a, struct ds *s)
++{
++    ds_put_format(s, "%shandle_example:%s0x%x",
++                  colors.param, colors.end, a->data);
++}
++ 
++
+
+4. 执行action操作
+
+修改flow
++++ b/include/openvswitch/flow.h
+@@ -94,7 +94,7 @@ struct flow {
+	 ........
+     uint32_t ct_mark;           /* Connection mark.*/
+-    uint8_t pad1[4];            /* Pad to 64 bits. */
++    ovs_be32 handle_example;            /* Pad to 64 bits. */
+     ovs_u128 ct_label;          /* Connection label. */
+
+
+--- a/ofproto/ofproto-dpif-xlate.c
++++ b/ofproto/ofproto-dpif-xlate.c
+do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
+     }
+     /* dl_type already in the mask, not set below. */
+
++    flow->handle_example = 0;
++
+     OFPACT_FOR_EACH (a, ofpacts, ofpacts_len) {
+         struct ofpact_controller *controller;
+         const struct ofpact_metadata *metadata;
+@@ -4908,6 +4912,12 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
+             }
+             break;
+
++        case OFPACT_HANDLE_EXAMPLE: {
++       	 flow->handle_example = htonl(ofpact_get_HANDLE_EXAMPLE(a)->data);
++            break;
++        }
++
+
+--- a/datapath/linux/compat/include/linux/openvswitch.h
++++ b/datapath/linux/compat/include/linux/openvswitch.h
+@@ -639,6 +639,10 @@ struct ovs_action_push_vlan {
+ 	__be16 vlan_tci;	/* 802.1Q TCI (VLAN ID and priority). */
+ };
+ 
++struct ovs_action_handle_example {
++	__be32 data;	
++};
++
+
+
+commit it
++static void commit_set_handle_example(ovs_be32 data, struct ofpbuf *odp_actions) 
++{
++    struct ovs_action_handle_example handle;
++
++    if (data) {
++        handle.data = data;
++        nl_msg_put_unspec(odp_actions, OVS_ACTION_ATTR_HANDLE_EXAMPLE,
++                          &handle, sizeof handle);
++    }
++}
++
+ /* If any of the flow key data that ODP actions can modify are different in
+  * 'base' and 'flow', appends ODP actions to 'odp_actions' that change the flow
+  * key from 'base' into 'flow', and then changes 'base' the same way.  Does not
+@@ -5954,6 +5972,7 @@ commit_odp_actions(const struct flow *flow, struct flow *base,
+     commit_vlan_action(flow->vlan_tci, base, odp_actions, wc);
+     commit_set_priority_action(flow, base, odp_actions, wc, use_masked);
+     commit_set_pkt_mark_action(flow, base, odp_actions, wc, use_masked);
++    commit_set_handle_example(flow->handle_example, odp_actions);
+
+     return slow1 ? slow1 : slow2;
+ }
+
+
+in the datapath
+
++++ b/datapath/actions.c
+@@ -265,6 +265,12 @@ static int push_vlan(struct sk_buff *skb, struct sw_flow_key *key,
+                 ntohs(vlan->vlan_tci) & ~VLAN_TAG_PRESENT);
+ }
+
++static int handle_example(struct sk_buff *skb, const struct ovs_action_handle_example *handle)
++{
++   printk("haha pkt len %u, with data: 0x%x\n", skb->len, ntohl(handle->data));
++   return 0;
++}
++
+ /* 'src' is already properly masked. */
+ static void ether_addr_copy_masked(u8 *dst_, const u8 *src_, const u8 *mask_)
+ {
+@@ -1136,6 +1142,10 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
+            err = push_vlan(skb, key, nla_data(a));
+            break;
+
++       case OVS_ACTION_ATTR_HANDLE_EXAMPLE:
++           err = handle_example(skb, nla_data(a));
++           break;
+
+
+

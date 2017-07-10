@@ -1,0 +1,28 @@
+<LWNAS-01-Test-A10> display mac
+<LWNAS-01-Test-A10> display vlan
+
+<LWNAS-01-Test-A10> sys
+Enter system view, return user view with return command.
+[*LWNAS-01-Test-A10-vlan201]vlan 200
+[*LWNAS-01-Test-A10-vlan200]port 10GE1/0/13
+[*LWNAS-01-Test-A10-vlan200]port 10GE1/0/15
+[*LWNAS-01-Test-A10-vlan200]port 10GE1/0/22 
+[*LWNAS-01-Test-A10-vlan200]quit
+[*LWNAS-01-Test-A10]commit
+[~LWNAS-01-Test-A10]display vlan 200
+--------------------------------------------------------------------------------
+U: Up;         D: Down;         TG: Tagged;         UT: Untagged;
+MP: Vlan-mapping;               ST: Vlan-stacking;
+#: ProtocolTransparent-vlan;    *: Management-vlan;
+MAC-LRN: MAC-address learning;  STAT: Statistic;
+BC: Broadcast; MC: Multicast;   UC: Unknown-unicast;
+FWD: Forward;  DSD: Discard;
+--------------------------------------------------------------------------------
+
+VID          Ports                                                          
+--------------------------------------------------------------------------------
+ 200         UT:10GE1/0/13(U)   10GE1/0/15(U)   10GE1/0/22(U)                   
+                                                                                
+VID  Type     Status  Property  MAC-LRN STAT    BC  MC  UC  Description
+--------------------------------------------------------------------------------
+ 200 common   enable  default   enable  disable FWD FWD FWD VLAN 0200   
