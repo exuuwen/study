@@ -131,6 +131,8 @@ git rebase -i HEAD~2 #把最近两个commit 整合成一个 #修改某一个comm
 # ./scripts/checkpatch.pl ./0001-xxxx.patch
 # git send-email [--identity=test] 0001-xxxx.patch --to xxx@163.com
 
+smtpass 有时候是web里的  设置-->客户端授权码
+
 
 7. server example
 a. 新仓库

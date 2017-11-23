@@ -18,6 +18,9 @@ then
 elif  [ $1 = "kernel" ]
 then
 	exec ssh root@106.75.96.146
+elif  [ $1 = "p4" ]
+then
+	exec ssh root@106.75.18.149
 else
 	echo "parmater should be jumper/devel/p/kernel"
 fi

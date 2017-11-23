@@ -74,6 +74,7 @@ static struct nf_conntrack_helper test = {
     .name = "test",
     .me = THIS_MODULE,
     .tuple.src.l3num = AF_INET,
+    //because helper = __nf_ct_helper_find(&ct->tuplehash[IP_CT_DIR_REPLY].tuple);
     .tuple.src.u.tcp.port = cpu_to_be16(PORT),
     .tuple.dst.protonum = IPPROTO_TCP,
     .help = test_help,
