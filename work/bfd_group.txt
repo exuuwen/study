@@ -1,0 +1,37 @@
+ovs-ofctl mod-group test-br 'group_id=1,type=select,bucket=watch_port:1,actions=mod_dl_dst:5a:19:fd:00:8b:d2,output:1,bucket=watch_port:2,actions=mod_dl_dst:56:39:a9:a6:08:e4,output:2' -Oopenflow13
+ovs-vsctl set in veth1 bfd:enable=true
+
+97770d26-310b-4a1b-b2cc-f6b3fed6eb0f
+    Bridge test-br
+        Port "veth2"
+            Interface "veth2"
+        Port test-br
+            Interface test-br
+                type: internal
+        Port "veth1"
+            Interface "veth1"
+    Bridge "c2"
+        Port "veth22"
+            Interface "veth22"
+        Port "c2"
+            Interface "c2"
+                type: internal
+        Port "ethc2"
+            Interface "ethc2"
+                type: internal
+    Bridge "c1"
+        Port "veth11"
+            Interface "veth11"
+        Port "ethc1"
+            Interface "ethc1"
+                type: internal
+        Port "c1"
+            Interface "c1"
+                type: internal
+
+
+ ovs-ofctl dump-flows test-br
+cookie=0x0, duration=9321.556s, table=0, n_packets=25134241, n_bytes=657052857484, idle_age=197, in_port=LOCAL actions=group:1
+cookie=0x0, duration=9301.949s, table=0, n_packets=1691648, n_bytes=119878212, idle_age=0, in_port=2 actions=LOCAL
+cookie=0x0, duration=9299.030s, table=0, n_packets=1887455, n_bytes=134113166, idle_age=1, in_port=1 actions=LOCAL
+

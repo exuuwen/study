@@ -1,0 +1,304 @@
+4. computer system
+a. stages
+1).Fetch: The fetch stage reads the bytes of an instruction from memory, using the
+program counter (PC) as the memory address. From the instruction it
+extracts the two 4-bit portions of the instruction specifier byte, referred
+to as icode (the instruction code) and ifun (the instruction function).
+It possibly fetches a register specifier byte, giving one or both of the
+register operand specifiers rA and rB. It also possibly fetches a 4-byte
+constant word valC. It computes valP to be the address of the instruction
+following the current one in sequential order. That is, valP equals the
+value of the PC plus the length of the fetched instruction.
+
+2).Decode: The decode stage reads up to two operands from the register file, giving
+values valA and/or valB. Typically, it reads the registers designated by
+instruction fields rA and rB, but for some instructions it reads register
+%esp .
+
+3).Execute: In the execute stage, the arithmetic/logic unit (ALU) either performs the
+operation specified by the instruction (according to the value of ifun),
+computes the effective address of a memory reference, or increments or
+decrements the stack pointer. We refer to the resulting value as valE. The
+condition codes are possibly set. For a jump instruction, the stage tests
+the condition codes and branch condition (given by ifun) to see whether
+or not the branch should be taken.
+
+4).Memory: The memory stage may write data to memory, or it may read data from
+memory. We refer to the value read as valM.
+
+5).Write back: The write-back stage writes up to two results to the register file.
+
+6).PC update: The PC is set to the address of the next instruction.
+
+b. pipe line
+limitation:
+1). nonuniform stage delays
+2). overhead
+3). logical depen-dencies
+4.5
+
+
+5. optimize
+a. 
+memory alias: if xp is eqaul yp
+void twiddle1(int *xp, int *yp)
+{
+	*xp += *yp;
+	*xp += *yp;
+}
+
+void twiddle2(int *xp, int *yp)
+{
+	*xp += 2* *yp;
+}
+
+size affect: if int f() { value++}
+int f();
+
+int func1() {
+	return f() + f() + f() + f();
+}
+
+int func2() {
+	return 4*f();
+}
+
+
+b. example
+void combine1(vec_ptr v, data_t *dest)
+{
+	long int i;
+
+	*dest = IDENT;
+	for (i = 0; i < vec_length(v); i++) {
+		data_t val;
+		get_vec_element(v, i, &val);
+		*dest = *dest OP val;
+	}
+}
+1).Eliminating Loop Inefficiencies
+/* Move call to vec_length out of loop */
+void combine2(vec_ptr v, data_t *dest)
+{
+	long int i;
+	long int length = vec_length(v);
+
+	*dest = IDENT;
+	for (i = 0; i < length; i++) {
+		data_t val;
+		get_vec_element(v, i, &val);
+		*dest = *dest OP val;
+	}
+}
+2).Reducing Procedure Calls
+/* Direct access to vector data */
+void combine3(vec_ptr v, data_t *dest)
+{
+	long int i;
+	long int length = vec_length(v);
+	data_t *data = get_vec_start(v);
+
+	*dest = IDENT;
+	for (i = 0; i < length; i++) {
+		*dest = *dest OP data[i];
+	}
+}
+3).Eliminating Unneeded Memory References
+/* Accumulate result in local variable */
+void combine4(vec_ptr v, data_t *dest)
+{
+	long int i;
+	long int length = vec_length(v);
+	data_t *data = get_vec_start(v);
+	data_t acc = IDENT;
+
+	for (i = 0; i < length; i++) {
+		acc = acc OP data[i];
+	}
+	*dest = acc;
+}
+4).unrolling loop
+/* Unroll loop by 2 */
+void combine5(vec_ptr v, data_t *dest)
+{
+	long int i;
+	long int length = vec_length(v);
+	long int limit = length-1;
+	data_t *data = get_vec_start(v);
+	data_t acc = IDENT;
+
+	/* Combine 2 elements at a time */
+	for (i = 0; i < limit; i+=2) {
+		acc = acc OP (data[i] OP data[i+1]);
+	}
+	/* Finish any remaining elements */
+	for (; i < length; i++) {
+		acc = acc OP data[i];
+	}
+	*dest = acc;
+}
+
+c. condition move to reduce branch prediction
+/* Rearrange two vectors so that for each i, b[i] >= a[i] */
+void minmax1(int a[], int b[], int n) {
+	int i;
+	for (i = 0; i < n; i++) {
+		if (a[i] > b[i]) {
+			int t = a[i];
+			a[i] = b[i];
+			b[i] = t;
+		}
+	}
+}
+
+/* Rearrange two vectors so that for each i, b[i] >= a[i] */
+void minmax2(int a[], int b[], int n) {
+	int i;
+	for (i = 0; i < n; i++) {
+		int min = a[i] < b[i] ? a[i] : b[i];
+		int max = a[i] < b[i] ? b[i] : a[i];
+		a[i] = min;
+		b[i] = max;
+	}
+}
+
+d. write_read
+/* Write to dest, read from src */
+void write_read(int *src, int *dest, int n)
+{
+	int cnt = n;
+	int val = 0;
+
+	while (cnt--) {
+		*dest = val;
+		val = (*src)+1;
+	}
+}
+
+if src is equal dest, there will be bad performace.
+The store unit contains a store buffer
+containing the addresses and data of the store operations that have been issued
+to the store unit, but have not yet been completed, where completion involves
+updating the data cache. This buffer is provided so that a series of store operations
+can be executed without having to wait for each one to update the cache. When
+a load operation occurs, it must check the entries in the store buffer for matching
+addresses. If it finds a match (meaning that any of the bytes being written have the
+same address as any of the bytes being read), it retrieves the corresponding data
+entry as the result of the load operation.
+
+6. memory
+6.1
+a. type
+volatile
+sram: cache
+dram->sdram->ddr2/3: main memory
+
+non-volatile
+rom->prom->eprom->eeprom->flash->ssd
+
+program in rom: firmwire
+
+b. cpu access main memory
+bus interface of cpu---system bus---> I/O brdige ---memory bus---> main memory
+read:
+movl A %eax
+1).CPU places address A on the memory bus.
+2).Main memory reads A from the bus, retrieves word x, and places it on the bus.
+3).CPU reads word x from the bus, and copies it into register %eax
+
+movl %eax A
+1).CPU places address A on the memory bus. Main memory reads it and waits for the data word.
+2).CPU places data word y on the bus.
+3).Main memory reads data word y from the bus and stores it at address A.
+
+c. hardisk
+sector-->track-->surface-->platter-->disk
+
+I/O bridge --(I/O bus [PCI/PCIE])---> Host bus adaptor(SCSI/SATA) --> hardisk
+(a) The CPU initiates a disk read by writing a command, logical block number, and
+destination memory address to the memory-mapped address associated with the disk.
+
+The CPU issues commands to I/O devices using a technique called memory-
+mapped I/O (Figure 6.12(a)). In a system with memory-mapped I/O, a block of
+addresses in the address space is reserved for communicating with I/O devices.
+Each of these addresses is known as an I/O port. Each device is associated with
+(or mapped to) one or more ports when it is attached to the bus.
+As a simple example, suppose that the disk controller is mapped to port 0xa0.
+Then the CPU might initiate a disk read by executing three store instructions to
+address 0xa0: The first of these instructions sends a command word that tells the
+disk to initiate a read, along with other parameters such as whether to interrupt
+the CPU when the read is finished. (We will discuss interrupts in Section 8.1.)
+The second instruction indicates the logical block number that should be read.
+The third instruction indicates the main memory address where the contents of
+the disk sector should be stored.
+(b) The disk controller reads the sector and performs a DMA transfer into main memory.
+(c) When the DMA transfer is complete, the disk controller notifies the CPU with an interrupt.
+
+6.2 locatliy
+a.
+Locality is typically described as having two distinct forms: temporal locality
+and spatial locality. In a program with good temporal locality, a memory location
+that is referenced once is likely to be referenced again multiple times in the near
+future. In a program with good spatial locality, if a memory location is referenced
+once, then the program is likely to reference a nearby memory location in the near
+future.
+
+At the hardware level, the
+principle of locality allows computer designers to speed up main memory accesses
+by introducing small fast memories known as cache memories that hold blocks of
+the most recently referenced instructions and data items. At the operating system
+level, the principle of locality allows the system to use the main memory as a cache
+
+b. cache miss type
+code miss
+conflict miss
+capacity miss
+
+of the most recently referenced chunks of the virtual address space. Similarly, the
+operating system uses main memory to cache the most recently used disk blocks in
+the disk file system. The principle of locality also plays a crucial role in the design
+of application programs. For example, Web browsers exploit temporal locality by
+caching recently referenced documents on a local disk.
+ 
+
+c. cache
+
+cache0
+C = S × E × B
+1). Direct-Mapped Caches: E=1
+2). Set Associative Caches: 1 < E < C/B
+3). Full Associative Caches: S=1
+
+Suppose we write a word w that is already cached (a write hit). After the cache updates its copy of w, what
+does it do about updating the copy of w in the next lower level of the hierarchy?
+The simplest approach, known as write-through, is to immediately write w’s cache
+block to the next lower level. While simple, write-through has the disadvantage
+of causing bus traffic with every write. Another approach, known as write-back,
+defers the update as long as possible by writing the updated block to the next lower
+level only when it is evicted from the cache by the replacement algorithm. Because
+of locality, write-back can significantly reduce the amount of bus traffic, but it has
+the disadvantage of additional complexity. The cache must maintain an additional
+dirty bit for each cache line that indicates whether or not the cache block has been
+modified.
+Another issue is how to deal with write misses. One approach, known as write-
+allocate, loads the corresponding block from the next lower level into the cache
+and then updates the cache block. Write-allocate tries to exploit spatial locality
+of writes, but it has the disadvantage that every miss results in a block transfer
+from the next lower level to cache. The alternative, known as no-write-allocate,
+bypasses the cache and writes the word directly to the next lower level. Write-
+through caches are typically no-write-allocate. Write-back caches are typically
+write-allocate.
+
+cache1,2
+
+
+d. frendly code
+1. Make the common case go fast. Programs often spend most of their time in a
+few core functions. These functions often spend most of their time in a few
+loops. So focus on the inner loops of the core functions and ignore the rest.
+2. Minimize the number of cache misses in each inner loop. All other things being
+equal, such as the total number of loads and stores, loops with better miss rates
+will run faster.
+
+
+7. linking

@@ -1,0 +1,11 @@
+wget http://static.ucloud.cn/kernel/2.6.32-279.19.37.el6.ucloud.x86_64.tar.gz
+wget http://static.ucloud.cn/kernel/4.1.0-10.el7.ucloud.x86_64.tar.gz
+
+172.17.150.248 static matchine
+
+switch: 8610
+ssh leo.xu@192.168.148.206
+
+
+106.75.27.63
+scl enable devtoolset-3 /bin/bash

@@ -1,0 +1,15 @@
+[Unit]
+Description=Open vSwitch
+PartOf=network.target
+BindsTo=ovsdb-server.service
+BindsTo=ovs-vswitchd.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/true
+ExecReload=/bin/true
+ExecStop=/bin/true
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

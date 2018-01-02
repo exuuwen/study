@@ -1,0 +1,10 @@
+PING 172.27.167.1 (172.27.167.1) 56(84) bytes of data.
+64 bytes from 172.27.167.1: icmp_seq=1 ttl=254 time=1.28 ms
+64 bytes from 172.27.167.1: icmp_seq=2 ttl=254 time=0.890 ms
+64 bytes from 172.27.167.1: icmp_seq=3 ttl=254 time=1.37 ms
+64 bytes from 172.27.167.1: icmp_seq=4 ttl=254 time=1.32 ms
+64 bytes from 172.27.167.1: icmp_seq=5 ttl=254 time=0.848 ms
+
+--- 172.27.167.1 ping statistics ---
+5 packets transmitted, 5 received, 0% packet loss, time 3998ms
+rtt min/avg/max/mdev = 0.848/1.144/1.378/0.229 ms

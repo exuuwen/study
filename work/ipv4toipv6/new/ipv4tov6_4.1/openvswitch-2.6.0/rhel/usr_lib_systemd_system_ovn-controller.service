@@ -1,0 +1,20 @@
+#
+# You may override the following variables to customize ovn-controller behavior:
+#
+#   OVS_DB - Set this variable to the location of the ovsdb server that is
+#            serving the Open_vSwitch database for the local ovs-vswitchd.
+#            See the manpage for ovn-controller for more details on the
+#            format for the db location.
+#
+
+[Unit]
+Description=OVN controller daemon
+After=syslog.target
+Requires=openvswitch.service
+After=openvswitch.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/share/openvswitch/scripts/ovn-ctl start_controller
+ExecStop=/usr/share/openvswitch/scripts/ovn-ctl stop_controller

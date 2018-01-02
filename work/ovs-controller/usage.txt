@@ -1,0 +1,1 @@
+gcc -std=gnu99 -I.    -I ./include  -Wstrict-prototypes -Wall -Wextra -Wno-sign-compare -Wpointer-arith -Wswitch-enum -Wunused-parameter -Wbad-function-cast -Wcast-align -Wmissing-prototypes -Wmissing-field-initializers -fno-strict-aliasing    -g -O2 -o ovs-controller ovs-controller.c traceroute-switch.c -lopenvswitch -lcap-ng -lssl -lcrypto -lpthread -lrt -lm
