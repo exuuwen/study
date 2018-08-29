@@ -1,0 +1,33 @@
+:tag {ident}            "跳转到指定的标签
+:tags                   "显示标签栈
+CTRL-]                  "跳转到当前光标下的标签
+CTRL-T 			"跳到标签栈中较早的标签 
+
+:stag {ident}		"split 跳转
+CTRL-W-]		"split 跳转
+
+:tnext                  "多个匹配跳到下一个
+:tfirst			go to first match
+:[count]tprevious	go to [count] previous match
+:[count]tnext		go to [count] next match
+:tlast			go to last match
+
+gD: 跳到局部变量定义
+
+
+:set tags=~/proj/tags  "设置当前tags
+
+
+
+:cs add {file|dir}
+
+:cs find {querytype} {name}
+{querytype} 即相对应于实际的cscope行接口数字，同时也相对应于nvi命令：
+0或者s   —— 查找这个C符号
+1或者g  —— 查找这个定义
+2或者d  —— 查找被这个函数调用的函数（们）
+3或者c  —— 查找调用这个函数的函数（们）
+4或者t   —— 查找这个字符串
+6或者e  —— 查找这个egrep匹配模式
+7或者f   —— 查找这个文件
+8或者i   —— 查找#include这个文件的文件（们）

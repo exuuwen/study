@@ -1,0 +1,5 @@
+
+# ./test
+pid:24010, user info:hahahhahah wx wx!, addr:30044176
+
+# insmod mem.ko  "pids=24010" "addr=30044176"

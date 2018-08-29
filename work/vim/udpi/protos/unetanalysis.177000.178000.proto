@@ -1,0 +1,198 @@
+package ucloud.unetanalysis;
+
+import "ucloud.proto";
+
+enum MessageType {
+	BEGINNING_ID = 177000;
+    
+    RECORD_STATS_REQUEST = 177001;                                              // 上报数据请求      
+	RECORD_STATS_EX_REQUEST = 177002;    
+	GET_NET_ITEM_STATS_REQUEST= 177003;                                              // 前台向access请求查询指标 
+    GET_ITEM_STATS_RESPONSE = 177004;                                            
+    GET_NET_RANK_REQUEST= 177005;                                              // 前台向access请求查询指标 
+    GET_NET_RANK_RESPONSE = 177006;  
+    GET_IPS_REQUEST= 177007;                                            
+    GET_IPS_RESPONSE = 177008;  
+    PUSH_IPS_FILE_REQUEST= 177009;                                            //文旭要求推送ips文件 
+    SET_USER_LVL_REQUEST   = 177011; 
+    SET_USER_LVL_RESPONSE  = 177012;  
+    GET_USER_LVL_REQUEST   = 177013;
+    GET_USER_LVL_RESPONSE  = 177014;
+    GET_NET_ITEM_STATS_FOR_USER_REQUEST = 177015;
+    GET_ITEM_STATS_FOR_USER_RESPONSE  = 177016;
+    ENDING_ID = 178000;
+};
+
+
+extend ucloud.Body {
+
+    optional RecordStatsRequest record_stats_request = 177001;                     // 上报数据请求
+	optional RecordStatsExRequest record_stats_ex_request = 177002;      
+	optional GetNetItemStatsRequest get_net_item_stats_request = 177003;                // 前台向access请求服务
+    optional GetItemStatsResponse get_item_stats_response = 177004;              // access返回给前台
+    optional GetNetRankRequest get_net_rank_request = 177005;                // 前台向access请求服务
+    optional GetNetRankResponse get_net_rank_response = 177006;              // access返回给前台
+    optional GetIpsRequest get_ips_request = 177007;                
+    optional GetIpsResponse get_ips_response = 177008;       
+    optional PushIpsFileRequest push_ips_file_request = 177009; 
+    optional SetUserLvlRequest set_user_lvl_request   = 177011; 
+    optional SetUserLvlResponse set_user_lvl_response  = 177012;  
+    optional GetUserLvlRequest get_user_lvl_request   = 177013;
+    optional GetUserLvlResponse get_user_lvl_response  = 177014;
+    optional GetNetItemStatsForUserRequest get_net_item_stats_for_user_request = 177015;
+    optional GetItemStatsForUserResponse get_item_stats_for_user_response  = 177016;    
+
+
+};
+
+
+message StatsData {
+    required string uuid = 10;                          // 分析目标 一般谁eip地址，如果是该机房总量uuid为特定值'all'
+    required uint32 item_id = 20;                       // 数据项ID
+    required uint32 is_regional = 70;                   // 是否是地域性相关value 1代表是 0代表不是
+
+    required uint32 region_id = 30;                     // REGION_ID 如果是全国的region_id = 100
+    required uint32 isp_id = 40;                        // ISP_ID    如果是所有isp总和 isp_id = 10
+
+    required string no_regional_key = 80;               //如果不是是地域性相关value 该value的key值
+
+    required uint64 value = 50;                         // 该值value
+
+    required uint32 time = 60;                          // 采集时间
+}
+
+message RecordStatsRequest { 
+    repeated StatsData stats_data_list = 10;            // 用于分析的元数据
+    optional uint32 dpdk_id = 20;
+}
+
+message StatsDataEx {
+    required string uuid = 10;                          // 分析目标 一般谁eip地址，如果是该机房总量uuid为特定值'all'
+    required uint32 item_id = 20;                       // 数据项ID
+    required uint32 is_regional = 90;                   // 是否是地域性相关value 1代表是 0代表不是
+    required uint32 region_id = 30;                     // REGION_ID 如果是全国的region_id = 100
+    required uint32 isp_id = 40;                        // ISP_ID    如果是所有isp总和 isp_id = 10
+    required string no_regional_key = 100;               //如果不是是地域性相关value 该value的key值
+    required uint64 value = 50;                          // 该值value
+    required uint32 time = 60;                          // 采集时间
+    optional uint32 aggregator = 70;                    // 聚合算法编号
+    optional uint32 period = 80;                        // 预处理周期
+}
+
+message RecordStatsExRequest { 
+    repeated StatsDataEx stats_data_ex_list = 10;            // 值对应目标
+}
+
+
+message GetNetItemStatsRequest {
+    repeated string uuid = 10;            // 对象ID
+    optional string object_name = 20;     // 对象ID
+    optional uint32 item_id = 22;         // 指标ID
+	optional uint32 region_id = 23;                     // REGION_ID 如果是全国的region_id = 0
+    optional uint32 isp_id = 24;                        // ISP_ID    如果是所有isp总和 isp_id = 0
+    optional uint32 start_time = 30;      // 开始时间
+    optional uint32 end_time = 40;        // 结束时间
+    optional uint32 user_grain = 50;        //用户时间粒度
+}
+
+message StatsInfo {
+    required int64 value = 10;            // 指标值，可以是各种degree的值， 5分钟， 1小时等
+    required uint32 value_time = 20;      // 指标时间
+	required uint32 region_id = 31;       // REGION_ID 如果是全国的region_id = 0
+    required uint32 isp_id = 32;          // ISP_ID    如果是所有isp总和 isp_id = 0
+    optional string no_regional_key = 33; 
+}
+
+message MonitorData {
+    optional string uuid = 10;            // 对象uuid 
+    optional uint32 item_id = 30;         // 指标id
+    optional uint32 is_regional = 20;     
+    optional uint32 grain_size = 60;      //数据输出的时间粒度
+    repeated StatsInfo stats_info = 40;   // 统计数据
+}
+
+message GetItemStatsResponse {
+    required ResponseCode rc = 10;
+    repeated MonitorData monitor_data = 20; 
+}
+
+message GetNetRankRequest { 
+	required uint32 item_id = 10;         // 指标ID
+	optional uint32 start = 20;
+	optional uint32 end = 30;
+	optional uint32 rank_type = 40; 
+	optional uint32 time = 50; 
+}
+
+message RankData {
+    optional string uuid = 10;            // 对象uuid 
+    optional uint64 value = 20;         // 指标id
+}
+message GetNetRankResponse {
+    required ResponseCode rc = 10; 
+    optional uint32 item_id = 20;  
+    repeated RankData rank_data = 30; 
+}
+
+message Ip_Info {
+    optional string ip = 10;            // 对象uuid 
+    optional uint32 account_id = 20;         // 指标id
+}
+message GetIpsRequest { 
+	required string regin = 10;         
+}
+
+message GetIpsResponse {
+    required string regin = 10;    
+    repeated Ip_Info ips   = 20; 
+}
+
+
+message PushIpsFileRequest { 
+	required string name = 10;         
+}
+
+message SetUserLvlRequest { 
+	required string user_id = 10;  
+	optional uint32 lvl = 20;
+}
+message SetUserLvlResponse {
+    required ResponseCode rc = 10; 
+    optional string user_id = 20;  
+	optional uint32 lvl = 30;
+}
+
+message GetUserLvlRequest { 
+	required string user_id = 10;  
+}
+message GetUserLvlResponse {
+    required ResponseCode rc = 10; 
+    optional string user_id = 20;  
+	optional uint32 lvl = 30;
+	optional uint32 min_grain_size= 40;            //最细微的粒度
+	optional uint32 lvl_effective_time= 50;        //套餐生效时间
+	optional uint32 start_analysis_time= 60;  	   //开始分析的时间戳
+	optional uint32 store_time= 70;                //套餐提供的数据时长
+	optional uint32 data_dimension= 80;            //套餐提供的数据维度
+	repeated uint32 item_ids  = 90; 
+}
+message UuidExInfo {
+    optional string uuid = 10;            // 对象uuid 
+    optional uint32 created_time = 20;    
+}
+message GetNetItemStatsForUserRequest {
+    repeated string uuid = 10;            // 对象ID
+    optional string object_name = 20;     // 对象ID
+    optional uint32 item_id = 22;         // 指标ID
+	optional uint32 region_id = 23;                     // REGION_ID 如果是全国的region_id = 0
+    optional uint32 isp_id = 24;                        // ISP_ID    如果是所有isp总和 isp_id = 0
+    optional uint32 start_time = 30;      // 开始时间
+    optional uint32 end_time = 40;        // 结束时间
+    optional string user_id = 50;
+    repeated UuidExInfo uuid_ex_info = 60; 
+}
+
+message GetItemStatsForUserResponse {
+    required ResponseCode rc = 10;
+    repeated MonitorData monitor_data = 20; 
+}

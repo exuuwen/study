@@ -1,0 +1,7 @@
+make REGION=DB_XJ
+make
+
+~/udpi  -c 0xfbefbf -n 4 -m 163840 -- -p 0x1 -f ~/udpi.cfg.8
+~/udpi  -c 0xfefefeff -n 4 -m 163840 -- -p 0x1 -f ~/udpi.cfg
+
+protoc --cpp_out=. unetanalysis.177000.178000.proto

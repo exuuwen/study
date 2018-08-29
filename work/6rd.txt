@@ -1,0 +1,25 @@
+host:
+
+echo 1 > /proc/sys/net/ipv6/conf/all/forwarding
+echo 0 > /proc/sys/net/ipv6/conf/all/disable_ipv6 
+
+ip tunnel add tun-6rd mode sit local 10.19.61.167 ttl 64
+ip tunnel 6rd dev tun-6rd 6rd-prefix 2001:db8::/32
+
+brctl addbr br-6rd
+brctl addif br-6rd vethx
+
+ifconfig br-6rd up
+ifconfig tun-6rd up
+ifconfig vethx up
+
+ip addr add 2001:db8:a13:3da7::1/64 dev br-6rd
+ip -6 r add default dev tun-6rd
+
+
+
+
+docker:
+ip addr add 2001:db8:a13:3da7::8/64 dev eth0
+ip -6 r add default via 2001:db8:a13:3da7::1
+ifconfig eth0 up

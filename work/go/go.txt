@@ -1,0 +1,262 @@
+charpter 2:
+Constants: true false iota nil
+Types: int int8 int16 int32 int64 uint uint8 uint16 uint32 uint64 uintptr float32 float64 complex128 complex64 bool byte rune string error
+Functions: make len cap new append copy close delete complex real imag panic recover
+
+
+four major kinds of declarat ions: var, const, type, and func
+
+1. var
+a. var name type = expression
+var s,seq string
+var b, f, s = true, 2.3, "four"
+var f, err = os.Open(name)
+var pc [256]byte
+
+b. short variable declaration may be used to declare and initialize local variables
+i := 100
+i, j := 0, 1
+
+i, j = j, i // swap values of i and j
+
+
+2. type
+type name underlyingtype
+type Fahrenheit float64
+
+////////////////////////////////////////////////
+charpter3:
+z = x &^ y , each bit of z is 0 if the cor responding bit of y is 1; other wise it equals the cor-responding bit of x 
+
+x := int64(0xdeadbeef)
+fmt.Printf("%d %[1]x %#[1]x %#[1]X\n", x)
+// Output:
+// 3735928559 deadbeef 0xdeadbeef 0XDEADBEEF
+No te the use of two fmt tricks. Usu ally a Printf format str ing containing multiple % verbs
+would require the same number of extra operands, but the [1] "adverbs" after % tell Printf to
+use the firs top erand over and over again. Secon d, the # adverb for %o or %x or %X tells Printf
+to emit a 0 or 0x or 0X prefix respectively.
+
+
+%q: 字符使用%c参数打印，或者是用%q参数打印带单引号的字符
+ascii := 'a'
+unicode := '国'
+newline := '\n'
+fmt.Printf("%d %[1]c %[1]q\n", ascii)   // "97 a 'a'"
+fmt.Printf("%d %[1]c %[1]q\n", unicode) // "22269 国 '国'"
+fmt.Printf("%d %[1]q\n", newline)       // "10 '\n'"
+
+strings
+package: bytes, strings, strconv, unicode
+
+string,byte convert
+s := "abc"
+b := []byte(s)
+s2 := string(b)
+
+string,number convert
+m := 123
+n := fmt.Sprintf("%x", m)
+fmt.Println(n, strconv.Itoa(m)) // "123 123"
+fmt.Println(strconv.FormatInt(int64(m), 2)) // "1111011" FormatUint
+
+xx, err := strconv.Atoi("123");
+fmt.Println(xx);
+y, err := strconv.ParseInt("123", 10, 64) // base 10, up to 64 bits  ParseUint
+
+
+var name type = type(data)
+
+var dd int = int(2)
+var data int = int(dd)
+
+
+const name type = expression
+/////////////////////////////
+charpter 4:
+1. array
+var arr [3]int
+var arr [3]int = [3]int{1, 2, 3}
+q := [...]int{1, 2, 3}
+
+r := [...]int{99: -1}
+
+months := [...]string{1: "January", /* ... */, 12: "December"}
+
+var s []int // len(s) == 0, s == nil
+s = nil  // len(s) == 0, s == nil
+s = []int(nil) // len(s) == 0, s == nil
+s = []int{}  // len(s) == 0, s != nil
+
+slice: 是一个变长数组
+arr[1:3] : 1,2
+arr[:3] : 0,1,2
+
+slice禁止比较除了nil
+if summer == nil { /* ... */ }
+
+如果你需要测试一个slice是否是空的，使用len(s) == 0来判断，而不应该用s == nil来判断
+没初始化的才是nil
+
+make([]T, len, cap) 返回一个splice 容量为cap 长度为len
+
+append([]T, v) splice append一个v
+
+cap([]T), len(T[])
+copy([]T1, []T2)
+
+map:
+ages := map[string]int{
+"alice":  31,
+"charlie": 34,
+}
+
+map禁止比较除了nil
+ages := make(map[string]int) //must make first
+ages["alice"] = 31
+
+//check a key
+age, ok := ages["bob"]
+if !ok { /* "bob" is not a key in this map; age == 0. */ }
+
+struct:
+type Employee struct {
+ID  int
+Name  string
+Address  string
+DoB  time.Time
+Position string
+Salary  int
+ManagerID int
+}
+var dilbert Employee
+
+
+type T struct{ a, b int }
+t1 := T{1, 2}
+t2 := T{a:1, b:2}
+
+//匿名成员
+type Point struct {
+    X, Y int
+}
+
+type Circle struct {
+    Point
+    Radius int
+}
+
+type Wheel struct {
+    Circle
+    Spokes int
+}
+
+var w Wheel
+w.X = 8            // equivalent to w.Circle.Point.X = 8
+w.Y = 8            // equivalent to w.Circle.Point.Y = 8
+w.Radius = 5       // equivalent to w.Circle.Radius = 5
+w.Spokes = 20
+
+w = Wheel{8, 8, 5, 20}                       // compile error: unknown fields
+w = Wheel{X: 8, Y: 8, Radius: 5, Spokes: 20} // compile error: unknown fields
+
+//ok
+
+w = Wheel{Circle{Point{8, 8}, 5}, 20}
+w = Wheel{
+    Circle: Circle{
+        Point:  Point{X: 8, Y: 8},
+        Radius: 5,
+    },
+    Spokes: 20, // NOTE: trailing comma necessary here (and at Radius)
+}
+
+chapt5: func
+
+func name(parameter-list) (result-list) {
+    body
+}
+
+func CountWordsAndImages(url string) (words, images int, err error) {
+    err = xx
+    return
+
+    words, images = xx, xx
+
+    return
+}
+
+func CountWordsAndImages(url string) (int, int, error) {
+    return words, images, err
+}
+
+var f func(int) int
+if ff == nil {
+    fmt.Printf("%T is nil\n", f) // "func(int) int"
+}
+
+函数值之间是不可比较的，也不能用函数值作为map的key。
+
+会等待循环结束后，再执行函数值
+for _, d := range tempDirs() {
+    dir := d // NOTE: necessary!
+    os.MkdirAll(dir, 0755) // creates parent directories too
+    rmdirs = append(rmdirs, func() {
+        os.RemoveAll(dir)
+    })
+
+func sum(vals...int) int
+}
+
+
+#defer
+func test() {
+    fmt.Println("in test")
+}
+
+func triple(x int) (result int) {
+    defer func() { result += x }()
+    return x + x
+}
+
+func defer_sample() {
+    fmt.Println("s start")
+    defer func() { fmt.Println("in defer") }()
+    //defer test()
+    fmt.Println("s end")
+}
+
+panic("xxx")
+
+chaper 6
+
+func (type1 name2) funcname(type2 name2) type3 {
+    xxxx
+}
+
+
+type1 t1
+type2 t2
+t3 := t1.funcname(t2)
+
+
+
+chap7 
+
+type Value interface {
+    String() string
+    Set(string) error
+}
+
+type Interface interface {
+    Len() int
+    Less(i, j int) bool // i, j are indices of sequence elements
+    Swap(i, j int)
+}
+
+type error interface {
+    Error() string
+}
+
+
+x.(T) 类型断言

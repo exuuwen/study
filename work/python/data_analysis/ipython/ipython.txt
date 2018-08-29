@@ -1,0 +1,60 @@
+
+
+In [10]: def add_num(a, b):
+    ...:     return a+b
+    ...: 
+
+In [11]: c=add_num(1,2)
+
+In [12]: c
+Out[12]: 3
+
+In [13]: add_num?
+Signature: add_num(a, b)
+Docstring: <no docstring>
+File:      /data/python/data_analysis/ipython/<ipython-input-10-ba9d13df9dd4>
+Type:      function
+
+
+shell命令可以直接用
+
+run a.py
+hist 查看历史命令
+
+paste复制代码 执行
+
+# time and timeit
+In [2]: time a=100
+CPU times: user 57 µs, sys: 0 ns, total: 57 µs
+Wall time: 22.9 µs
+
+In [3]: timeit a=100
+100000000 loops, best of 3: 20.8 ns per loop
+
+
+In [1]: 2*3
+Out[1]: 6
+In [2]: 3*3
+Out[2]: 9
+In [3]: _
+Out[3]: 9
+
+
+In [1]: 2*3
+Out[1]: 6
+In [2]: 3*3
+Out[2]: 9
+In [3]: __
+Out[3]: 6
+
+
+In [8]: foo='bar'
+In [9]: foo
+Out[9]: 'bar'
+In [10]: _i9
+Out[10]: u'foo'
+In [11]: _9
+Out[11]: 'bar'
+
+
+

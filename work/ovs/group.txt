@@ -1,0 +1,5 @@
+ovs-ofctl -O OpenFlow13 add-group br0 group_id=5566,type=select,bucket=output:1,bucket=output:2,bucket=output:3
+ovs-ofctl -O OpenFlow13 add-flow br0 in_port=LOCAL,actions=group:5566
+
+
+

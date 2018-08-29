@@ -198,3 +198,16 @@ ofproto/ofproto.c: handle_openflow
 lib/dpif-netdev.c: dpdk datapath
 lib/dpif-netlink.c: kernel datapath netlink
 ofproto/ofproto-dpif-xlate.c: userspace handle packet_in from datapath
+
+需要在 package上级目录中创建一个 localversion的问题，该文件中写入 版本标识
+make rpms/kernel
+sources/kernel-4.14.0-x86_64.config
+
+
+qemu build
+
+192.168.150.31
+
+docker run -it --rm -v `pwd`:/data mwdg/qemu-2.9-el7 /bin/bash
+cd build
+./make_rpm version_tag

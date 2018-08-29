@@ -1,0 +1,1 @@
+iptables -t raw -A PREROUTING -d x.x.x.x  -p 47 -j STATICSRC --addr 192.168.0.1

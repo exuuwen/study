@@ -1,0 +1,19 @@
+nft add table filter
+nft add chain filter output { type filter hook output priority 0 \; }
+nft add rule filter output ip daddr 10.19.160.21 drop
+nft list table filter -a
+nft delete rule filter output  handle 4
+
+
+nft add chain filter forward { type filter hook forward priority 1\;  policy drop\; }
+
+nft add set filter ipv4_ad { type ipv4_addr\;}
+nft add element filter ipv4_ad { 192.168.3.4 }
+nft list set filter ipv4_ad
+
+nft add rule filter output ip daddr @ipv4_ad drop
+
+nft delete element filter ipv4_ad { 192.168.3.4 }
+nft delete set filter ipv4_ad
+
+nft -f files

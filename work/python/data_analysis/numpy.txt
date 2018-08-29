@@ -1,0 +1,142 @@
+
+In [4]: import numpy as np
+In [5]: a = [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]]
+   ...: 
+In [6]: arr = np.array(a)
+In [7]: arr.dtype
+Out[7]: dtype('int64')
+In [8]: arr.shape
+Out[8]: (4, 3)
+
+arr.ndim
+>>> 4
+
+In [9]arr[[3, 1]]
+Out[9]: 
+array([[10, 11, 12],
+       [ 4,  5,  6]])
+
+In [10]: arr[[3, 1]][:1]
+Out[10]: array([[10, 11, 12]])
+
+In [11]: arr[[3, 1]][:, [2, 1]]
+Out[11]: 
+array([[12, 11],
+       [ 6,  5]])
+
+In [12]: arr.T
+Out[12]: 
+array([[ 1,  4,  7, 10],
+       [ 2,  5,  8, 11],
+       [ 3,  6,  9, 12]])
+
+
+
+np.zero(3, 2)
+np.ones(3, 2)
+np.empty(3, 2)
+
+In [12]: np.arange(12).reshape(3, 4)
+Out[12]: 
+array([[ 0,  1,  2,  3],
+       [ 4,  5,  6,  7],
+       [ 8,  9, 10, 11]])
+
+
+In [13]: np.eye(4)
+Out[13]: 
+array([[ 1.,  0.,  0.,  0.],
+       [ 0.,  1.,  0.,  0.],
+       [ 0.,  0.,  1.,  0.],
+       [ 0.,  0.,  0.,  1.]])
+
+
+num_string = np.array(['1.2', '2.2', '3.2'])
+num = num_string.astype(float)
+
+
+In [2]: a = np.array(['wx', 'ztt', 'bb', 'dd'])
+In [4]: a == 'bb'
+Out[4]: array([False, False,  True, False], dtype=bool)
+
+
+np.sqrt square exp log sign sin cos tan
+
+np.maximum(x, y)
+
+arrayx: [1, 2, 3, 4]
+arrayy: [-1, -2, -3, -4]
+cond: [True, False, False, True]
+
+np.where(cond, xarray, yarray)
+>>> [1, -2, -3, 4]
+
+np.where(arr>2, 2, -1) # arr > 2 change to 2, or to -1
+np.where(arr>2, 2, arr) # only arr > 2 change to 2
+
+
+
+In [33]: a=np.arange(9).reshape(3,3)
+array([[0, 1, 2],
+       [3, 4, 5],
+       [6, 7, 8]])
+# sum, mean, max, min, cumsum, argmax, argmin
+
+In [37]: a.sum()
+Out[37]: 36
+
+In [38]: a.sum(1)
+Out[38]: array([ 3, 12, 21])
+In [39]: a.sum(0)
+Out[39]: array([ 9, 12, 15])
+
+
+In [2]: bools = np.array([True, False, True])
+
+In [4]: bools.all()
+Out[4]: False
+
+In [6]: bools.any()
+Out[6]: True
+
+
+In [7]: arr = np.array([2, 7, 3])
+In [9]: arr.sort()
+
+In [10]: arr
+Out[10]: array([2, 3, 7])
+
+np.unique(arr)
+np.in1d(arr, values)#values in arr, return bool
+np.intersect1d(x, y)# 公有
+np.union(x, y) # 并集
+np.setxor1d(x, y) # 差集(只在一个中)
+np.setdiff1d(x, y) # 在x不在y
+
+
+arr = np.loadtxt('my.txtx', delimiter=',')
+np.savetxt
+
+
+In [12]: x = np.array([[1, 1, 1], [2, 2, 2]])
+
+In [13]: y = np.array([[1, 1], [2, 2], [3, 3]])
+
+In [14]: np.dot(x, y)  # x.dot(y)
+Out[14]: 
+array([[ 6,  6],
+       [12, 12]])
+
+
+np.random.xxx  p122
+randint
+randn
+
+In [33]: np.random.randint(0, 2, size=5)
+Out[33]: array([0, 0, 1, 1, 0])
+In [34]: np.random.randint(0, 2, size=(3,5))
+Out[34]: 
+array([[0, 0, 1, 1, 1],
+       [0, 1, 0, 0, 1],
+       [0, 0, 1, 0, 0]])
+

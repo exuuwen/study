@@ -1,0 +1,16 @@
+1. bios
+turbo
+p-state
+c-state
+
+2.intel_pstate
+/sys/devices/system/cpu/intel_pstate
+
+
+3. intel_idle
+/sys/devices/system/cpu/idle
+
+
+4. cpu
+/sys/devices/system/cpu/cpu0/cpufreq
+/sys/devices/system/cpu/cpu0/cpuidle
