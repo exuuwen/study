@@ -211,3 +211,22 @@ qemu build
 docker run -it --rm -v `pwd`:/data mwdg/qemu-2.9-el7 /bin/bash
 cd build
 ./make_rpm version_tag
+
+
+rpm2cpio *.src.rpm | cpio -idmv
+
+ip link add test type gre local 192.168.152.71 remote 192.168.152.72 nopmtudisc ignore-df
+
+
+
+git clone https://github.com/cisco-system-traffic-generator/trex-core.git
+# cd linux_dpdk
+#./b configure  (only once)
+#./b build
+
+# cd ../scripts
+# ./t-rex-64 --cfg /etc/trex_cfg.yaml  -i -c 8
+
+
+./trex-console 
+>>  start  -p 0 -f /root/uxr.py -m 1mpps

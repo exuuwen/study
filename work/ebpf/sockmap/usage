@@ -1,0 +1,40 @@
+clang -O2 -Wall -target bpf -c sockmap_kern.c -o sockmap_kern.o
+gcc -O2 -o sockmap sockmap_user.c bpf_load.c -lbpf -lelf
+gcc -O2 -o realserver realserver.c 
+gcc -O2 -o client client.c 
+
+
+
+
+mount -t cgroup2 none /mnt
+
+
+./realserver
+./sockmap /mnt
+./client
+
+
+only modify bpf_load.c:
+
+-#include "perf-sys.h"
+
++static inline int
++sys_perf_event_open(struct perf_event_attr *attr,
++                      pid_t pid, int cpu, int group_fd,
++                      unsigned long flags)
++{
++        int fd;
++
++        fd = syscall(__NR_perf_event_open, attr, pid, cpu,
++                     group_fd, flags);
++
++        return fd;
++}
+
+
+bpf lib:
+make
+make install
+make install_headers
+
+

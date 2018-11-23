@@ -1,0 +1,107 @@
+1. init 
+a. device
+//create vrf device
+vrf_newlink() {
+	//get table id
+	vrf->tb_id = nla_get_u32(data[IFLA_VRF_TABLE]);
+    dev->priv_flags |= IFF_L3MDEV_MASTER;
+    
+    err = register_netdevice(dev);
+	
+	//create fib rules  if there is no one
+	//l3mdev rule and action TO_TLB
+    err = vrf_add_fib_rules(dev);
+	//frh->action = FR_ACT_TO_TBL;
+    //nla_put_u8(skb, FRA_L3MDEV, 1)
+	//priority = FIB_RULE_PREF(1000)
+}
+
+b. addr and route
+add the address on the vrf slave or master, the associate route with the address will
+be add to the route table of vrf 
+fib_inetaddr_event-->fib_magic->(u32 tb_id = l3mdev_fib_table(ifa->ifa_dev->dev);)
+
+
+2. recv
+a. change dev
+ip_rcv_finish-->l3mdev_ip_rcv(skb) {
+	//if recieve device is vrf slave or master device  just call 
+	// master->l3mdev_ops->l3mdev_l3_rcv
+	if (netif_is_l3_slave(skb->dev))
+        master = netdev_master_upper_dev_get_rcu(skb->dev);
+    else if (netif_is_l3_master(skb->dev))
+        master = skb->dev;
+
+    if (master && master->l3mdev_ops->l3mdev_l3_rcv)
+        skb = master->l3mdev_ops->l3mdev_l3_rcv(master, skb, proto);
+	// just change the recieve dev to vrf device
+	//skb->dev = vrf_dev;
+    //skb->skb_iif = vrf_dev->ifindex;
+    //IPCB(skb)->flags |= IPSKB_L3SLAVE;
+}
+
+b route
+fib_lookup-->__fib_lookup()
+{
+	//make iif or oif redirect to master vrf if iif or oif is vrf slave
+	l3mdev_update_flow(net, flowi4_to_flowi(flp))
+	fib_rules_lookup() {
+		//if oif or iif is vrf_dev get table_id trough vrf_dev and get GOTO_TBL action
+		fib_rule_match {
+			if (rule->l3mdev && !l3mdev_fib_rule_match(rule->fr_net, fl, arg)) 
+		}
+		//then find the route in the table
+	}
+}
+
+most all the route flags with FLOWI_FLAG_SKIP_NH_OIF, SO_BINDTODVICE to vrf_dev but finnaly route dev is not vrf_dev
+
+3. local send
+1)
+a. SO_BINDTODEVICE with vrf_dev or vrf_slave 
+b. the same recv b.route
+c. if the route dest is vrf_slave  goto step 2). 
+
+2).non-BINDTODEVICE route to vrf_slave
+__ip_local_out-->l3mdev_ip_out-->l3mdev_l3_out{
+	//if the skb_dst->dev is vrf slave just call vrf master->l3mdev_l3_out
+	master->l3mdev_ops->l3mdev_l3_out()
+	// just change skb->dev to vrf dev then goto the vrf_dev->ndo_xmit like the following case 3)
+}
+
+3).non-BINDTODEVICE route to vrf_master
+vrf_xmit(vrf_dev->ndo_xmit)--->is_ip_tx_frame{
+
+	// just did the vrf local again
+	struct flowi4 fl4 = {
+        /* needed to match OIF rule */
+        .flowi4_oif = vrf_dev->ifindex,
+        .flowi4_iif = LOOPBACK_IFINDEX,
+        .flowi4_tos = RT_TOS(ip4h->tos),
+        .flowi4_flags = FLOWI_FLAG_ANYSRC | FLOWI_FLAG_SKIP_NH_OIF,
+        .flowi4_proto = ip4h->protocol,
+        .daddr = ip4h->daddr,
+        .saddr = ip4h->saddr,
+    };
+    struct net *net = dev_net(vrf_dev);
+    struct rtable *rt;
+
+    rt = ip_route_output_flow(net, &fl4, NULL);
+    if (IS_ERR(rt))
+        goto err;
+
+    skb_dst_drop(skb);
+
+    /* if dst.dev is loopback or the VRF device again this is locally
+     * originated traffic destined to a local address. Short circuit
+     * to Rx path
+     */
+    if (rt->dst.dev == vrf_dev)
+        return vrf_local_xmit(skb, vrf_dev, &rt->dst);
+
+	ret = vrf_ip_local_out(dev_net(skb_dst(skb)->dev), skb->sk, skb);
+}
+
+
+
+
