@@ -202,3 +202,14 @@ git tag -l 'v1.8.5*'
 git checkout -b [branchname] [tagname]
 git checkout -b [branchname] [ori-branch]
 
+
+git 合并patch
+
+1. git am patch
+有冲突
+2. git apply patch --reject
+3. fix 冲突   file vs file.rej
+4. git add files
+5. git am --resolved
+
+git format-patch --cover-letter -20  --subject-prefix="ukernel-4.14 patch v2"

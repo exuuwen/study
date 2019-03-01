@@ -5,7 +5,6 @@
 *
 *
 * AUTHOR
-*   Dragontec
 *
 * DATE
 *   9 Nov 2010

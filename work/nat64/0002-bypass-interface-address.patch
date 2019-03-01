@@ -1,0 +1,42 @@
+From 5bce438ddfd0490a65d8dd2e261b0bd2841d931a Mon Sep 17 00:00:00 2001
+From: wenxu <wenxu@ucloud.cn>
+Date: Wed, 8 Aug 2018 15:50:07 +0800
+Subject: [PATCH 2/2] bypass interface address
+
+---
+ src/plugins/nat/nat64_out2in.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/src/plugins/nat/nat64_out2in.c b/src/plugins/nat/nat64_out2in.c
+index f7d4dd4..64a15ef 100644
+--- a/src/plugins/nat/nat64_out2in.c
++++ b/src/plugins/nat/nat64_out2in.c
+@@ -409,6 +409,10 @@ nat64_out2in_node_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
+   nat64_out2in_next_t next_index;
+   u32 pkts_processed = 0;
+   u32 thread_index = vm->thread_index;
++  nat64_main_t *nm = &nat64_main;
++  ip4_main_t *ip4_main = nm->ip4_main;
++  ip4_address_t *first_int_addr;
++  u32 sw_if_index;
+ 
+   from = vlib_frame_vector_args (frame);
+   n_left_from = frame->n_vectors;
+@@ -464,6 +468,15 @@ nat64_out2in_node_fn (vlib_main_t * vm, vlib_node_runtime_t * node,
+ 	      goto trace0;
+ 	    }
+ 
++	  sw_if_index = vnet_buffer (b0)->sw_if_index[VLIB_RX];
++	  first_int_addr = ip4_interface_first_address (ip4_main, sw_if_index, 0);
++	  if (ip40->dst_address.data_u32 == first_int_addr->data_u32) 
++	    {
++	      next0 = NAT64_OUT2IN_NEXT_IP4_LOOKUP;
++	      goto trace0;
++	    }
++
+ 	  if (proto0 == SNAT_PROTOCOL_ICMP)
+ 	    {
+ 	      if (icmp_to_icmp6
+-- 
+1.8.3.1
+

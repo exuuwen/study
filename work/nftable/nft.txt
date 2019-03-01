@@ -17,3 +17,46 @@ nft delete element filter ipv4_ad { 192.168.3.4 }
 nft delete set filter ipv4_ad
 
 nft -f files
+
+
+nft add flowtable firewall fb1 { hook ingress priority 0 \; devices = { tun1 } \; }
+nft add flowtable firewall fb2 { hook ingress priority 0 \; devices = { tun2 } \; }
+nft add chain firewall ftb-all {type filter hook forward priority 0 \; policy accept \; }
+nft add rule firewall ftb-all ct zone 1 ip protocol tcp flow offload @fb1
+nft add rule firewall ftb-all ct zone 2 ip protocol tcp flow offload @fb2
+
+
+
+
+
+
+
+
+nft add table user
+nft add chain user filter_ingress { type filter hook ingress priority 0 \; }
+nft add rule user filter_ingress ip daddr 12.0.0.0/24 drop
+
+
+nft add table test
+nft add flowtable test f { hook ingress priority 0 \; devices = { veth1, veth2 } \; }
+nft add chain test y {type filter hook forward priority 0 \; policy accept \; }
+nft add rule test y ip protocol tcp flow offload @f 
+nft add chain test postrouting { type nat hook postrouting priority 100 \; }
+nft add rule test postrouting oif veth2 snat to 1.2.3.4
+
+
+nft add table test
+nft add flowtable test f { hook ingress priority 0 \; devices = { tun, veth2 } \; }
+nft add chain test y {type filter hook forward priority 0 \; policy accept \; }
+nft add rule test y ip protocol tcp flow offload @f 
+nft add chain test postrouting { type nat hook postrouting priority 100 \; }
+nft add rule test postrouting oif tun snat to 1.2.3.4
+
+
+
+table  chain  rule  
+set map flowtable object
+
+
+nft -a list ruleset
+

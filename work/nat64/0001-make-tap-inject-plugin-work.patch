@@ -1,0 +1,56 @@
+From 73762e66aef62e2accb266299461e684a4cadcd0 Mon Sep 17 00:00:00 2001
+From: wenxu <wenxu@ucloud.cn>
+Date: Tue, 7 Aug 2018 15:52:45 +0800
+Subject: [PATCH 1/2] make tap-inject plugin work
+
+---
+ src/vnet/ethernet/arp.h      |  3 ++-
+ src/vnet/ethernet/ethernet.h | 11 +++++++++++
+ 2 files changed, 13 insertions(+), 1 deletion(-)
+
+diff --git a/src/vnet/ethernet/arp.h b/src/vnet/ethernet/arp.h
+index 7b50ed7..6a870dfbd 100644
+--- a/src/vnet/ethernet/arp.h
++++ b/src/vnet/ethernet/arp.h
+@@ -23,7 +23,7 @@
+ extern int vnet_proxy_arp_add_del (ip4_address_t * lo_addr,
+ 				   ip4_address_t * hi_addr,
+ 				   u32 fib_index, int is_del);
+-
++/*
+ extern int vnet_arp_set_ip4_over_ethernet (vnet_main_t * vnm,
+ 					   u32 sw_if_index,
+ 					   void *a_arg,
+@@ -32,6 +32,7 @@ extern int vnet_arp_set_ip4_over_ethernet (vnet_main_t * vnm,
+ 
+ extern int vnet_arp_unset_ip4_over_ethernet (vnet_main_t * vnm,
+ 					     u32 sw_if_index, void *a_arg);
++						 */
+ 
+ extern int vnet_proxy_arp_fib_reset (u32 fib_id);
+ 
+diff --git a/src/vnet/ethernet/ethernet.h b/src/vnet/ethernet/ethernet.h
+index 79ae7e6..e06a97e 100644
+--- a/src/vnet/ethernet/ethernet.h
++++ b/src/vnet/ethernet/ethernet.h
+@@ -443,6 +443,17 @@ int vnet_create_loopback_interface (u32 * sw_if_indexp, u8 * mac_address,
+ 				    u8 is_specified, u32 user_instance);
+ int vnet_delete_loopback_interface (u32 sw_if_index);
+ int vnet_delete_sub_interface (u32 sw_if_index);
++int
++vnet_arp_set_ip4_over_ethernet (vnet_main_t * vnm,
++			       u32 sw_if_index, void *a_arg,
++                  int is_static, int is_no_fib_entry);
++
++int
++vnet_arp_unset_ip4_over_ethernet (vnet_main_t * vnm,
++   			                     u32 sw_if_index, void *a_arg);
++
++
++
+ 
+ // Perform ethernet subinterface classification table lookups given
+ // the ports's sw_if_index and fields extracted from the ethernet header.
+-- 
+1.8.3.1
+

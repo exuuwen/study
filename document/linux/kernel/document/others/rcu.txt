@@ -44,32 +44,79 @@ void retract_table()
 }
 
 2) list protect
-rcu_list_t nmi_list;
-spinlock_t nmi_list_lock;
+read:
+static enum audit_state audit_filter_task(struct task_struct *tsk)
+	{
+		struct audit_entry *e;
+		enum audit_state   state;
 
-void handle_nmi()
-{
-	rcu_read_lock();
-	rcu_list_for_each(&nmi_list, handler_t cb)
-		cb();
-	rcu_read_unlock();
-}
+		rcu_read_lock();
+		/* Note: audit_netlink_sem held by caller. */
+		list_for_each_entry_rcu(e, &audit_tsklist, list) {
+			if (audit_filter_rules(tsk, &e->rule, NULL, &state)) {
+				rcu_read_unlock();
+				return state;
+			}
+		}
+		rcu_read_unlock();
+		return AUDIT_BUILD_CONTEXT;
+	}
 
-void register_nmi_handler(handler_t cb)
-{
-	spin_lock(&nmi_list_lock);
-	rcu_list_add(&nmi_list, cb);
-	spin_unlock(&nmi_list_lock);
-}
+del & add:
+static inline int audit_del_rule(struct audit_rule *rule,
+					 struct list_head *list)
+	{
+		struct audit_entry  *e;
 
-void unregister_nmi_handler(handler_t cb)
-{
-	spin_lock(&nmi_list_lock);
-	rcu_list_remove(cb);
-	spin_unlock(&nmi_list_lock);
+		/* Do not use the _rcu iterator here, since this is the only
+		 * deletion routine. */
+		list_for_each_entry(e, list, list) {
+			if (!audit_compare_rule(rule, &e->rule)) {
+				list_del_rcu(&e->list);
+				call_rcu(&e->rcu, audit_free_rule);
+				return 0;
+			}
+		}
+		return -EFAULT;		/* No matching rule */
+	}
 
-	synchronize_rcu();
-}
+	static inline int audit_add_rule(struct audit_entry *entry,
+					 struct list_head *list)
+	{
+		if (entry->rule.flags & AUDIT_PREPEND) {
+			entry->rule.flags &= ~AUDIT_PREPEND;
+			list_add_rcu(&entry->list, list);
+		} else {
+			list_add_tail_rcu(&entry->list, list);
+		}
+		return 0;
+	}
+
+replace:
+static inline int audit_upd_rule(struct audit_rule *rule,
+					 struct list_head *list,
+					 __u32 newaction,
+					 __u32 newfield_count)
+	{
+		struct audit_entry  *e;
+		struct audit_newentry *ne;
+
+		list_for_each_entry(e, list, list) {
+			if (!audit_compare_rule(rule, &e->rule)) {
+				ne = kmalloc(sizeof(*entry), GFP_ATOMIC);
+				if (ne == NULL)
+					return -ENOMEM;
+				audit_copy_rule(&ne->rule, &e->rule);
+				ne->rule.action = newaction;
+				ne->rule.file_count = newfield_count;
+				list_replace_rcu(&e->list, &ne->list);
+				call_rcu(&e->rcu, audit_free_rule);
+				return 0;
+			}
+		}
+		return -EFAULT;		/* No matching rule */
+	}
+
 
 3) call_rcu
 id_table_entry_t pid_table[];

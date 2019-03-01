@@ -230,3 +230,20 @@ git clone https://github.com/cisco-system-traffic-generator/trex-core.git
 
 ./trex-console 
 >>  start  -p 0 -f /root/uxr.py -m 1mpps
+
+./configure -with-mlxfw-mod --with-ipoib-mod  --with-core-mod --with-user_mad-mod --with-user_access-mod --with-addr_trans-mod --with-mlx5-mod --with-iser-mod --with-isert-mod --with-srp-mod --with-nvmf_host-mod  --with-nvmf_target-mod --with-nfsrdma-mod -j 
+
+mlxconfig -d /dev/mst/mt4119_pciconf0.1 set NUM_VF_MSIX=18 NUM_OF_VFS=28
+
+
+
+
+
+
+kernel newbis:
+
+IPv4: Currently adding a new ipv4 address always cause the creation of the related network route, with default metric. Add support for IFA_F_NOPREFIXROUTE for ipv4 address. When an address is added with such flag set, no associated network route is created, no network route is deleted when said IP is gone and it's up to the user space manage such route
+ip a a 11.0.0.1/24 dev manbr noprefixroute
+
+sysctl_ip_early_demux: local established tcp/udp skb bind with socket before route, so it can not lookup the route and the sock award, for only forward case should be disable 
+bind sock and dst_cache(sk->sk_rx_dst)

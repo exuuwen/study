@@ -68,8 +68,7 @@ static void send_event(unsigned char data)
 }
 
 
-static int ioctl(struct inode *inodep, struct file *filp, unsigned
-  int cmd, unsigned long arg)
+static long ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
   	unsigned char data;
 
@@ -107,7 +106,7 @@ static struct file_operations mymisc_fops = {
 	.write  = write, 
 	.read  = read,
 	//.open = open,
-	.ioctl = ioctl
+	.compat_ioctl = ioctl
 }; 
 
 static struct miscdevice mymisc_dev = { 
