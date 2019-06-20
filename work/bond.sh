@@ -19,7 +19,7 @@ ip l set dev veth1.1 master bond0
 ifconfig veth1.1 up
 ifconfig veth2.2 up
 
-#echo 2e:d1:93:25:2c:c0 > /sys/class/net/bond0/bonding/ad_actor_system
+#echo 2e:d1:93:25:2c:c0 > /sys/class/net/bond0/bonding/ad_actor_system //set in ns1
 ip netns exec ns1 ip l add dev bond0 type bond mode 802.3ad
 ip netns exec ns1 ifconfig bond0 up
 ip netns exec ns1 ip l add link eth0 name eth0.1 type vlan id 1
@@ -28,6 +28,8 @@ ip netns exec ns1 ifconfig eth0.1 down
 ip netns exec ns1 ip l set dev eth0.1 master bond0
 ip netns exec ns1 ifconfig eth0.1 up
 
+
+#echo 2e:d1:93:25:2c:c0 > /sys/class/net/bond0/bonding/ad_actor_system //set in ns2
 ip netns exec ns2 ip l add dev bond0 type bond mode 802.3ad
 ip netns exec ns2 ifconfig bond0 up
 ip netns exec ns2 ip l add link eth0 name eth0.2 type vlan id 2

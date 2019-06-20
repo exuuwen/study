@@ -53,46 +53,6 @@ vim /usr/include/bits/typesizes.h
 httperf --port 80 --server '120.132.49.47' --num-conn 40000000 --rate 10000
 
 
-///////////////////////////////////////////////////////////////////////////
-in srcdir 
-# mkdir ksplice 
-# cp /boot/System.map ksplice
-# cp /boot/config .config
-# cp /boot/Module.symvers .
-must be the same gcc compiler with the original kernel
-# ksplice-create --id=testpatch --patch=/data/wenxu/0001-wwww.patch . -j 4 
-# ksplice-apply ksplice-testpatch.tar.gz
-
-gcc patch:
---- toplev.c (revision 193117)
-+++ toplev.c (working copy)
-@@ -1467,12 +1467,6 @@ process_options (void)
-  }
-     }
-
--  if (flag_function_sections && profile_flag)
--    {
--      warning (0, "-ffunction-sections disabled; it makes profiling
-impossible");
--      flag_function_sections = 0;
--    }
-- 
-
-
-
- CHK     include/linux/version.h
-  UPD     include/linux/version.h
-  CHK     include/linux/utsrelease.h
-  UPD     include/linux/utsrelease.h
-  SYMLINK include/asm -> include/asm-x86
-  CC      kernel/bounds.s
-cc1: warnings being treated as errors
-kernel/bounds.c:1: error: -ffunction-sections disabled; it makes profiling impossible
-make[1]: *** [kernel/bounds.s] Error 1
-make: *** [prepare0] Error 2
-Aborting: Prebuild failed at /usr/local/bin/ksplice-create line 190.
-
-////////////////////////
 
 echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6
 cat /proc/sys/net/core/somaxconn
@@ -123,9 +83,6 @@ rpm -qa
 rpm -qf /bin/ls
 rpm -qi xxx
 rpm -qlp xxx
-
-rpm2cpio xxxx | cpio -t
-
 
 //////////////////////////////////////////
 __LP64__ is not an abbreviation of "Leopard 64". It stands for "longs and pointers are 64 bits"
@@ -247,3 +204,33 @@ ip a a 11.0.0.1/24 dev manbr noprefixroute
 
 sysctl_ip_early_demux: local established tcp/udp skb bind with socket before route, so it can not lookup the route and the sock award, for only forward case should be disable 
 bind sock and dst_cache(sk->sk_rx_dst)
+
+
+
+
+
+crash:
+
+crash /usr/lib/debug/lib/modules/kernelxx/vmlinuz vmcore
+
+mod -s mlx5_core /usr/lib/debug/lib/modules/kernelxx/driver/net/ethernet/mellanox/mlx5/core/mlx5_core.ko.debug
+
+
+llvm
+$ git clone http://llvm.org/git/llvm.git
+$ cd llvm/tools
+$ git clone --depth 1 http://llvm.org/git/clang.git
+$ cd ..; mkdir build; cd build
+cmake3 .. -DLLVM_TARGETS_TO_BUILD="BPF;X86" -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release -DLLVM_BUILD_RUNTIME=OFF -DLLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN=ON
+$ make -j $(getconf _NPROCESSORS_ONLN)
+
+
+bcc:
+git clone https://github.com/iovisor/bcc.git
+cd bcc/
+git submodule update --init --recursive
+edit CMakexxx.txt add # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+mkdir build; cd build
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr
+make
+sudo make install

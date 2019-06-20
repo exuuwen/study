@@ -24,6 +24,48 @@ i, j = j, i // swap values of i and j
 type name underlyingtype
 type Fahrenheit float64
 
+
+在下面的代码中，第一个语句声明了in和err两个变量。在第二个语句只声明了out一个变量，然后对已经声明的err进行了赋值操作。
+
+in, err := os.Open(infile)
+// ...
+out, err := os.Create(outfile)
+简短变量声明语句中必须至少要声明一个新的变量，下面的代码将不能编译通过：
+
+f, err := os.Open(infile)
+// ...
+f, err := os.Create(outfile) // compile error: no new variables
+
+
+编译器会自动选择在栈上还是在堆上分配局部变量的存储空间，但可能令人惊讶的是，这个选择并不是由用var还是new声明变量的方式决定的。
+var global *int
+
+func f() {
+    var x int
+    x = 1
+    global = &x
+}
+
+func g() {
+    y := new(int)
+    *y = 1
+}
+f函数里的x变量必须在堆上分配，因为它在函数退出后依然可以通过包一级的global变量找到，虽然它是在函数内部定义的；用Go语言的术语说，这个x局部变量从函数f中逃逸了。相反，当g函数返回时，变量*y将是不可达的，也就是说可以马上被回收的。因此，*y并没有从函数g中逃逸，编译器可以选择在栈上分配*y的存储空间（译注：也可以选择在堆上分配，然后由Go语言的GC回收这个变量的内存空间），虽然这里用的是new方式。其实在任何时候，你并不需为了编写正确的代码而要考虑变量的逃逸行为，要记住的是，逃逸的变量需要额外分配内存，同时对性能的优化可能会产生细微的影响。
+
+
+全局的cwd变量依然是没有被正确初始化的，而且看似正常的日志输出更是让这个BUG更加隐晦。
+
+有许多方式可以避免出现类似潜在的问题。最直接的方法是通过单独声明err变量，来避免使用:=的简短声明方式：
+
+var cwd string
+
+func init() {
+    var err error
+    cwd, err = os.Getwd()
+    if err != nil {
+        log.Fatalf("os.Getwd failed: %v", err)
+    }
+}
 ////////////////////////////////////////////////
 charpter3:
 z = x &^ y , each bit of z is 0 if the cor responding bit of y is 1; other wise it equals the cor-responding bit of x 

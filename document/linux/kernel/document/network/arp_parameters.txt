@@ -3,8 +3,8 @@
 used/confirmed/updated
 
 used: 在arp entry 非NUD_CONNECTED状态下发送报文更新
-updated: 在entry状态发生变化的时候更新
 confirmed:  在收到相应的arp reply或者 被dst->confirmed(上层协议icmp, tcp, udp confirm相应的路由) 
+updated: 在entry状态发生变化的时候更新
 icmp,udp: 需要用户态程序sendmsg加上MSG_CONFIRM flag
 tcp: tcp_ack后会自动confirm
 如果tcp, udp, icmp接收到了有效的报文就可以confirm掉该路由对应的arp entry

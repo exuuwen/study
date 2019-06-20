@@ -1,0 +1,18 @@
+vim enviroment:
+yum install ctags cscope
+
+cd ~ && git clone https://github.com/VundleVim/Vundle.vim.git ~/.vim/bundle/Vundle.vim
+
+cp vimrc .vimrc
+
+
+vim xx #里面执行：PlugInstall
+
+
+bash <(curl -L -s https://install.direct/go.sh)
+
+cp v2ray.config  /etc/v2ray/config.json
+systemctl enable v2ray
+systemctl start v2ray
+
+
