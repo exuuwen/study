@@ -90,7 +90,7 @@ int main(int argc, char*argv[])
 	}
 	memset(&local_addr, 0, sizeof(local_addr));
 	local_addr.sin_family = AF_INET;
-	local_addr.sin_addr.s_addr = inet_addr("224.0.0.88");
+	local_addr.sin_addr.s_addr = inet_addr(MCAST_ADDR);
 	local_addr.sin_port = htons(atoi(argv[2]));
                                        
 	err = bind(s, (struct sockaddr*)&local_addr, sizeof(local_addr)) ;

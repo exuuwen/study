@@ -37,3 +37,10 @@ filter protocol ip pref 49152 flower chain 0 handle 0x1
 	Sent 55440 bytes 660 pkt (dropped 0, overlimits 0 requeues 0) 
 	backlog 0b 0p requeues 0
 
+
+tc filter add dev gre_sys prio 3 parent ffff: handle 995 protocol ip flower skip_sw enc_dst_ip 172.168.152.75 enc_src_ip 172.168.152.241 enc_key_id 995 enc_dst_port 0 ip_flag nofrag action tunnel_key unset pipe action mirred egress redirect dev mlx_pf0vf0 
+
+tc filter del dev gre_sys prio 3 parent ffff: protocol ip handle 995 flower
+
+find del_* -print | xargs -n 1 -P 10 tc -b
+

@@ -15,7 +15,7 @@
 #include <arpa/inet.h>
 #include <sys/epoll.h>
 
-#define MCAST_ADDR "224.0.0.88"     
+#define MCAST_ADDR "224.0.1.88"     
 #define MCAST_INTERVAL 5                        
 #define BUFF_SIZE 256   
 
@@ -58,7 +58,7 @@ int main(int argc, char*argv[])
 	struct sockaddr_in local_addr;              
 	int err = -1;
 
-	if (argc != 3)
+	if (argc != 3 && argc != 4)
 	{
 		printf("%s joined_ip port\n", argv[0]);
 		return -1;
@@ -89,7 +89,7 @@ int main(int argc, char*argv[])
 	}
 	memset(&local_addr, 0, sizeof(local_addr));
 	local_addr.sin_family = AF_INET;
-	local_addr.sin_addr.s_addr = inet_addr("224.0.0.88");/*muticast bind only receive from this packet, when you should send a muticast packet it should use IP_MULTICAST_IF to specifc the src of the packet*/
+	local_addr.sin_addr.s_addr = inet_addr(MCAST_ADDR);/*muticast bind only receive from this packet, when you should send a muticast packet it should use IP_MULTICAST_IF to specifc the src of the packet*/
 	local_addr.sin_port = htons(atoi(argv[2]));
                                        
 	err = bind(s, (struct sockaddr*)&local_addr, sizeof(local_addr)) ;
@@ -109,8 +109,8 @@ int main(int argc, char*argv[])
 
 	struct ip_mreqn mreq;                                    
 	mreq.imr_multiaddr.s_addr = inet_addr(MCAST_ADDR); 
-	//mreq.imr_address.s_addr = inet_addr(argv[1]);//add the interface that the ip addr bind to mcast_addr group
-	mreq.imr_ifindex = 4; //eth0
+	mreq.imr_address.s_addr = inet_addr(argv[1]);//add the interface that the ip addr bind to mcast_addr group
+	//mreq.imr_ifindex = 4; //eth0
 		                                       
 	err = setsockopt(s, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
 	if (err < 0)
@@ -118,6 +118,9 @@ int main(int argc, char*argv[])
 		perror("setsockopt():IP_ADD_MEMBERSHIP");
 		return -4;
 	}
+
+	if (argc ==4)
+		goto out;
 	
 	err = epoll_init(10);
 	if (err < 0)
@@ -157,13 +160,15 @@ int main(int argc, char*argv[])
 				n = recvfrom(s, buff, BUFF_SIZE, 0, NULL, NULL);
 				if( n == -1)
 		   			perror("recvfrom()");
-				else                                
-					printf("Recv %dst message from server:%s\n", times, buff);
+				else				
+					printf("Recv %dst message from server:%s\n", times++, buff);
+
 			}
 		}
 	}
 
-	//err = setsockopt(s, IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq));
+out:
+	err = setsockopt(s, IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq));
 
 	close(efd);
 	close(s);

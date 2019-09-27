@@ -1,0 +1,22 @@
+ip netns add ns1
+ip netns add ns2
+ip netns add ns3
+ip l add dev veth1 type veth peer name eth0 netns ns1
+ip l add dev veth2 type veth peer name eth0 netns ns2
+ip l add dev veth3 type veth peer name eth0 netns ns3
+ifconfig veth1 up
+ifconfig veth2 up
+ifconfig veth3 up
+
+brctl addbr br0
+brctl addif br0 veth1
+brctl addif br0 veth2
+brctl addif br0 veth3
+ifconfig br0 up
+
+ip netns exec ns1 ifconfig eth0 10.0.0.1/24 up
+ip netns exec ns2 ifconfig eth0 10.0.0.2/24 up
+ip netns exec ns3 ifconfig eth0 10.0.0.3/24 up
+
+echo 1 > /sys/class/net/br0/bridge/multicast_querier
+

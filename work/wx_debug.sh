@@ -1,7 +1,7 @@
 1. tcpdump -i veth-oxxx
 2. ovs-ofctl dump-flows br0 | grep xxxxx
 
-3. ip:10.11.12.13
+3. dst ip:10.11.12.13
 iptables -t raw -A PREROUTING -p 47 -m u32 --u32 "58 = 0xa0b0c0d"
 iptables -A INPUT -p 47 -m u32 --u32 "58 = 0xa0b0c0d"
 

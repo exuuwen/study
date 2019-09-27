@@ -15,7 +15,7 @@
 #include <arpa/inet.h>
 #include <net/if.h>
 
-#define MCAST_ADDR "224.0.0.88"    
+#define MCAST_ADDR "224.0.1.88"    
 #define MCAST_DATA "MULTICAST TEST DATA"            
 #define MCAST_INTERVAL 2
 

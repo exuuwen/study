@@ -78,6 +78,7 @@ nft add rule firewall rule-2000-ingress ct zone 2 tcp dport 23 ct state new coun
 nft add rule firewall rule-2000-ingress ct zone 2 ip protocol icmp ct state new counter accept
 nft add rule firewall rule-2000-ingress counter drop
 nft add chain firewall rules-all { type filter hook prerouting priority - 150 \; }
+nft add rule firewall rules-all meta iifkind "vrf" counter accept
 nft add rule firewall rules-all ip daddr vmap { "2.2.2.11" : jump rule-1000-ingress, "2.2.2.12" : jump rule-2000-ingress } 
 nft add chain firewall rule-1000-egress
 nft add rule firewall rule-1000-egress ct state established,related counter accept
