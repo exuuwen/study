@@ -42,5 +42,13 @@ tc filter add dev gre_sys prio 3 parent ffff: handle 995 protocol ip flower skip
 
 tc filter del dev gre_sys prio 3 parent ffff: protocol ip handle 995 flower
 
+tc filter add dev mlx_0 pref 6 ingress  protocol ip flower skip_sw dst_mac 52:54:00:24:a0:88 src_mac 52:54:00:49:89:57 ip_proto icmp action tunnel_key set dst_ip 172.168.152.241 src_ip 172.168.152.75 id 1000 nocsum pipe action mirred egress redirect dev gre_sys
+
 find del_* -print | xargs -n 1 -P 10 tc -b
+
+
+tc filter ls dev gre_sys ingress | grep "dst_mac 52:54:00:ee:6c:5c" -B 1  | grep  "flower handle" | sed "s/filter //" | sed "s/flower //" | sed "s/$/flower/" | sed "s/^/tc filter del dev gre_sys ingress /" > m.sh
+
+verbose | skip_sw: print netlink_ext_act msg
+tc filter add dev mlx_0 pref 6 ingress  protocol ip flower verbose dst_mac 52:54:00:24:a0:88 src_mac 52:54:00:49:89:57 ip_proto icmp action tunnel_key set dst_ip 172.168.152.241 src_ip 172.168.152.75 id 1000 nocsum pipe action mirred egress redirect dev gre_sys
 

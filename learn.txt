@@ -217,24 +217,160 @@ mod -s mlx5_core /usr/lib/debug/lib/modules/kernelxx/driver/net/ethernet/mellano
 
 
 llvm
-$ git clone http://llvm.org/git/llvm.git
-$ cd llvm/tools
-$ git clone --depth 1 http://llvm.org/git/clang.git
-$ cd ..; mkdir build; cd build
-cmake3 .. -DLLVM_TARGETS_TO_BUILD="BPF;X86" -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release -DLLVM_BUILD_RUNTIME=OFF -DLLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN=ON
-$ make -j $(getconf _NPROCESSORS_ONLN)
+
+curl  -LO  http://releases.llvm.org/7.0.1/llvm-7.0.1.src.tar.xz
+curl  -LO  http://releases.llvm.org/7.0.1/cfe-7.0.1.src.tar.xz
+tar -xf cfe-7.0.1.src.tar.xz
+tar -xf llvm-7.0.1.src.tar.xz
+
+mkdir clang-build
+mkdir llvm-build
+
+cd llvm-build
+cmake3 -G "Unix Makefiles" -DLLVM_TARGETS_TO_BUILD="BPF;X86" \
+  -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_RTTI=ON -DCMAKE_INSTALL_PREFIX=/usr ../llvm-7.0.1.src
+make -j 32
+make install
+
+cd ../clang-build
+cmake3 -G "Unix Makefiles" -DLLVM_TARGETS_TO_BUILD="BPF;X86" \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr ../cfe-7.0.1.src
+make -j 32
+make install
+
+
+uninstall llvm/clang
+cd xxx-build
+xargs rm < install_manifest.txt
 
 
 bcc:
 git clone https://github.com/iovisor/bcc.git
 cd bcc/
-git submodule update --init --recursive
-edit CMakexxx.txt add # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 mkdir build; cd build
-cmake .. -DCMAKE_INSTALL_PREFIX=/usr
-make
-sudo make install
+cmake3 .. -DCMAKE_INSTALL_PREFIX=/usr
+make -j32
+make install
 
 
+bpftrace:
+	
+yum install centos-release-scl
+yum install devtoolset-8
+scl enable devtoolset-8 bash
+git clone https://github.com/iovisor/bpftrace
+cd bpftrace
+mkdir build; cd build;
+cmake3 -DCMAKE_BUILD_TYPE=Release ..
+make -j32
+make install
+
+
+make headers_install INSTALL_HDR_PATH=/usr
 
 git send-email 00* --to pablo@netfilter.org --to fw@strlen.de --cc netfilter-devel@vger.kernel.org --cc netdev@vger.kernel.org
+
+
+bf fw update
+flint -d <mst device> -i FW.bin burn
+
+cx5 fw update
+mlxfwmanager -u -i fw-xxxx.bin
+
+
+CPU:
+pidstat: pid status, check cpu usage adn on which cpu
+vmstat: show running process
+
+perf record -a -g -F 997 [ -e event -p xxx ] sleep 10 
+perf record -g -a -e context-switches -p 100 sleep 10
+perf report  --stdio
+
+perf sched record sleep 4
+perf sched latency
+
+perf stat -p 27224 sleep 2
+
+perf top -a -g -p 27224  -U
+
+perf list: list the event
+
+MEMORY:
+The result of the virtual memory model and demand allocation is that any page
+of virtual memory may be in one of the following states:
+A. Unallocated
+B. Allocated, but unmapped (unpopulated and not yet faulted)
+C. Allocated, and mapped to main memory (RAM)
+D. Allocated, and mapped to the physical swap device (disk)
+
+From these states, two memory usage terms can also be defined:
+ Resident set size (RSS): the size of allocated main memory pages (C)
+ Virtual memory size: the size of all allocated areas (B + C + D) 
+
+
+
+Free list: a list of pages that are unused (also called idle memory) and 
+available for immediate allocation. This is usually implemented as multiple free
+page lists, one for each locality group (NUMA).
+
+Page cache: the file system cache. A tunable parameter called swappiness
+sets the degree to which to favor freeing memory from the page cache as
+opposed to swapping.
+ 
+Swapping: This is paging by the page-out daemon, kswapd, which finds 
+notrecently-used pages to add to the free list, including application memory.
+They are paged out, which may involve writing to either a file-system-based
+swap file or a swap device. This is available only if a swap file or device has
+been configured.
+
+Reaping: When a low-memory threshold is crossed, kernel modules and the
+kernel slab allocator can be instructed to immediately free any memory that
+can easily be freed. This is also known as shrinking
+ 
+OOM killer: The out-of-memory killer will free memory by finding and killing a
+sacrificial process, found using select_bad_process() and then
+killed by calling oom_kill_process(). This may be logged in the system log
+(/var/log/messages) as an “Out of memory: Kill process” message.
+
+
+
+
+Once free memory has reached the lowest threshold, kswapd operates in synchronous mode,
+freeing pages of memory as they are requested (the kernel is
+exempt from this requirement) [Gorman 04]. This lowest threshold is tunable
+(vm.min_free_kbytes),
+
+
+Page scanning: Look for continual page scanning (more than 10 s) as a sign of
+memory pressure. On Linux, this can be done using sar -B and checking the
+pgscan columns.
+ 
+Paging: The paging of memory is a further indication that the system is low
+on memory. On Linux, you can use vmstat(8) and check the si and so columns 
+(here, the term swapping means anonymous paging).
+ 
+vmstat: Run vmstat per second and check the free column for available
+memory
+vmstat -S m 1
+vmstat -a 1
+
+slabtop: kernel slab allocator statistics
+slaptop -sc 1
+
+Sar
+ -B: paging statistics
+ -H: huge pages statistics
+ -r: memory utilization
+ -R: memory statistics
+ -S: swap space statistics
+ -W: swapping statistics 
+
+pmap: command lists the memory mappings of a process, showing their
+sizes, permissions, and mapped objects
+pmap -x 10252
+
+vm.overcommit_memory 
+0 = use a heuristic to allow reasonable overcommits; 1 = always overcommit; 
+2 = don’t overcommit
+vm.overcommit_ratio 
+

@@ -1,0 +1,66 @@
+flow_put:
+
+struct dpif_flow_put *put = &op->flow_put;
+struct match match1;
+int err1;
+
+err1 = parse_key_and_mask_to_match(put->key, put->key_len, put->mask,
+                          put->mask_len, &match1);
+if (!err1) {
+     struct flow *flow = &match1.flow;
+     if (flow->dl_src.ea[0] == 0x52 && flow->dl_src.ea[1] == 0x54 &&	
+         flow->dl_src.ea[2] == 0 && flow->dl_src.ea[3] == 0x8c &&	
+         flow->dl_src.ea[4] == 0xbd && flow->dl_src.ea[5] == 0x85 && 
+         flow->nw_proto == 1)
+         VLOG_INFO("hahhah tc flow put. 111111111. flags %d, err %d\n", put->flags, err);
+}
+
+
+
+flow_del:
+
+struct dpif_flow_del *del = &op->flow_del;
+struct flow flow1;
+int err1;
+
+err1 = odp_flow_key_to_flow(del->key, del->key_len, &flow1);
+if (!err1) {
+     struct flow *flow = &flow1;
+
+     if (flow->dl_src.ea[0] == 0x52 && flow->dl_src.ea[1] == 0x54 &&	
+         flow->dl_src.ea[2] == 0 && flow->dl_src.ea[3] == 0x8c &&	
+         flow->dl_src.ea[4] == 0xbd && flow->dl_src.ea[5] == 0x85 && 
+         flow->nw_proto == 1)
+         VLOG_INFO("hahhah tc flow del. 11111111. err %d\n", err);
+}
+
+
+
+flow_exe:
+
+struct dpif_execute = &op->execute;
+const struct flow *flow = d_exec->flow;
+
+if (flow) {
+    if (flow->dl_src.ea[0] == 0x52 && flow->dl_src.ea[1] == 0x54 &&	
+        flow->dl_src.ea[2] == 0 && flow->dl_src.ea[3] == 0x8c &&	
+        flow->dl_src.ea[4] == 0xbd && flow->dl_src.ea[5] == 0x85 &&	flow->nw_proto == 1)
+        VLOG_INFO("hahhah exec going...111111111111111111.\n");
+}
+
+
+
+ukey_debug:
+
+struct flow *flow;
+struct flow flow1;
+int err1;
+err1 = odp_flow_key_to_flow(ukey->key, ukey->key_len, &flow1);
+if (!err1) {
+     flow = &flow1;
+     if (flow->dl_src.ea[0] == 0x52 && flow->dl_src.ea[1] == 0x54 &&	
+         flow->dl_src.ea[2] == 0 && flow->dl_src.ea[3] == 0x8c &&	
+         flow->dl_src.ea[4] == 0xbd && flow->dl_src.ea[5] == 0x85 && 
+         flow->nw_proto == 1)
+        VLOG_INFO("hahhah s it is modify only ....\n");
+}

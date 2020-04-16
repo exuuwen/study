@@ -1,0 +1,15 @@
+1. check hwaddr in sysconfig
+# ifcfg-eth0
+
+DEVICE=eth0
+HWADDR=52:54:00:8A:C0:EA
+
+
+2. check udev rules
+
+# 70-persistent-net.rule
+
+SUBSYSTEM=="net",ACTION=="add",KERNELS=="0000:00:06.0",ATTR{address}=="52:54:00:f8:36:92",ATTR{type}=="1",NAME="eth2"
+SUBSYSTEM=="net",ACTION=="add",ATTR{phys_port_name}=="sby",ATTR{address}=="52:54:00:f8:36:92",ATTR{type}=="1",NAME="eth1"
+
+udevadm info -ap  /sys//devices/pci0000:00/0000:00:04.0/virtio1/net/eth0
