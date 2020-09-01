@@ -374,3 +374,30 @@ vm.overcommit_memory
 2 = don’t overcommit
 vm.overcommit_ratio 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+sonic:
+
+1,安装
+sudo sonic_installer install /tmp/sonic-mellanox.bin
+
+2，查看OS上目前运行的OS，以及新安装的OS
+sudo sonic_installer list
+
+3，重启
+sudo reboot
+
+4，查看运行的OS已经是新安装的OS了
+sudo sonic_installer list

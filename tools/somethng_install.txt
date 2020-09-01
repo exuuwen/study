@@ -20,9 +20,6 @@ ksplice
   457  yum install mlocate
   
 gcc:
---prefix=/usr 
-  569  yum install libmpc libmpc-devel
-  569  yum install gmp-devel mpfr-devel
-  577  yum -y install glibc-devel.i686
-  580  yum install zip
+./configure --prefix=/usr --disable-multilib
+yum install libmpc libmpc-devel gmp-devel mpfr-devel glibc-devel.i686 zip
 

@@ -1,0 +1,5 @@
+insmod act_police.ko 
+# disable this feature
+insmod act_police.ko  police_peakrate_packetrate_enable=0
+
+tc filter add dev eth0 parent ffff: protocol ip prio 40 u32 match ip dst 172.168.0.0/24 police rate 60Mbit peakrate 2000 burst 6M mtu 64k drop flowid ffff:
