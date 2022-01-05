@@ -19,4 +19,6 @@ ip netns exec ns-pub ip r a default via 10.0.1.1
 ip netns exec ns-pub ip n a 10.0.1.1 dev tun lladdr fa:ff:ff:ff:ff:ff
 
 
-
+# tc filter add dev pf0vf0 prio 1 ingress protocol ip flower skip_hw indev pf0vf0 action mpls push protocol 0x8847 label 1000 bos 1 pipe action mpls push protocol 0x8847 label 2000 bos 0 pipe action mirred egress redirect dev pf0vf1
+# tc filter add dev eth1 prio 1 ingress protocol 0x8847 flower skip_hw indev eth1 mpls_bos 0 mpls_label 2000 action mpls pop protocol 0x8847 pipe goto chain 1
+# tc filter add dev eth1 prio 1 ingress protocol 0x8847 flower skip_hw chain 1 indev eth1 mpls_bos 1 mpls_label 1000 action mpls pop protocol 0x0800 pass

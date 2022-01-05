@@ -18,13 +18,13 @@ ip addr add 1.2.3.4/24 dev eth0
 RT_SCOPE_LINK: the addr is used for link(local, link)
 ip addr add 10.1.2.3/24 dev eth0 scope link
 
-RT_SCOPE_HOST: the addr is used only forlocal
+RT_SCOPE_HOST: the addr is used only for local
 ip addr add 20.1.2.3/24 dev eth0 scope host
 
 
 In default the 3 kinds of scope no difference in kernel
 
-when arp_ignore = 2 the IP(10.1.2.3) only can replay the arp request from the link level (the same subnet) for it
+when arp_ignore = 2 the IP(10.1.2.3) only can reply the arp request from the link level (the same subnet) for it
 when arp_ignore = 3 the host scope IP(20.1.2.3) does't replay the arp request for it
 
 

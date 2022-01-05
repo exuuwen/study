@@ -19,6 +19,12 @@ docker run -t -i --volumes-from d86bcb885450  ubuntu /bin/bash
 
 docker rm -v xx:xx container_id
 
+save images:
+docker image save myimage:latest | gzip > myimage_latest.tar.gz
+
+Loaded image:
+docker image load -i xx.tar.gz
+
 
 docker hub:
 docker login

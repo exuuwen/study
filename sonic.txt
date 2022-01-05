@@ -1,0 +1,484 @@
+
+port init:
+portsyncd:
+1). read cfgdb PORT table to appdb PORT table and also store to g_portset. when finished, set PortConfigDone(attr is count of ports) to appdb in PORT table
+2). linksyncd onmsg receive RTM_NEWLINK msg for "port" and set the "port" "state ok" in statedb for PORT table and del "port" fromg_portset
+3). finnaly g_init not set and g_portset is empty which means all the port create successfully, and set PortInitDone to appdb in PORT table. set g_init
+
+127.0.0.1:6379[4]> hgetall PORT|Ethernet0
+ 1) "admin_status"
+ 2) "up"
+ 3) "alias"
+ 4) "etp1"
+ 5) "index"
+ 6) "1"
+ 7) "lanes"
+ 8) "0"
+ 9) "mtu"
+10) "9100"
+
+portsorch:
+1). appdb PORT table get port, addPort: sai->create_port with speed, lane, neg, fec, attr and get the port_id
+m_lanesAliasSpeedMap[lane_set] = make_tuple(alias, speed, an, fec_mode, index);
+sai_port_api->create_port(&port_id, gSwitchId, static_cast<uint32_t>(attrs.size()), attrs.data());
+m_portListLaneMap[lane_set] = port_id; 
+
+2). init_port
+Port p(alias, Port::PHY);
+//create hostif with name and port_id
+sai_hostif_api->create_hostif(&host_intfs_id, gSwitchId, (uint32_t)attrs.size(), attrs.data()); 
+init Port.(oper_status, admin_state, speed through sai)
+m_portList[alias] = p;
+
+3). set attr: sai_port_api->set_port_attribute
+set speed, mtu, fec admin_status( get in appdb)
+SAI_PORT_ATTR_ADMIN_STATE
+SAI_PORT_ATTR_ADVERTISED_SPEED
+SAI_PORT_ATTR_MTU
+SAI_PORT_ATTR_FEC_MODE
+
+4. get the PortInitDone and set m_initDone
+
+127.0.0.1:6379> hgetall PORT_TABLE:Ethernet0
+ 1) "admin_status"
+ 2) "up"
+ 3) "alias"
+ 4) "etp1"
+ 5) "index"
+ 6) "1"
+ 7) "lanes"
+ 8) "0"
+ 9) "mtu"
+10) "9100"
+11) "oper_status"
+12) "up"
+
+
+in the config_db
+1. config :interface port相关
+a. startup/shutdown: config--->portmgr--->portsorch 
+for PORTCHANNEL, PORT, VLAN_SUB_INTERFACE table
+config interface  startup/shutdown Ethernet0 
+mod_entry("PORT", interface_name, {"admin_status": "up"})
+mod_entry("PORT", interface_name, {"admin_status": "down"})
+
+portmgr 
+1). listen the PORT table in cfgdb and get the new chang port, check the port state is ok in statedb
+2). set the key and attr to the "PORT_TABLE" table in appdb and "ip l set dev port up/down"
+
+b. mtu: config-->portconfig--->portmgr--->portsorch
+for PORT table
+config interface mtu Ethernet0 9000
+mod_entry("PORT", interface_name, {"mtu": mtu})
+
+portmgr 
+1). listen the PORT table in cfgdb and get the new chang port, check the port state is ok in statedb
+2). set the key and attr to the "PORT_TABLE" table in appdb and "ip l set dev port mtu xxxx"
+
+3. speed： config-->portconfig---> buffermgr ---> portsorch
+for PORT table
+config interface speed Ethernet0 10000
+mod_entry("PORT", interface_name, {"speed": speed})
+
+
+all the portsorch is the same the step above 1 and 2, 3. modify attr, del the old port and create new one
+
+all the ops handle the config_db in the portsyncd-->handlePortConfig: add this to app_db  why need this?
+
+
+vlan:
+2. config: vlan
+a. add/del: config ---> vlanmgr ---> portsorch
+for VLAN table
+config vlan add/del vid
+set_entry('VLAN', vlan, {'vlanid': vid})
+
+127.0.0.1:6379[4]> hgetall VLAN|Vlan100
+1) "vlanid"
+2) "100"
+
+vlanmgr
+1). if vlan interface is not exist, create host vlan interface and add key to m_vlans
+2). add/modify "admin_status", "mtu" and "mac" attr to the "VLAN_TABLE" in appdb, set "state" ok for "VLAN_TABLE" in the statedb
+3). for delete: remove host vlan interface and del key in m_vlans and del key in "VLAN_TABEL" appdb and statedb
+
+127.0.0.1:6379> HGETALL VLAN_TABLE:Vlan100
+1) "admin_status"
+2) "up"
+3) "mtu"
+4) "9100"
+5) "mac"
+6) "1c:34:da:bf:be:00"
+7) "host_ifname"
+8) ""
+OK
+
+
+portsorch:
+1). There is no the vlan port in m_portList: addvlan
+sai_vlan_api->create_vlan(&vlan_oid, gSwitchId, 1, &attr);
+Port vlan(vlan_alias, Port::VLAN);
+vlan.m_vlan_info.vlan_oid = vlan_oid;
+vlan.m_vlan_info.vlan_id = vlan_id;
+vlan.m_members = set<string>();
+m_portList[vlan_alias] = vlan;
+
+if (mtu != 0)
+ {    
+     vl.m_mtu = mtu; 
+     m_portList[vlan_alias] = vl;
+     if (vl.m_rif_id)
+     {    
+         gIntfsOrch->setRouterIntfsMtu(vl);
+     }    
+ }    
+ if (mac)
+ {    
+     vl.m_mac = mac; 
+     m_portList[vlan_alias] = vl;
+     if (vl.m_rif_id)
+     {    
+         gIntfsOrch->setRouterIntfsMac(vl);
+     }    
+}
+
+
+2). getport and set mtu, mac attr only with m_rif_id(l3 interface port)
+
+
+b. member add/del: config ---> vlanmgr ---> portsorch
+for VLAN_MEMBER table
+config vlan member add/del Ethernet0
+vlan['members'] = members
+set_entry('VLAN', vlan_name, vlan)
+set_entry('VLAN_MEMBER', (vlan_name, interface_name), {'tagging_mode': "untagged" if untagged else "tagged" })
+
+127.0.0.1:6379[4]> KEYS *VLAN*
+1) "VLAN_MEMBER|Vlan100|Ethernet0"
+127.0.0.1:6379[4]> hgetall VLAN_MEMBER|Vlan100|Ethernet0
+1) "tagging_mode"
+2) "untagged"
+
+vlanmgr
+1). add host interface to vlan member (ip lin set master && bridge vlan add ) 
+2). the key(vlan100:ethernet0) with arr tagging_mode to "VLAN_MEMBER_TABLE" in appdb, set "state" ok for "VLAN_MEMBER_TABLE" in the statedb
+3). for delete: del host interface to vlan member, clear key "VLAN_MEMBER_TABLE" in appdb and in statedb
+
+127.0.0.1:6379> KEYS *VLAN*
+1) "VLAN_MEMBER_TABLE:Vlan100:Ethernet0"
+127.0.0.1:6379> HGETALL VLAN_MEMBER_TABLE:Vlan100:Ethernet0
+1) "tagging_mode"
+2) "untagged"
+
+portsorch:
+1). getPort(vlan_alias, vlan), getPort(port_alias, port)
+2). addBridgePort(port)
+sai_bridge_api->create_bridge_port(&port.m_bridge_port_id, gSwitchId, (uint32_t)attrs.size(), attrs.data());
+3). addVlanMember(vlan, port, tagging_mode)
+sai_vlan_api->create_vlan_member(&vlan_member_id, gSwitchId, (uint32_t)attrs.size(), attrs.data()); 
+if (sai_tagging_mode == SAI_VLAN_TAGGING_MODE_UNTAGGED)
+{
+    if(!setPortPvid(port, vlan.m_vlan_info.vlan_id))
+    {
+        return false;
+    }
+}
+VlanMemberEntry vme = {vlan_member_id, sai_tagging_mode};
+port.m_vlan_members[vlan.m_vlan_info.vlan_id] = vme;
+vlan.m_members.insert(port.m_alias);
+
+
+
+2. config :interface interface
+a. ip add/remove : config --> intfmgr --> intfsorch
+for VLAN_SUB_INTERFACE/INTERFACE/PORTCHANNEL_INTERFACE/VLAN_INTERFACE/LOOPBACK_INTERFACE/MGMT_INTERFACE table
+config ip add/remove Ethernet0 1.1.1.1/24
+
+config_db.set_entry(table_name, interface_name, {"NULL": "NULL"})  create interface_name entry in table
+config_db.set_entry(table_name, (interface_name, ip_addr), {"NULL": "NULL"})  create interface_name:ip_addr in table
+
+127.0.0.1:6379[4]> HGETALL VLAN_INTERFACE|Vlan100
+1) "NULL"
+2) "NULL"
+127.0.0.1:6379[4]> hgetall VLAN_INTERFACE|Vlan100|172.168.96.111/24
+1) "NULL"
+2) "NULL"
+
+intfmgr
+1). check port/vlan state table is ok , if it is a subvlan interface just create the vlan interface.
+2). add the key and data 'mac_addr, admin_status(used for subvlan), mtu' to "INTF_TABLE" in the appdb, add the key to "INTERFACE_TABLE" in the statedb.
+3). set address: check portstate/vlan state table is ok, check the interface_table in the statedb.
+4). set host interface address, add name:address as key and attr 'family, scope' to "INTF_TABLE" in the appdb and the key to "INTERFACE_TABLE" in the statedb as state ok
+
+intforch
+1). is_loop
+if (is_lo)
+{    
+    if (!ip_prefix_in_key)
+    {    
+        if (m_syncdIntfses.find(alias) == m_syncdIntfses.end())
+        {    
+            IntfsEntry intfs_entry;
+            intfs_entry.ref_count = 0; 
+            intfs_entry.proxy_arp = false;
+            intfs_entry.vrf_id = vrf_id;
+            m_syncdIntfses[alias] = intfs_entry;
+            m_vrfOrch->increaseVrfRefCount(vrf_id);
+        }    
+    }    
+    else 
+    {    
+        if (m_syncdIntfses.find(alias) == m_syncdIntfses.end())
+        {    
+            it++;
+            continue;
+        }    
+        if (m_syncdIntfses[alias].ip_addresses.count(ip_prefix) == 0)
+        {    
+            m_syncdIntfses[alias].ip_addresses.insert(ip_prefix);
+            addIp2MeRoute(m_syncdIntfses[alias].vrf_id, ip_prefix);//sai_route_api->create_route_entry(&unicast_route_entry, (uint32_t)attrs.size(), attrs.data());
+        }    
+    }    
+}
+
+2). setIntf(alias, vrf_id, ip_prefix_in_key ? &ip_prefix : nullptr, adminUp, mtu)
+gPortsOrch->getPort(alias, port);
+auto it_intfs = m_syncdIntfses.find(alias);
+if (it_intfs == m_syncdIntfses.end())
+{    
+    if (!ip_prefix && addRouterIntfs(vrf_id, port)) // sai_router_intfs_api->create_router_interface(&port.m_rif_id, gSwitchId, (uint32_t)attrs.size(), attrs.data());
+    {    
+        IntfsEntry intfs_entry;
+        intfs_entry.vrf_id = vrf_id;
+        m_syncdIntfses[alias] = intfs_entry;
+    }
+}
+
+if (ip_prefix_in_key)
+{
+    addIp2MeRoute(port.m_vr_id, *ip_prefix);
+
+    if (port.m_type == Port::VLAN)
+    {
+        addDirectedBroadcast(port, *ip_prefix); //sai_neighbor_api->create_neighbor_entry(&neighbor_entry, 1, &neighbor_attr);
+    }
+
+    m_syncdIntfses[alias].ip_addresses.insert(*ip_prefix);
+}
+
+127.0.0.1:6379> hgetall INTF_TABLE:Vlan100
+1) "NULL"
+2) "NULL"
+3) "mac_addr"
+4) "00:00:00:00:00:00"
+127.0.0.1:6379> hgetall INTF_TABLE:Vlan100:172.168.96.111/24
+1) "scope"
+2) "global"
+3) "family"
+4) "IPv4"
+
+
+a. vrf bind/unbind : config --> intfmgr --> intfsorch
+for VLAN_SUB_INTERFACE/INTERFACE/PORTCHANNEL_INTERFACE/VLAN_INTERFACE/LOOPBACK_INTERFACE/MGMT_INTERFACE table
+config vrf bind/ubind Ethernet1 Vrf100
+
+config_db.set_entry(table_name, interface_name, None)
+config_db.set_entry(table_name, interface_name, {"vrf_name": vrf_name})
+
+
+intfmgr:
+1). check portstate/vlan state table is ok , if it is a subvlan interface just create the vlan interface.
+2). add the key and data to "INTF_TABLE" in the appdb, add the key to "INTERFACE_TABLE" in the statedb.
+3). set vrf: check portstate/vlan state table is ok, check the interface_tatble in the statedb.
+4). set host interface vrf, update vrf data in the key interf_name in "INTF_TABLE" within the appdb and update key to "INTERFACE_TABLE" in the statedb as state ok and vr_name
+
+
+
+3. config route:
+vtysh "ip r xxxx" ----> frr fpm --> fpmsyncd
+
+The also get the route netlink from kernel to the fpmsyncd. 
+But only the port in the "INTF_TABLE" and the nexthop is a nexthopentry(a validate neigbor)
+
+So for case config ip add Ethernet0 1.1.1.1/24, it will add a link route 1.1.1.0/24 to th switch
+
+fpmyncd:
+add ip_prefix as key to "ROUTE_TABLE" in the appdb.
+
+
+4. config vrf:
+add/del: config-->vrfmgr-->vrforch
+for VRF tabel
+config vrf add/del Vrf100
+
+config_db.set_entry('VRF', vrf_name, {"NULL": "NULL"})
+
+vrfmgr
+1). add key to "VRF_TABLE" in the appdb and also set the key in "VRF_TABLE" with statedb to "ok"
+The "VRF_OBJECT_TABLE" in statedb used by the vrforch to check vrf is create in the hw
+
+
+
+INTERFACE table里放的L3的port 不能成为vlan member, 配置ip address和bind vrf的interface都属于L3 interface 包括INTERFACE/VLAN_SUB_INTERFACE/PORTCHANNEL_INTERFACE/VLAN_INTERFACE/LOOPBACK_INTERFACE
+
+
+bgp:
+
+
+neighbor PGNAME peer-group
+neighbor PEER peer-group PGNAME
+
+
+ibgp传递给ebgp的ibgp路由会改为自己的下一跳
+ibgp传递给ibgp的ebgp路由不会下一跳
+neighbor PEER next-hop-self [all]: ibgp传递给ibgp的ebgp路由下一跳作为自己
+neighbor PEER default-originate : 自己作为peer的默认网关
+redistribute kernel : 内核三层路由推送给bgp
+redistribute connected: 内核二层直连路由推送给bgp
+redistribute static: frr 里配置的static路由推送给bgp
+neighbor PEER remote-as external/internal
+
+neighbor PEER update-source <IFNAME|ADDRESS>
+neighbor PEER route-reflector-client
+
+neighbor PEER ebgp-multihop 2
+bgp disable-ebgp-connected-route-check: check ebgp不是直连 不是就不会发tcp syn
+
+
+path selection:
+neighbor PEER weight WEIGHT : value in local router / for inbound match
+
+set local-preference  200 : vlaue in ibgp 比如路由传递通过rr 在ibgp中, ebgp获取的路由在ibg内传递 / for inbound match
+
+neighbor 172.17.0.2 route-map PREF in
+route-map PREF permit 10
+  set local-preference 200
+
+set as-path prepend AS-PATH
+set as-path prepend last-as num
+
+for inbound match:
+ neighbor 172.17.0.4 route-map AP in
+ route-map AP permit 10
+   set as-path prepend 65003 65001
+   set as-path prepend last-as 2
+
+for outbound match:
+ neighbor 172.17.0.1 route-map AP out
+ route-map AP permit 10
+   set as-path prepend 65003 65001
+   set as-path prepend last-as 2   : last-as 就是最近一次的as tag 必须要有 不然network不能发布出去 , 比如从
+igb内部发布给外面ebgp用这个就不行 因为as-path是空
+
+set metric METRIC: for outbound 仅仅是单跳传递(可以i/ebgp), Where routes with a MED were received from the same AS, prefer the route with the lowest MED
+
+
+Multi-path check
+
+ If bgp bestpath as-path multipath-relax is set, all such routes are considered equal,
+otherwise routes received via iBGP with identical AS_PATHs or routes received from eBGP neighbours in the same AS are considered equal.
+
+bgp bestpath as-path multipath-relax
+
+network network-number [route-map map-tag] 
+
+
+neighbor 10.10.10.1 soft-reconfiguration inbound
+clear bgp ipv4|ipv6 PEER soft|in|out
+
+
+
+
+///////////////////////////////////////////////////////////////////////////
+
+
+
+EBGP neighbors, by default, need to be directly connected: ebgp-multihop
+
+Routes learned via IBGP are never propagated to other IBGP peers
+
+The neighbor update-source command is normally used only with IBGP neighbors.
+The address of an EBGP neighbor must be directly connected by default; the loopback of an EBGP neighbor is not directly connected
+
+
+
+
+
+neighsyncd:
+
+listen rt_neigh and update the NEIGH_TABLE in APPDB
+127.0.0.1:6379> HGETALL NEIGH_TABLE:Ethernet4:172.168.104.104
+1) "neigh"
+2) "3c:fd:fe:bb:1c:0d"
+3) "family"
+4) "IPv4"
+
+
+
+
+
+configload:
+config-setup.service--> config-setup--->reload_configdb---> config reload xxx --> sonic-cfggen  --write-to-db
+
+
+
+frr:
+
+rib_add_multipath
+
+staic route:
+ip_route_address_interface-->static_route_leak-->static_add_route-->static_install_route-->static_zebra_route_add-->zclient_route_send
+
+
+bgp route:
+xxxx --> bgp_zebra_announce-->zclient_route_send
+    
+<----> ZEBRA_ROUTE_ADD <--->  
+
+zread_route_add-->rib_add_multipath
+
+
+kernel add route:
+//add address "ip a a dev net2 1.1.1.1/24" will create a 1.1.1.0/24 connected route
+netlink_interface_addr-->connected_add_ipv4-->connected_update-->connected_announce-->connected_up-->rib_add
+
+//ip r a dev net2 2.2.2.2 via 1.1.1.7
+netlink_route_change-->netlink_route_change_read_unicast(not process zebra and proto kernel[above case])-->rib_add/rib_add_multipath
+
+
+
+rib_add/rib_add_multipath-->rib_addnode-->rib_link-->rib_queue_add-->rib_meta_queue_add
+
+<----> zrouter.ribq->spec.workfunc = &meta_queue_process <---->
+
+meta_queue_process-->process_subq-->rib_process-->rib_process_add_fib-->rib_install_kernel-->hook_call(rib_update, rn, "installing in kernel");
+
+<----> DEFINE_HOOK(rib_update, (struct route_node * rn, const char *reason) & hook_register(rib_update, zfpm_trigger_update) <--->
+
+zfpm_trigger_update --> zfpm_write_on --> zfpm_write_cb
+
+
+APPL_DB - 0
+
+ASIC_DB - 1
+
+COUNTERS_DB - 2
+
+LOGLEVEL_DB - 3
+
+CONFIG_DB - 4
+
+PFC_WD_DB - 5
+
+FLEX_COUNTER_DB - 5
+
+STATE_DB - 6
+
+
+
+
+快杰:
+
+system mac
+arp ---> route notify
+qos

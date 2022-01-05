@@ -60,7 +60,8 @@ mac=`ip l lst dev net5 | grep 'link/ether' | sed 's/ *//' | cut -d " " -f 2`
 tc qdisc add dev mlx_$num ingress
 tc qdisc add dev bond2 ingress
 tc filter add dev mlx_$num pref 1 ingress  protocol ip flower skip_sw action mirred egress redirect dev bond2
-tc filter add dev mlx_$num pref 2 ingress  protocol arp flower skip_sw action mirred egress redirect dev bond2
+tc filter add dev mlx_$num pref 2 ingress  protocol arp flower skip_hw action mirred egress redirect dev bond2
 tc filter add dev bond2 pref 1 ingress  protocol ip flower skip_sw dst_mac $mac action mirred egress redirect dev mlx_$num
-tc filter add dev bond2 pref 2 ingress  protocol arp flower skip_sw dst_mac $mac action mirred egress redirect dev mlx_$num
+tc filter add dev bond2 pref 2 ingress  protocol arp flower skip_hw dst_mac $mac action mirred egress redirect dev mlx_$num
+tc filter add dev bond2 pref 3 ingress  protocol arp flower skip_hw dst_mac ff:ff:ff:ff:ff:ff arp_tip 172.168.153.0/24 action mirred egress redirect dev mlx_$num
 

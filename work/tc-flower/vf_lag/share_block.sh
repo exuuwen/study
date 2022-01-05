@@ -30,6 +30,7 @@ ifconfig net2 down
 echo "+net2" > /sys/class/net/bond0/bonding/slaves
 ifconfig net3 down
 echo "+net3" > /sys/class/net/bond0/bonding/slaves
+echo 1 > /sys/class/net/bond0/bonding/xmit_hash_policy
 
 echo $pci_vf > /sys/bus/pci/drivers/mlx5_core/bind
 
@@ -42,7 +43,7 @@ tc qdisc add dev pf1vf1 ingress
 
 mac=`ip l lst dev eth0 | grep 'link/ether' | sed 's/ *//' | cut -d " " -f 2`
 tc filter add dev pf1vf1 pref 1 ingress  protocol ip flower skip_sw action mirred egress redirect dev bond0
-tc filter add dev pf1vf1 pref 2 ingress  protocol arp flower skip_sw action mirred egress redirect dev bond0
+tc filter add dev pf1vf1 pref 2 ingress  protocol arp flower skip_hw action mirred egress redirect dev bond0
 
 tc qdisc add dev bond0 ingress_block 22 ingress 
 tc qdisc add dev net2 ingress_block 22 ingress 
@@ -50,7 +51,7 @@ tc qdisc add dev net3 ingress_block 22 ingress
 
 tc filter add block 22 pref 1 protocol ip flower dst_mac $mac action mirred egress redirect dev pf1vf1
 tc filter add block 22 pref 2 protocol arp flower dst_mac $mac action mirred egress redirect dev pf1vf1
-tc filter add block 22 pref 2 protocol arp flower dst_mac ff:ff:ff:ff:ff:ff arp_tip 172.168.153.0/24 action mirred egress redirect dev pf1vf1
+tc filter add block 22 pref 2 protocol arp flower skip_hw dst_mac ff:ff:ff:ff:ff:ff arp_tip 172.168.153.0/24 action mirred egress redirect dev pf1vf1
 
 
 ifconfig eth0 172.168.153.117/24

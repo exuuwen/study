@@ -27,19 +27,20 @@ if (tokens < 0)
 	drop packet
 
 
-b. 每发送1个packet需要n token
-tokens_get in x(ms) = rate_pps*n/MSEC_PER_SEC 
+b. 每发送1个packet/bit需要1 token
+tokens_get in x(ms) = rate_pps/MSEC_PER_SEC  这种情况下 rate_pps需要>1K  单位为K， 而且pps不能超过1k（因为最多精度为1ms， 每1ms才更新下token）
+or tokens_get in x(us) = rate_pps/USEC_PER_SEC 这种情况下 rate_pps需要>1M  单位为M， 而且pps不能超过1M（因为最多精度为1us， 每1us才更新下token）
 init:
 tokens = f(burst)
 
 来一个packet
-if (tokens > n)
-	tokens -= n;
+if (tokens > 1)
+	tokens -= 1;
 else
-	token +=  rate_pps*n/MSEC_PER_SEC * (time_now - time_last)
+	token +=  rate_pps/MSEC_PER_SEC * (time_now - time_last)
 	if (tokens > f(burst))
 		tokens = f(burst)
-	tokens -= n;
+	tokens -= 1;
 
 if (tokens < 0)
 	drop packet

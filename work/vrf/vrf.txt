@@ -38,6 +38,7 @@ ip_rcv_finish-->l3mdev_ip_rcv(skb) {
 	//skb->dev = vrf_dev;
     //skb->skb_iif = vrf_dev->ifindex;
     //IPCB(skb)->flags |= IPSKB_L3SLAVE;
+    //just pass the prerouting with iif=vrf_dev.
 }
 
 b route
@@ -57,19 +58,26 @@ fib_lookup-->__fib_lookup()
 most all the route flags with FLOWI_FLAG_SKIP_NH_OIF, SO_BINDTODVICE to vrf_dev but finnaly route dev is not vrf_dev
 
 3. local send
-1)
-a. SO_BINDTODEVICE with vrf_dev or vrf_slave 
-b. the same recv b.route
-c. if the route dest is vrf_slave  goto step 2). 
+1. do route
+1) SO_BINDTODEVICE with vrf_master or vrf_slave is the same recv b.route
+2). non-BINDTODEVICE (main) route to vrf_slave
+3). non-BINDTODEVICE (main) route to vrf_master
 
-2).non-BINDTODEVICE route to vrf_slave
-__ip_local_out-->l3mdev_ip_out-->l3mdev_l3_out{
-	//if the skb_dst->dev is vrf slave just call vrf master->l3mdev_l3_out
-	master->l3mdev_ops->l3mdev_l3_out()
-	// just change skb->dev to vrf dev then goto the vrf_dev->ndo_xmit like the following case 3)
+2. local_out
+__ip_local_out {
+	//only for case 2). in step 1 do route
+	l3mdev_ip_out-->l3mdev_l3_out {
+		//if the skb_dst->dev is vrf slave just call vrf master->l3mdev_l3_out
+		master->l3mdev_ops->l3mdev_l3_out()
+		// just change skb->dev to vrf dev then goto prerouting and postrouting
+	}
+
+	pass NF_INET_LOCAL_OUT and dst_output(skb);
 }
 
-3).non-BINDTODEVICE route to vrf_master
+3. xmit
+1). slave device xmit: skb_dst is slave device
+2). master vrf device xmit: normally(except the vrf route output to vrf dev) only for case 3) in step 1 do route 
 vrf_xmit(vrf_dev->ndo_xmit)--->is_ip_tx_frame{
 
 	// just did the vrf local again
@@ -86,11 +94,10 @@ vrf_xmit(vrf_dev->ndo_xmit)--->is_ip_tx_frame{
     struct net *net = dev_net(vrf_dev);
     struct rtable *rt;
 
+    //lookup the vrf route 
     rt = ip_route_output_flow(net, &fl4, NULL);
     if (IS_ERR(rt))
         goto err;
-
-    skb_dst_drop(skb);
 
     /* if dst.dev is loopback or the VRF device again this is locally
      * originated traffic destined to a local address. Short circuit
@@ -100,8 +107,47 @@ vrf_xmit(vrf_dev->ndo_xmit)--->is_ip_tx_frame{
         return vrf_local_xmit(skb, vrf_dev, &rt->dst);
 
 	ret = vrf_ip_local_out(dev_net(skb_dst(skb)->dev), skb->sk, skb);
+	//pass NF_INET_LOCAL_OUT with the skb_dst(skb)->dev and dst_output(net, sk, skb)
 }
 
 
 
+ip netns add ns0
+ip netns add ns1
+ip l add dev vrf type vrf table 100
+ifconfig vrf up
+ip l add dev vethr1 type veth peer name veth1 netns ns0
+ip l add dev vethr2 type veth peer name veth2 netns ns1
+ip l set dev vethr1 master vrf
+ip l set dev vethr2 master vrf
+ifconfig vethr1 10.0.0.1/24 up
+ifconfig vethr2 10.0.1.1/24 up
+ip netns exec ns0 ifconfig veth1 10.0.0.7/24 up
+ip netns exec ns1 ifconfig veth2 10.0.1.7/24 up
+ip netns exec ns1 ip r a default via 10.0.1.1
+ip netns exec ns0 ip r a default via 10.0.0.1
+
+
+# case 1
+ip netns exec ns0 ping 10.0.1.7
+
+#case 2
+ip netns exec ns0 ping 10.0.0.1
+
+#case 3 (localout do route 1)
+ping 10.0.0.7 -I vrf/vethr1
+
+#case 4 (localout do route 2)
+ip r a 10.0.0.0/24 dev vrf
+ping 10.0.0.7
+
+#case 5 (localout do route 3)
+ip r a 10.0.0.0/24 dev vethr1
+ping 10.0.0.7
+
+#case 6
+ip a a 1.1.1.1/32 dev vrf
+ip r a 2.2.2.2 via 10.0.0.7 src 1.1.1.1 vrf vrf
+ip netns exec ns0 ip a a dev lo 2.2.2.2/32
+ping 2.2.2.2 -I vrf/vethr1
 

@@ -218,23 +218,23 @@ mod -s mlx5_core /usr/lib/debug/lib/modules/kernelxx/driver/net/ethernet/mellano
 
 llvm
 
-curl  -LO  http://releases.llvm.org/7.0.1/llvm-7.0.1.src.tar.xz
-curl  -LO  http://releases.llvm.org/7.0.1/cfe-7.0.1.src.tar.xz
-tar -xf cfe-7.0.1.src.tar.xz
-tar -xf llvm-7.0.1.src.tar.xz
+https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.1/llvm-10.0.1.src.tar.xz
+https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.1/clang-10.0.1.src.tar.xz
+tar -xf clang-10.0.1.src.tar.xz
+tar -xf llvm-10.0.1.src.tar.xz
 
 mkdir clang-build
 mkdir llvm-build
 
 cd llvm-build
 cmake3 -G "Unix Makefiles" -DLLVM_TARGETS_TO_BUILD="BPF;X86" \
-  -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_RTTI=ON -DCMAKE_INSTALL_PREFIX=/usr ../llvm-7.0.1.src
+  -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_RTTI=ON -DCMAKE_INSTALL_PREFIX=/usr ../llvm-10.0.1.src
 make -j 32
 make install
 
 cd ../clang-build
 cmake3 -G "Unix Makefiles" -DLLVM_TARGETS_TO_BUILD="BPF;X86" \
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr ../cfe-7.0.1.src
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr ../clang-10.0.1.src
 make -j 32
 make install
 
@@ -264,6 +264,13 @@ mkdir build; cd build;
 cmake3 -DCMAKE_BUILD_TYPE=Release ..
 make -j32
 make install
+
+
+new gcc version
+yum install centos-release-scl -y
+yum install devtoolset-9 -y
+
+scl enable devtoolset-9 bash  or  source /opt/rh/devtoolset-9/enable
 
 
 make headers_install INSTALL_HDR_PATH=/usr
@@ -390,6 +397,11 @@ vm.overcommit_ratio
 
 sonic:
 
+YourPaSsWoRd
+
+0,编译
+make init && make configure PLATFORM=mellanox && make target/sonic-mellanox.bin
+
 1,安装
 sudo sonic_installer install /tmp/sonic-mellanox.bin
 
@@ -401,3 +413,267 @@ sudo reboot
 
 4，查看运行的OS已经是新安装的OS了
 sudo sonic_installer list
+
+debug:
+
+rm target/debs/stretch/swss_1.0.0_amd64.deb
+make target/debs/stretch/swss_1.0.0_amd64.deb
+
+docker cp swss_1.0.0_amd64.deb swss:/mnt
+docker exec -ti swss bash
+# dpkg -i /mnt/swss_1.0.0_amd64.deb
+
+config reload
+
+
+
+port init:
+portsyncd:
+1. read cfgdb PORT table to appdb PORT table and also store to g_portset. when finished, set PortConfigDone(attr is count of ports) to appdb in PORT table
+2. linksyncd onmsg receive RTM_NEWLINK msg for "port" and set the "port" "state ok" in statedb for PORT table and del "port" fromg_portset
+3. finnaly g_init not set and g_portset is empty which means all the port create successfully, and set PortInitDone to appdb in PORT table. set g_init
+
+in the config_db
+1. config :interface port相关
+a. startup/shutdown: config--->portmgr--->portsorch 
+for PORTCHANNEL, PORT, VLAN_SUB_INTERFACE table
+config interface  startup/shutdown Ethernet0 
+mod_entry("PORT", interface_name, {"admin_status": "up"})
+mod_entry("PORT", interface_name, {"admin_status": "down"})
+
+portmgr 
+1). listen the PORT table in cfgdb and get the new chang port, check the port state is ok in statedb
+2). set the key and attr to the "PORT_TABLE" table in appdb and "ip l set devport up/down"
+
+b. mtu: config-->portconfig--->portmgr--->portsorch
+for PORT table
+config interface mtu Ethernet0 9000
+mod_entry("PORT", interface_name, {"mtu": mtu})
+
+portmgr 
+1). listen the PORT table in cfgdb and get the new chang port, check the port state is ok in statedb
+2). set the key and attr to the "PORT_TABLE" table in appdb and "ip l set dev port mtu xxxx"
+
+3. speed： config-->portconfig---> buffermgr ---> portsorch
+for PORT table
+config interface speed Ethernet0 10000
+mod_entry("PORT", interface_name, {"speed": speed})
+
+
+all the ops handle the config_db in the portsyncd-->handlePortConfig: add this to app_db  why need this?
+
+
+vlan:
+2. config: vlan
+a. add/del: config ---> vlanmgr ---> portsorch
+for VLAN table
+config vlan add/del vid
+set_entry('VLAN', vlan, {'vlanid': vid})
+
+vlanmgr
+1). create host vlan interface and add key to m_vlans
+2). add "admin_status", "mtu" attr to the "VLAN_TABLE" in appdb, set "state" ok for "VLAN_TABLE" in the statedb
+3). for delete: remove host vlan interface and del key in m_vlans and del key in "VLAN_TABEL" appdb and statedb
+
+b. member add/del: config ---> vlanmgr ---> portsorch
+for VLAN_MEMBER table
+config vlan member add/del Ethernet0
+vlan['members'] = members
+set_entry('VLAN', vlan_name, vlan)
+set_entry('VLAN_MEMBER', (vlan_name, interface_name), {'tagging_mode': "untagged" if untagged else "tagged" })
+
+vlanmgr
+1). add host interface to vlan member (tagging_mode is only used in vlanmgr for host vlan member?)
+2). the key(vlan100:ethernet0) to"VLAN_MEMBER_TABLE" in appdb, set "state" ok for "VLAN_MEMBER_TABLE" in the statedb
+3). for delete: del host interface to vlan member, clear key "VLAN_MEMBER_TABLE" in appdb and in statedb
+
+
+
+
+2. config :interface interface
+a. ip add/remove : config --> intfmgr --> intfsorch
+for VLAN_SUB_INTERFACE/INTERFACE/PORTCHANNEL_INTERFACE/VLAN_INTERFACE/LOOPBACK_INTERFACE/MGMT_INTERFACE table
+config ip add/remove Ethernet0 1.1.1.1/24
+
+config_db.set_entry(table_name, interface_name, {"NULL": "NULL"})  create interface_name entry in table
+config_db.set_entry(table_name, (interface_name, ip_addr), {"NULL": "NULL"})  create interface_name:ip_addr in table
+
+intfmgr
+1). check portstate/vlan state table is ok , if it is a subvlan interface just create the vlan interface.
+2). add the key and data to "INTF_TABLE" in the appdb, add the key to "INTERFACE_TABLE" in the statedb.
+3). set address: check portstate/vlan state table is ok, check the interface_table in the statedb.
+4). set host interface address, add name:address as key to "INTF_TABLE" in the appdb and the key to "INTERFACE_TABLE" in the statedb as state ok
+
+a. vrf bind/unbind : config --> intfmgr --> intfsorch
+for VLAN_SUB_INTERFACE/INTERFACE/PORTCHANNEL_INTERFACE/VLAN_INTERFACE/LOOPBACK_INTERFACE/MGMT_INTERFACE table
+config vrf bind/ubind Ethernet1 Vrf100
+
+config_db.set_entry(table_name, interface_name, None)
+config_db.set_entry(table_name, interface_name, {"vrf_name": vrf_name})
+
+
+intfmgr:
+1). check portstate/vlan state table is ok , if it is a subvlan interface just create the vlan interface.
+2). add the key and data to "INTF_TABLE" in the appdb, add the key to "INTERFACE_TABLE" in the statedb.
+3). set vrf: check portstate/vlan state table is ok, check the interface_tatble in the statedb.
+4). set host interface vrf, update vrf data in the key interf_name in "INTF_TABLE" within the appdb and update key to "INTERFACE_TABLE" in the statedb as state ok and vr_name
+
+
+
+3. config route:
+vtysh "ip r xxxx" ----> frr fpm --> fpmsyncd
+
+The also get the route netlink from kernel to the fpmsyncd. 
+But only the port in the "INTF_TABLE" and the nexthop is a nexthopentry(a validate neigbor)
+
+So for case config ip add Ethernet0 1.1.1.1/24, it will add a link route 1.1.1.0/24 to th switch
+
+fpmyncd:
+add ip_prefix as key to "ROUTE_TABLE" in the appdb.
+
+
+4. config vrf:
+add/del: config-->vrfmgr-->vrforch
+for VRF tabel
+config vrf add/del Vrf100
+
+config_db.set_entry('VRF', vrf_name, {"NULL": "NULL"})
+
+vrfmgr
+1). add key to "VRF_TABLE" in the appdb and also set the key in "VRF_TABLE" with statedb to "ok"
+The "VRF_OBJECT_TABLE" in statedb used by the vrforch to check vrf is create in the hw
+
+
+
+INTERFACE table里放的L3的port 不能成为vlan member, 配置ip address和bind vrf的interface都属于L3 interface 包括INTERFACE/VLAN_SUB_INTERFACE/PORTCHANNEL_INTERFACE/VLAN_INTERFACE/LOOPBACK_INTERFACE
+
+
+bgp:
+
+
+neighbor PGNAME peer-group
+neighbor PEER peer-group PGNAME
+
+
+ibgp传递给ebgp的ibgp路由会改为自己的下一跳
+ibgp传递给ibgp的ebgp路由不会下一跳
+neighbor PEER next-hop-self [all]: ibgp传递给ibgp的ebgp路由下一跳作为自己
+neighbor PEER default-originate : 自己作为peer的默认网关
+redistribute kernel : 内核三层路由推送给bgp
+redistribute connected: 内核二层直连路由推送给bgp
+redistribute static: frr 里配置的static路由推送给bgp
+neighbor PEER remote-as external/internal
+
+neighbor PEER update-source <IFNAME|ADDRESS>
+neighbor PEER route-reflector-client
+
+neighbor PEER ebgp-multihop 2
+bgp disable-ebgp-connected-route-check: check ebgp不是直连 不是就不会发tcp syn
+
+
+path selection:
+neighbor PEER weight WEIGHT : value in local router / for inbound match
+
+set local-preference  200 : vlaue in ibgp 比如路由传递通过rr 在ibgp中, ebgp获取的路由在ibg内传递 / for inbound match
+
+neighbor 172.17.0.2 route-map PREF in
+route-map PREF permit 10
+  set local-preference 200
+
+set as-path prepend AS-PATH
+set as-path prepend last-as num
+
+for inbound match:
+ neighbor 172.17.0.4 route-map AP in
+ route-map AP permit 10
+   set as-path prepend 65003 65001
+   set as-path prepend last-as 2
+
+for outbound match:
+ neighbor 172.17.0.1 route-map AP out
+ route-map AP permit 10
+   set as-path prepend 65003 65001
+   set as-path prepend last-as 2   : last-as 就是最近一次的as tag 必须要有 不然network不能发布出去 , 比如从
+igb内部发布给外面ebgp用这个就不行 因为as-path是空
+
+set metric METRIC: for outbound 仅仅是单跳传递(可以i/ebgp), Where routes with a MED were received from the same AS, prefer the route with the lowest MED
+
+
+Multi-path check
+
+ If bgp bestpath as-path multipath-relax is set, all such routes are considered equal,
+otherwise routes received via iBGP with identical AS_PATHs or routes received from eBGP neighbours in the same AS are considered equal.
+
+bgp bestpath as-path multipath-relax
+
+network network-number [route-map map-tag] 
+
+
+neighbor 10.10.10.1 soft-reconfiguration inbound
+clear bgp ipv4|ipv6 PEER soft|in|out
+
+
+
+
+///////////////////////////////////////////////////////////////////////////
+
+
+
+EBGP neighbors, by default, need to be directly connected: ebgp-multihop
+
+Routes learned via IBGP are never propagated to other IBGP peers
+
+The neighbor update-source command is normally used only with IBGP neighbors.
+The address of an EBGP neighbor must be directly connected by default; the loopback of an EBGP neighbor is not directly connected
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+rdma-core-22.4-5.el7.x86_64
+libibverbs-22.4-5.el7.x86_64
+libibumad-22.4-5.el7.x86_64
+ibacm-22.4-5.el7.x86_64
+librdmacm-22.4-5.el7.x86_64
+rdma-core-devel-22.4-5.el7.x86_64
+
+
+
+echo 0 > tracing_on
+echo nop > current_tracer
+
+# 设置graph模式
+echo function_graph > current_tracer
+# 设置需要跟踪的函数
+echo function_name > set_graph_function
+
+# 开启跟踪
+echo 1 > tracing_on
+# 清空trace
+> trace
+
+# 查看函数跟踪信息
+cat trace |less
+
+
+# trace events
+echo bpf_trace > /sys/kernel/debug/tracing/set_event
+
