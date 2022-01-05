@@ -1,0 +1,71 @@
+chroot:
+[root@10 ~]# mkdir -p $HOME/test
+[root@10 ~]# mkdir -p $HOME/test/{bin,lib64,lib}
+[root@10 ~]# cp -v /bin/{bash,ls} $HOME/test/bin
+‘/bin/bash’ -> ‘/root/test/bin/bash’
+‘/bin/ls’ -> ‘/root/test/bin/ls’
+[root@10 ~]#  T=$HOME/test
+[root@10 ~]# list="$(ldd /bin/ls | egrep -o '/lib.*\.[0-9]')"
+[root@10 ~]# for i in $list; do cp -v "$i" "${T}${i}"; done
+‘/lib64/libselinux.so.1’ -> ‘/root/test/lib64/libselinux.so.1’
+‘/lib64/libcap.so.2’ -> ‘/root/test/lib64/libcap.so.2’
+‘/lib64/libacl.so.1’ -> ‘/root/test/lib64/libacl.so.1’
+‘/lib64/libc.so.6’ -> ‘/root/test/lib64/libc.so.6’
+‘/lib64/libpcre.so.1’ -> ‘/root/test/lib64/libpcre.so.1’
+‘/lib64/libdl.so.2’ -> ‘/root/test/lib64/libdl.so.2’
+‘/lib64/ld-linux-x86-64.so.2’ -> ‘/root/test/lib64/ld-linux-x86-64.so.2’
+‘/lib64/libattr.so.1’ -> ‘/root/test/lib64/libattr.so.1’
+‘/lib64/libpthread.so.0’ -> ‘/root/test/lib64/libpthread.so.0’
+[root@10 ~]# 
+[root@10 ~]# 
+[root@10 ~]# list="$(ldd /bin/bash | egrep -o '/lib.*\.[0-9]')"
+[root@10 ~]# for i in $list; do cp -v "$i" "${T}${i}"; done
+‘/lib64/libtinfo.so.5’ -> ‘/root/test/lib64/libtinfo.so.5’
+cp: overwrite ‘/root/test/lib64/libdl.so.2’? y
+‘/lib64/libdl.so.2’ -> ‘/root/test/lib64/libdl.so.2’
+cp: overwrite ‘/root/test/lib64/libc.so.6’? y
+‘/lib64/libc.so.6’ -> ‘/root/test/lib64/libc.so.6’
+cp: overwrite ‘/root/test/lib64/ld-linux-x86-64.so.2’? y
+‘/lib64/ld-linux-x86-64.so.2’ -> ‘/root/test/lib64/ld-linux-x86-64.so.2’
+[root@10 ~]# 
+[root@10 ~]# 
+[root@10 ~]# 
+[root@10 ~]# chroot ~/test /bin/bash
+bash-4.2# PATH=/bin
+bash-4.2# ls
+bin  lib  lib64
+
+overlayfs:
+
+mkdir -p A/{a,b}
+mkdir -p B/{a,b}
+
+touch A/a/aa
+touch A/b/ab
+touch B/a/ba
+touch B/b/bb
+
+mkdir C
+
+mount -t overlay overlay -olowerdir=./A:./B C/
+
+
+volume:
+
+[root@10-19-61-167 ~]# mkdir a
+[root@10-19-61-167 ~]# cp k8s_install.sh a
+[root@10-19-61-167 ~]# cp patches  a
+[root@10-19-61-167 ~]# mkdir b
+[root@10-19-61-167 ~]# mount --bind a b
+[root@10-19-61-167 ~]# 
+[root@10-19-61-167 ~]# cd b
+[root@10-19-61-167 b]# ls
+k8s_install.sh  patches
+[root@10-19-61-167 b]# >bb
+[root@10-19-61-167 b]# ls ~/a
+bb  k8s_install.sh  patches
+
+
+
+
+

@@ -1,0 +1,104 @@
+1. Amdahl’s Law
+Consider a system in which executing some application requires time Told. Suppose some part of the system requires a fraction α of this time, and that
+we improve its performance by a factor of k. That is, the component originally required time αTold, and it now requires time (αTold)/k.
+
+Tnew = (1 − α)Told + (αTold)/k = Told[(1 − α) + α/k]
+
+the speedup S = 1 / ((1 − α) + α/k)
+
+
+2.
+x ^ y = (x & ~y) | (~x & y)
+
+
+3.
+	  x + 2**w (x < 0), The most bit become positive (the most bit value is 2**(w-1)). So x + 2**(w-1) + 2**(w-1) = x + 2**w
+T2Uw(x) =
+          x (x ≥ 0)
+
+
+         u (u ≤ TMaxw)
+U2Tw(u) =
+         u − 2**w, (u > TMaxw)
+
+4.
+Expansion of an unsigned number by zero extension
+Expansion of a two’s-complement number by sign extension
+
+5.
+Truncating the bit representation of a number: longer to smaller bits trucate the extra bits
+1) Truncate to an unsigned: check it as the unsigned value: the most significant is data bit
+2) Truncate to an signed: check it as a signed vlaue: the most significant is signed bit
+
+6.
+When an operation is performed where one operand is signed and the other is unsigned, C
+implicitly casts the signed argument to unsigned and performs the operations 
+assuming the numbers are nonnegative. it leads to nonintuitive
+results for relational operators such as < and >.
+
+1 /* WARNING: This is buggy code */
+2 float sum_elements(float a[], unsigned length) {
+3 	int i;
+4	float result = 0;
+5
+6	for (i = 0; i <= length-1; i++)
+7 		result += a[i];
+8 	return result;
+9 }
+
+If the length is 0, there will be memeory problem.
+
+
+7.
+principle: Unsigned addition
+For x and y such that 0 ≤ x,y < 2**w:
+	x + y (x + y < 2**w Normal)
+x + y =
+	x + y − 2**w (2**w ≤ x + y < 2**(w+1) Overflow)
+
+let s = x + y. Then the computation of s overflowed if and only if s<x
+
+     x (x = 0)
+-x =
+     2**w − x (x > 0)
+
+
+8.
+Two’s-complement addition
+For integer values x and y in the range −2**(w−1) ≤ x,y ≤ 2**(w−1) − 1:
+
+
+	x + y − 2**w (2**(w−1) ≤ x + y Positive overflow)
+x + y = x + y (−2**(w−1) ≤ x + y < 2**(w−1) Normal)
+	x + y + 2**w (x + y < −2**(w−1) Negative overflow)
+
+let s = x + y, s has had positive overflow if and only if x > 0 and y > 0 but s ≤ 0. The
+computation has had negative overflow if and only if x < 0 and y < 0 but s ≥ 0.
+
+    TMinw (x = TMinw)
+x =
+    −x (x > TMinw)
+
+9.
+Unsigned multiplication
+For x and y such that 0 ≤ x,y ≤ UMaxw:
+x * y = (x * y) mod 2**w
+
+Two’s-complement multiplication
+For x and y such that TMinw ≤ x,y ≤ TMaxw:
+x * y = U2Tw((x * y) mod 2**w)
+
+10
+Multiplication by a power of 2
+g. For example, suppose a program contains the expression x*14. Recognizing that 14 = 23 + 22 + 21,
+the compiler can rewrite the multiplication as (x<<3) + (x<<2) + (x<<1), replacing one multiplication with three shifts and two additions.
+
+11.
+Division by a power of 2
+These analyses show that for a two’s-complement machine using arithmetic
+right shifts, the C expression
+	(x<0 ? x+(1<<k)-1 : x) >> k
+will compute the value x/2k.
+
+
+
