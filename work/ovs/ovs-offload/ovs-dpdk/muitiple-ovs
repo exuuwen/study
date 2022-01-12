@@ -1,0 +1,146 @@
+ovsdb-tool create /etc/openvswitch/conf1.db vswitchd/vswitch.ovsschema
+mount -t hugetlbfs none /mnt/ovsdpdk -o size=4G
+mount -t hugetlbfs none /mnt/ovsdpdk1 -o size=4G
+
+
+meson --prefix=/usr -Dexamples=all build
+ninja -C build
+ninja -C build install
+
+./configure --prefix=/usr --localstatedir=/var --sysconfdir=/etc --with-dpdk=shared
+
+
+ovsdb-server /etc/openvswitch/conf.db -vconsole:emer -vsyslog:err -vfile:info --remote=punix:/var/run/openvswitch/db.sock --private-key=db:Open_vSwitch,SSL,private_key --certificate=db:Open_vSwitch,SSL,certificate --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert --no-chdir --log-file=/var/log/openvswitch/ovsdb-server.log --pidfile=/var/run/openvswitch/ovsdb-server.pid --detach
+
+ovs-vswitchd unix:/var/run/openvswitch/db.sock -vconsole:emer -vsyslog:err -vfile:info --mlockall --no-chdir --unixctl=/var/run/openvswitch/ovs-vswitchd.ctl --log-file=/var/log/openvswitch/ovs-vswitchd.log --pidfile=/var/run/openvswitch/ovs-vswitchd.pid --detach
+
+ovs-appctl -t /var/run/openvswitch/ovs-vswitchd.ctl tnl/neigh/set manbr 172.168.153.73 3c:fd:fe:bb:1c:0c
+
+ovsdb-server /etc/openvswitch1/conf.db -vconsole:emer -vsyslog:err -vfile:info --remote=punix:/var/run/openvswitch1/db.sock --private-key=db:Open_vSwitch,SSL,private_key --certificate=db:Open_vSwitch,SSL,certificate --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert --no-chdir --log-file=/var/log/openvswitch1/ovsdb-server.log --pidfile=/var/run/openvswitch1/ovsdb-server.pid --detach
+ovs-vsctl --no-wait --db=unix:/var/run/openvswitch1/db.sock set Open_Vswitch . other_config:dpdk-extra="--file-prefix=ovs1 -w 0000:19:00.0,representor=[0-1],dv_flow_en=1,dv_esw_en=1,dv_xmeta_en=1"
+ovs-vsctl --no-wait --db=unix:/var/run/openvswitch1/db.sock set Open_Vswitch . other_config:dpdk-hugepage-dir="/mnt/ovsdpdk1"
+ovs-vsctl --no-wait --db=unix:/var/run/openvswitch1/db.sock set Open_Vswitch . other_config:dpdk-init="true"
+ovs-vsctl --no-wait --db=unix:/var/run/openvswitch1/db.sock set Open_Vswitch . other_config:dpdk-lcore-mask="0x20"
+ovs-vsctl --no-wait --db=unix:/var/run/openvswitch1/db.sock set Open_Vswitch . other_config:dpdk-socket-mem="4096"
+ovs-vsctl --no-wait --db=unix:/var/run/openvswitch1/db.sock set Open_Vswitch . other_config:hw-offload="true"
+ovs-vsctl --no-wait --db=unix:/var/run/openvswitch1/db.sock set Open_Vswitch . other_config:pmd-cpu-mask="0x3c0"
+
+ovs-vsctl --no-wait --db=unix:/var/run/openvswitch1/db.sock del-br manbr
+ovs-vsctl --no-wait --db=unix:/var/run/openvswitch1/db.sock del-br br0
+
+
+ovs-vswitchd unix:/var/run/openvswitch1/db.sock -vconsole:emer -vsyslog:err -vfile:info --mlockall --no-chdir --log-file=/var/log/openvswitch1/ovs-vswitchd.log --unixctl=/var/run/openvswitch1/ovs-vswitchd.ctl --pidfile=/var/run/openvswitch1/ovs-vswitchd.pid --detach
+# a patch for datapath_id 
+
+ovs-vsctl --db=unix:/var/run/openvswitch1/db.sock add-br manbr -- set bridge manbr datapath_type=netdev
+ovs-vsctl --db=unix:/var/run/openvswitch1/db.sock add-port manbr dpdk1 -- set in dpdk1 type=dpdk options:dpdk-devargs="0000:19:00.0" options:dpdk-lsc-interrupt="true" options:n_rxq="4"
+ovs-vsctl --db=unix:/var/run/openvswitch1/db.sock set interface dpdk1 options:n_rxq=4 other_config:pmd-rxq-affinity="0:6,1:7,2:8,3:9"
+
+ovs-vsctl add-port br0 vnet0 -- set in vnet0 type=dpdk options:dpdk-devargs="0000:19:00.0,representor=0" options:n_rxq=4 other_config:pmd-rxq-affinity="0:1,1:2,2:3,3:4"
+
+
+./build/test  -c 0x1f  -n 4 -m 4096 --file-prefix=ovs -w "0000:19:00.1,representor=[0-1],dv_flow_en=1,dv_esw_en=1,dv_xmeta_en=1"  --huge-dir=/mnt/ovsdpdk -- -p 0x1  -f config/test.cfg -u /tmp/dpdk.unix
+
+./build/test  -c 0x1f00  -n 4 -m 4096 --file-prefix=ovs1 -w "0000:19:00.1,representor=[0-1],dv_flow_en=1,dv_esw_en=1,dv_xmeta_en=1"  --huge-dir=/mnt/ovsdpdk1 -- -p 0x1  -f config/test.cfg -u /tmp/dpdk1.unix
+
+
+
+export PKG_CONFIG_PATH=/opt/mellanox/dpdk/lib64/pkgconfig/
+export LD_LIBRARY_PATH=/opt/mellanox/dpdk/lib64/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ovs-appctl dpctl/show
+netdev@netdev-manbr:
+  lookups: hit:0 missed:192 lost:0
+  flows: 1
+  port 0: netdev-manbr (tap)
+  port 1: manbr (tap)
+  port 2: dpdk1 (dpdk: configured_rx_queues=4, configured_rxq_descriptors=2048, configured_tx_queues=5, configured_txq_descriptors=2048, lsc_interrupt_mode=true, mtu=1500, requested_rx_queues=4, requested_rxq_descriptors=2048, requested_tx_queues=5, requested_txq_descriptors=2048, rx_csum_offload=true, tx_tso_offload=false)
+  port 3: vnet0 (dpdk: configured_rx_queues=4, configured_rxq_descriptors=2048, configured_tx_queues=5, configured_txq_descriptors=2048, dpdk-vf-mac=26:de:c5:14:78:b7, lsc_interrupt_mode=false, mtu=1500, requested_rx_queues=4, requested_rxq_descriptors=2048, requested_tx_queues=5, requested_txq_descriptors=2048, rx_csum_offload=true, tx_tso_offload=false)
+  port 4: br0 (tap)
+  port 5: vxlan_sys_4789 (vxlan: packet_type=ptap)
+
+
+# ovs-appctl dpctl/dump-flows
+flow-dump from pmd on cpu core: 3
+tunnel(tun_id=0x3e8,src=172.168.153.73,dst=172.168.153.50,flags(-df+csum+key)),recirc_id(0),in_port(5),packet_type(ns=0,id=0),eth(dst=46:83:da:cb:26:4c),eth_type(0x0800),ipv4(dst=10.0.0.50,proto=1,frag=no), packets:2, bytes:196, used:0.537s, actions:3
+recirc_id(0),in_port(2),packet_type(ns=0,id=0),eth(src=3c:fd:fe:bb:1c:0d,dst=1c:34:da:77:fb:d9),eth_type(0x0800),ipv4(dst=172.168.153.50,proto=17,frag=no),udp(dst=4789), packets:2, bytes:296, used:0.537s, actions:tnl_pop(5)
+flow-dump from pmd on cpu core: 2
+recirc_id(0),in_port(3),packet_type(ns=0,id=0),eth_type(0x0800),ipv4(tos=0/0x3,frag=no), packets:2, bytes:296, used:0.350s, actions:clone(tnl_push(tnl_port(5),header(size=50,type=4,eth(dst=3c:fd:fe:bb:1c:0d,src=1c:34:da:77:fb:d9,dl_type=0x0800),ipv4(src=172.168.153.50,dst=172.168.153.73,proto=17,tos=0,ttl=64,frag=0x4000),udp(src=0,dst=4789,csum=0x0),vxlan(flags=0x8000000,vni=0x3e8)),out_port(1)),2)
+
+ovs-vsctl add-br manbr -- set bridge manbr datapath_type=netdev
+ovs-vsctl add-port br0 dpdk0 -- set Interface dpdk0 type=dpdk options:dpdk-devargs=0000:19:00.1 options:dpdk-lsc-interrupt="true"
+ovs-vsctl set interface dpdk0 options:n_rxq=4 other_config:pmd-rxq-affinity="0:1,1:2,2:3,3:4"
+ovs-vsctl add-br br0 -- set bridge br0 datapath_type=netdev
+ovs-vsctl add-port br0 vnet0 -- set Interface vnet0 type=dpdk options:dpdk-devargs=0000:19:00.1,representor=0
+ovs-vsctl set interface vnet0 options:n_rxq=4 other_config:pmd-rxq-affinity="0:1,1:2,2:3,3:4"
+
+
+
+
+
+./dpdk-testpmd -c 0x1f  -n 4 -m 4096 --file-prefix=ovs -w "0000:19:00.0,representor=[0],dv_flow_en=1,dv_esw_en=1,dv_xmeta_en=1"  --huge-dir=/mnt/ovsdpdk  -- -i --flow-isolate-all --forward-mode=rxonly --rxq=4 --txq=4 --auto-start --nb-cores=4
+
+testpmd>> flow create 0 ingress pattern eth / ipv4 / udp / vxlan / end actions rss level 2 types ip udp tcp end queues 0 1 2 3 end / end
+
+
+
+
+./dpdk-testpmd -c 0x1f00  -n 4 -m 4096 --file-prefix=ovs1 -w "0000:19:00.0,representor=[0],dv_flow_en=1,dv_esw_en=1,dv_xmeta_en=1"  --huge-dir=/mnt/ovsdpdk1  -- -i --flow-isolate-all --forward-mode=rxonly --rxq=4 --txq=4 --auto-start --nb-cores=4
+
+testpmd>> flow create 0 ingress pattern eth / ipv4 / nvgre / end actions rss level 2 types ip udp tcp end queues 0 1 2 3 end / end
+
+
+flow create 0 ingress group 0 pattern eth  / ipv4 / gre k_bit is 1 protocol is 0x6558 / gre_key value spec  0x12345678 value mask 0xffffffff  / end  actions rss level 2 types ip udp tcp end queues 0 1 2 3 end / end
+
+
+a=Ether(src='fa:ff:ff:ff:ff:ff',dst='1c:34:da:77:fb:d8')/IP(src='172.168.153.73', dst="172.168.153.50")/UDP(sport=46943,dport=4789)/VXLAN(flags=0x8,vni=1000)/Ether(src='52:54:00:00:00:00', dst='fa:ff:ff:ff:ff:ff')/IP(src='2.2.2.2', dst="1.1.1.1")/UDP(sport=22346, dport=5001)
+
+a=Ether(src='fa:ff:ff:ff:ff:ff',dst='1c:34:da:77:fb:d8')/IP(src='172.168.153.73', dst="172.168.153.50")/GRE(key_present=1,key=0x12345678,proto=0x6558)/Ether(src='52:54:00:00:00:00', dst='fa:ff:ff:ff:ff:ff')/IP(src='2.2.2.2', dst="1.1.1.1")/UDP(sport=22346, dport=5001)
+
+
+
+
+
+
+
+./dpdk-testpmd -c 0x1f  -n 4 -m 4096 --file-prefix=ovs -a "0000:19:00.0,representor=pf[0-1]vf0,dv_flow_en=1,dv_esw_en=1,dv_xmeta_en=3"  --huge-dir=/mnt/ovsdpdk  -- -i --flow-isolate-all  --rxq=4 --txq=4 --auto-start --nb-cores=4
+
+
+flow tunnel create 0 type vxlan
+flow create 0 ingress priority 0 group 0 transfer tunnel_set 1 pattern eth src is 3c:fd:fe:bb:1c:0c dst is 1c:34:da:5f:33:c0 type is 0x0800 / ipv4 dst is 172.168.152.50 proto is 0x11 / udp dst is 4789 / end actions count / jump group 0 / end
+flow create 0 ingress priority 0 group 0 transfer tunnel_match 1 pattern ipv4 src is 172.168.152.73 dst is 172.168.152.50 proto is 0x11 tos is 0x0 / udp / vxlan vni is 1000 / eth dst is d2:a7:f6:c3:63:f8 type is 0x0800 / ipv4 / end actions count / port_id original 0 id 2 / end
+
+set vxlan ip-version ipv4 vni 1000 udp-src 0 udp-dst 4789 ip-src 172.168.152.50 ip-dst 172.168.152.73 eth-src 1c:34:da:5f:33:c0 eth-dst 3c:fd:fe:bb:1c:0c
+flow create 2 ingress priority 0 group 0 transfer pattern eth type is 0x0800 / ipv4 tos spec 0x0 tos mask 0x3 / end actions count / vxlan_encap / port_id original 0 id 0 / end
+
+
+
+flow tunnel create 0 type gre
+flow create 0 ingress priority 0 group 0 transfer tunnel_set 1 pattern eth src is 1c:34:da:5f:33:95 dst is 1c:34:da:5f:33:94 type is 0x0800 / ipv4 dst is 10.0.0.2 proto is 0x2f / end actions count / jump group 0 / end
+flow create 0 ingress priority 0 group 0 transfer tunnel_match 1 pattern ipv4 src is 10.0.0.3 dst is 10.0.0.2 proto is 0x2f tos is 0x0 / gre c_bit is 0 k_bit is 1 / gre_key value is 0 / eth dst is 46:4b:f2:9a:75:1e type is 0x0800 / ipv4 / end actions count / port_id original 0 id 1 / end
+Flow rule #1 created
+
+set raw_encap 0 eth dst is 1c:34:da:5f:33:95 src is 1c:34:da:5f:33:94 type is 0x0800 / ipv4 proto is 0x2f src is 10.0.0.2 dst is 10.0.0.3 / nvgre tni is 0x00000064 / end_set
+flow create 1 ingress priority 0 group 0 transfer pattern eth type is 0x0800 / ipv4 tos spec 0x0 tos mask 0x3 / end actions count / raw_encap / port_id original 0 id 0 / end
+
+ovs-appctl vlog/set netdev_offload_dpdk:file:DBG
+
+
+
+
+
+
+

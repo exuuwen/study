@@ -1,0 +1,160 @@
+diff --git a/lib/netdev-dpdk.c b/lib/netdev-dpdk.c
+index 2640a42..67a3aa8 100644
+--- a/lib/netdev-dpdk.c
++++ b/lib/netdev-dpdk.c
+@@ -1086,6 +1086,71 @@ dpdk_eth_flow_ctrl_setup(struct netdev_dpdk *dev) OVS_REQUIRES(dev->mutex)
+     }
+ }
+ 
++#define MAX_PATTERN_NUM 5
++#define MAX_ACTION_NUM 3
++static struct rte_flow*
++dpdk_rte_flow_generator(int port_id, int n_queues)
++{
++    struct rte_flow_attr attr;
++    struct rte_flow_item pattern[MAX_PATTERN_NUM];
++    struct rte_flow_action action[MAX_ACTION_NUM];
++    struct rte_flow *flow = NULL;
++    struct rte_flow_error error;
++    unsigned int i;
++    unsigned int j;
++    int res;
++    uint16_t queue[RTE_MAX_QUEUES_PER_PORT];
++    struct rte_flow_action_rss action_rss;
++
++    struct rte_flow_item_gre gre_spec = {
++        .c_rsvd0_ver = RTE_BE16(0x2000),
++        .protocol = RTE_BE16(0x6558),
++    };
++    struct rte_flow_item_gre gre_mask = {
++        .c_rsvd0_ver = RTE_BE16(0xb000),
++        .protocol = RTE_BE16(0xffff),
++    };
++
++    memset(pattern, 0, sizeof(pattern));
++    memset(action, 0, sizeof(action));
++
++    memset(&attr, 0, sizeof(struct rte_flow_attr));
++    attr.ingress = 1;
++
++    for (i = 0, j = 0; i < n_queues; ++i)
++        queue[j++] = i;
++
++    action_rss = (struct rte_flow_action_rss){
++       .types = ETH_RSS_IP | ETH_RSS_UDP | ETH_RSS_TCP,
++       .key_len = 0,
++       .level = 2,
++       .queue_num = j,
++       .key = NULL,
++       .queue = queue,
++    };
++
++    action[0].type = RTE_FLOW_ACTION_TYPE_RSS;
++    action[0].conf = &action_rss;
++    action[1].type = RTE_FLOW_ACTION_TYPE_END;
++
++    pattern[0].type = RTE_FLOW_ITEM_TYPE_ETH;
++    pattern[1].type = RTE_FLOW_ITEM_TYPE_IPV4;
++    pattern[2].type = RTE_FLOW_ITEM_TYPE_GRE;
++    pattern[2].spec = &gre_spec;
++    pattern[2].mask = &gre_mask;
++    pattern[3].type = RTE_FLOW_ITEM_TYPE_END;
++
++    res = rte_flow_validate(port_id, &attr, pattern, action, &error);
++    if (res < 0)
++        rte_panic("Cannot flow validate %u (%d) %s\n", port_id, error.type, error.message ? error.message : "no direct message");
++
++    flow = rte_flow_create(port_id, &attr, pattern, action, &error);
++    if(!flow)
++        rte_panic("Cannot flow create %u (%d) %s\n", port_id, error.type, error.message ? error.message : "no direct message");
++
++    return flow;
++}
++
+ static int
+ dpdk_eth_dev_init(struct netdev_dpdk *dev)
+     OVS_REQUIRES(dev->mutex)
+@@ -1099,6 +1164,8 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
+     uint32_t rx_chksm_offload_capa = DEV_RX_OFFLOAD_UDP_CKSUM |
+                                      DEV_RX_OFFLOAD_TCP_CKSUM |
+                                      DEV_RX_OFFLOAD_IPV4_CKSUM;
++    struct rte_flow_error error;
++    int ret;
+ 
+     rte_eth_dev_info_get(dev->port_id, &info);
+ 
+@@ -1156,16 +1223,28 @@ dpdk_eth_dev_init(struct netdev_dpdk *dev)
+         return -diag;
+     }
+ 
++    if (dev->port_id == 0) {
++        ret = rte_flow_isolate(dev->port_id, 1, &error);
++        if (0 > ret) {
++            rte_panic("Cannot flow isolate %u (%d) %s\n", dev->port_id, error.type, error.message ? error.message : "no direct message");
++        }
++    }
++
+     diag = rte_eth_dev_start(dev->port_id);
+     if (diag) {
+         VLOG_ERR("Interface %s start error: %s", dev->up.name,
+                  rte_strerror(-diag));
+         return -diag;
+     }
+-    dev->started = true;
+ 
+-    rte_eth_promiscuous_enable(dev->port_id);
+-    rte_eth_allmulticast_enable(dev->port_id);
++    if (dev->port_id == 0)
++    	dpdk_rte_flow_generator(dev->port_id, n_rxq);
++    else {
++        rte_eth_promiscuous_enable(dev->port_id);
++        rte_eth_allmulticast_enable(dev->port_id);
++    }
++
++    dev->started = true;
+ 
+     memset(&eth_addr, 0x0, sizeof(eth_addr));
+     rte_eth_macaddr_get(dev->port_id, &eth_addr);
+diff --git a/lib/netdev-linux.c b/lib/netdev-linux.c
+index 6be23db..03b032b 100644
+--- a/lib/netdev-linux.c
++++ b/lib/netdev-linux.c
+@@ -994,6 +994,8 @@ netdev_linux_construct_tap(struct netdev *netdev_)
+         ifr.ifr_flags |= IFF_VNET_HDR;
+     }
+ 
++    ifr.ifr_flags |= IFF_MULTI_QUEUE;
++
+     ovs_strzcpy(ifr.ifr_name, name, sizeof ifr.ifr_name);
+     if (ioctl(netdev->tap_fd, TUNSETIFF, &ifr) == -1) {
+         VLOG_WARN("%s: creating tap device failed: %s", name,
+diff --git a/lib/ovs-router.c b/lib/ovs-router.c
+index 09b81c6..89ae23c 100644
+--- a/lib/ovs-router.c
++++ b/lib/ovs-router.c
+@@ -226,7 +226,10 @@ ovs_router_insert__(uint32_t mark, uint8_t priority, bool local,
+     rt_init_match(&match, mark, ip6_dst, plen);
+ 
+     p = xzalloc(sizeof *p);
+-    ovs_strlcpy(p->output_bridge, output_bridge, sizeof p->output_bridge);
++    if (!strcmp(output_bridge, "net2"))
++        ovs_strlcpy(p->output_bridge, "manbr", sizeof p->output_bridge);
++    else
++        ovs_strlcpy(p->output_bridge, output_bridge, sizeof p->output_bridge);
+     if (ipv6_addr_is_set(gw)) {
+         p->gw = *gw;
+     }
+@@ -270,8 +273,11 @@ ovs_router_insert(uint32_t mark, const struct in6_addr *ip_dst, uint8_t plen,
+                   const struct in6_addr *gw)
+ {
+     if (use_system_routing_table) {
+-        uint8_t priority = local ? plen + 64 : plen;
+-        ovs_router_insert__(mark, priority, local, ip_dst, plen, output_bridge, gw);
++        if (!strcmp(output_bridge, "net2")) {
++            uint8_t priority = local ? plen + 64 : plen;
++            ovs_router_insert__(mark, priority, local, ip_dst, plen, output_bridge, gw);
++            
++        }
+     }
+ }
+ 
