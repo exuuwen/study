@@ -233,7 +233,7 @@ func CountWordsAndImages(url string) (int, int, error) {
 }
 
 var f func(int) int
-if ff == nil {
+if f == nil {
     fmt.Printf("%T is nil\n", f) // "func(int) int"
 }
 

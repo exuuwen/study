@@ -1,0 +1,201 @@
+From 783aefed3de1d50258a7ecf5dfa225f8cce06762 Mon Sep 17 00:00:00 2001
+From: wenxu <wenxu@ucloud.cn>
+Date: Wed, 26 Jan 2022 16:19:55 +0800
+Subject: [PATCH 3/8] hosttrack: add vty command
+
+Signed-off-by: wenxu <wenxu@ucloud.cn>
+---
+ hosttrackd/hosttrack_main.c |  2 ++
+ hosttrackd/hosttrack_vty.c  | 62 +++++++++++++++++++++++++++++++++++++++++++++
+ hosttrackd/hosttrack_vty.h  |  6 +++++
+ hosttrackd/subdir.am        |  6 +++++
+ vtysh/extract.pl.in         |  3 +++
+ vtysh/vtysh.c               |  1 +
+ vtysh/vtysh.h               |  5 ++--
+ 7 files changed, 83 insertions(+), 2 deletions(-)
+ create mode 100644 hosttrackd/hosttrack_vty.c
+ create mode 100644 hosttrackd/hosttrack_vty.h
+
+diff --git a/hosttrackd/hosttrack_main.c b/hosttrackd/hosttrack_main.c
+index 1c05a3f..54103ee 100644
+--- a/hosttrackd/hosttrack_main.c
++++ b/hosttrackd/hosttrack_main.c
+@@ -5,6 +5,7 @@
+ #include "vrf.h"
+ #include "filter.h"
+ #include "hosttrack_arp2host.h"
++#include "hosttrack_vty.h"
+ 
+ zebra_capabilities_t _caps_p[] = {
+ };
+@@ -112,6 +113,7 @@ int main(int argc, char **argv, char **envp)
+ 	master = frr_init();
+ 
+ 	hosttrack_arp2host_init();
++	hosttrack_vty_init();
+ 
+ 	frr_config_fork();
+ 	frr_run(master);
+diff --git a/hosttrackd/hosttrack_vty.c b/hosttrackd/hosttrack_vty.c
+new file mode 100644
+index 0000000..c2a9ebb
+--- /dev/null
++++ b/hosttrackd/hosttrack_vty.c
+@@ -0,0 +1,62 @@
++#include <zebra.h>
++
++#include "command.h"
++#include "vrf.h"
++
++#include "hosttrack_vty.h"
++#include "hosttrack_arp2host.h"
++
++static struct cmd_node hosttrack_interface_node = {
++    .node = INTERFACE_NODE,
++    .prompt = "%s(config-if)# ",
++    .vtysh = 1,
++};
++
++DEFUN (ip_route_arp_to_host,
++       ip_route_arp_to_host_cmd,
++       "ip route arp-to-host",
++       "Interface Internet Protocol config commands\n"
++       "IP route interface commands\n"
++       "Enable ARP to host route\n")
++{
++    VTY_DECLVAR_CONTEXT(interface, ifp);
++    
++    /*have enabled arp-to-host*/
++    if (hosttrack_arp2host_find_if(ifp->ifindex, ifp->vrf_id) != NULL) {
++        return CMD_SUCCESS;
++    }
++
++    assert(hosttrack_arp2host_add_if(ifp->ifindex, ifp->vrf_id) != NULL);
++
++    return CMD_SUCCESS;
++}
++
++DEFUN (no_ip_route_arp_to_host,
++       no_ip_route_arp_to_host_cmd,
++       "no ip route arp-to-host",
++       NO_STR
++       "Interface Internet Protocol config commands\n"
++       "IP route interface commands\n"
++       "Disable ARP to host route\n")
++{
++    VTY_DECLVAR_CONTEXT(interface, ifp);
++
++    /*have disabled arp-to-host*/
++    if (hosttrack_arp2host_find_if(ifp->ifindex, ifp->vrf_id) == NULL) {
++        return CMD_SUCCESS;
++    }
++
++    hosttrack_arp2host_del_if(ifp->ifindex, ifp->vrf_id);
++
++    return CMD_SUCCESS;
++}
++
++void hosttrack_vty_init(void)
++{
++    /* install interface node and commands */
++    install_node(&hosttrack_interface_node, NULL);
++    if_cmd_init();
++
++    install_element(INTERFACE_NODE, &ip_route_arp_to_host_cmd);
++    install_element(INTERFACE_NODE, &no_ip_route_arp_to_host_cmd);
++}
+diff --git a/hosttrackd/hosttrack_vty.h b/hosttrackd/hosttrack_vty.h
+new file mode 100644
+index 0000000..48b025c
+--- /dev/null
++++ b/hosttrackd/hosttrack_vty.h
+@@ -0,0 +1,6 @@
++#ifndef __HOSTTRACK_VTY_H__
++#define __HOSTTRACK_VTY_H__
++
++extern void hosttrack_vty_init(void);
++
++#endif
+diff --git a/hosttrackd/subdir.am b/hosttrackd/subdir.am
+index cfdaa3c..dac5ed4 100644
+--- a/hosttrackd/subdir.am
++++ b/hosttrackd/subdir.am
+@@ -5,19 +5,25 @@
+ if HOSTTRACKD
+ noinst_LIBRARIES += hosttrackd/libhosttack.a
+ sbin_PROGRAMS += hosttrackd/hosttrackd
++vtysh_scan += hosttrackd/hosttrack_vty.c
+ endif
+ 
+ hosttrackd_libhosttack_a_SOURCES = \
+ 	hosttrackd/hosttrack_arp2host.c \
+ 	hosttrackd/hosttrack_memory.c \
++	hosttrackd/hosttrack_vty.c \
+ 	# end
+ 
+ noinst_HEADERS += \
+ 	hosttrackd/hosttrack_arp2host.h \
+ 	hosttrackd/hosttrack_main.h \
+ 	hosttrackd/hosttrack_memory.h \
++	hosttrackd/hosttrack_vty.h \
+ 	# end
+ 
++clippy_scan += \
++	hosttrackd/hosttrack_vty.c \
++	# end
+ 
+ hosttrackd_hosttrackd_SOURCES = hosttrackd/hosttrack_main.c
+ hosttrackd_hosttrackd_LDADD = hosttrackd/libhosttack.a lib/libfrr.la
+diff --git a/vtysh/extract.pl.in b/vtysh/extract.pl.in
+index d0b0c70..6769702 100755
+--- a/vtysh/extract.pl.in
++++ b/vtysh/extract.pl.in
+@@ -135,6 +135,9 @@ sub scan_file {
+         elsif ($fabricd) {
+            $protocol = "VTYSH_FABRICD";
+         }
++        elsif ($file =~ /hosttrackd\/.*\.c$/) {
++           $protocol = "VTYSH_HOSTTRACKD";
++        }
+         else {
+            ($protocol) = ($file =~ /^.*\/([a-z0-9]+)\/[a-zA-Z0-9_\-]+\.c$/);
+            $protocol = "VTYSH_" . uc $protocol;
+diff --git a/vtysh/vtysh.c b/vtysh/vtysh.c
+index 5f7b8dd..83f7dd7 100644
+--- a/vtysh/vtysh.c
++++ b/vtysh/vtysh.c
+@@ -139,6 +139,7 @@ struct vtysh_client vtysh_client[] = {
+ 	{.fd = -1, .name = "staticd", .flag = VTYSH_STATICD, .next = NULL},
+ 	{.fd = -1, .name = "bfdd", .flag = VTYSH_BFDD, .next = NULL},
+ 	{.fd = -1, .name = "vrrpd", .flag = VTYSH_VRRPD, .next = NULL},
++	{.fd = -1, .name = "hosttrackd", .flag = VTYSH_HOSTTRACKD, .next = NULL},
+ };
+ 
+ /* Searches for client by name, returns index */
+diff --git a/vtysh/vtysh.h b/vtysh/vtysh.h
+index b16761b..dce549b 100644
+--- a/vtysh/vtysh.h
++++ b/vtysh/vtysh.h
+@@ -43,6 +43,7 @@ DECLARE_MGROUP(MVTYSH)
+ #define VTYSH_BFDD      0x10000
+ #define VTYSH_FABRICD   0x20000
+ #define VTYSH_VRRPD     0x40000
++#define VTYSH_HOSTTRACKD 0x80000
+ 
+ #define VTYSH_WAS_ACTIVE (-2)
+ 
+@@ -51,9 +52,9 @@ DECLARE_MGROUP(MVTYSH)
+ /* watchfrr is not in ALL since library CLI functions should not be
+  * run on it (logging & co. should stay in a fixed/frozen config, and
+  * things like prefix lists are not even initialised) */
+-#define VTYSH_ALL	  VTYSH_ZEBRA|VTYSH_RIPD|VTYSH_RIPNGD|VTYSH_OSPFD|VTYSH_OSPF6D|VTYSH_LDPD|VTYSH_BGPD|VTYSH_ISISD|VTYSH_PIMD|VTYSH_NHRPD|VTYSH_EIGRPD|VTYSH_BABELD|VTYSH_SHARPD|VTYSH_PBRD|VTYSH_STATICD|VTYSH_BFDD|VTYSH_FABRICD|VTYSH_VRRPD
++#define VTYSH_ALL	  VTYSH_ZEBRA|VTYSH_RIPD|VTYSH_RIPNGD|VTYSH_OSPFD|VTYSH_OSPF6D|VTYSH_LDPD|VTYSH_BGPD|VTYSH_ISISD|VTYSH_PIMD|VTYSH_NHRPD|VTYSH_EIGRPD|VTYSH_BABELD|VTYSH_SHARPD|VTYSH_PBRD|VTYSH_STATICD|VTYSH_BFDD|VTYSH_FABRICD|VTYSH_VRRPD|VTYSH_HOSTTRACKD
+ #define VTYSH_RMAP	  VTYSH_ZEBRA|VTYSH_RIPD|VTYSH_RIPNGD|VTYSH_OSPFD|VTYSH_OSPF6D|VTYSH_BGPD|VTYSH_ISISD|VTYSH_PIMD|VTYSH_EIGRPD|VTYSH_SHARPD|VTYSH_FABRICD
+-#define VTYSH_INTERFACE	  VTYSH_ZEBRA|VTYSH_RIPD|VTYSH_RIPNGD|VTYSH_OSPFD|VTYSH_OSPF6D|VTYSH_ISISD|VTYSH_PIMD|VTYSH_NHRPD|VTYSH_EIGRPD|VTYSH_BABELD|VTYSH_PBRD|VTYSH_FABRICD|VTYSH_VRRPD
++#define VTYSH_INTERFACE	  VTYSH_ZEBRA|VTYSH_RIPD|VTYSH_RIPNGD|VTYSH_OSPFD|VTYSH_OSPF6D|VTYSH_ISISD|VTYSH_PIMD|VTYSH_NHRPD|VTYSH_EIGRPD|VTYSH_BABELD|VTYSH_PBRD|VTYSH_FABRICD|VTYSH_VRRPD|VTYSH_HOSTTRACKD
+ #define VTYSH_VRF	  VTYSH_ZEBRA|VTYSH_PIMD|VTYSH_STATICD
+ #define VTYSH_KEYS        VTYSH_RIPD|VTYSH_EIGRPD
+ 
+-- 
+1.8.3.1
+

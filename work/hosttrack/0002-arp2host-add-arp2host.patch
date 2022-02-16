@@ -1,0 +1,407 @@
+From c2a3095af8d5800399f112251bcf10097af83cf3 Mon Sep 17 00:00:00 2001
+From: wenxu <wenxu@ucloud.cn>
+Date: Wed, 26 Jan 2022 15:46:05 +0800
+Subject: [PATCH 2/8] arp2host: add arp2host
+
+Signed-off-by: wenxu <wenxu@ucloud.cn>
+---
+ hosttrackd/hosttrack_arp2host.c | 243 ++++++++++++++++++++++++++++++++++++++++
+ hosttrackd/hosttrack_arp2host.h |  41 +++++++
+ hosttrackd/hosttrack_main.c     |   4 +
+ hosttrackd/hosttrack_memory.c   |  10 ++
+ hosttrackd/hosttrack_memory.h   |  11 ++
+ hosttrackd/subdir.am            |  10 +-
+ 6 files changed, 318 insertions(+), 1 deletion(-)
+ create mode 100644 hosttrackd/hosttrack_arp2host.c
+ create mode 100644 hosttrackd/hosttrack_arp2host.h
+ create mode 100644 hosttrackd/hosttrack_memory.c
+ create mode 100644 hosttrackd/hosttrack_memory.h
+
+diff --git a/hosttrackd/hosttrack_arp2host.c b/hosttrackd/hosttrack_arp2host.c
+new file mode 100644
+index 0000000..29ab09f
+--- /dev/null
++++ b/hosttrackd/hosttrack_arp2host.c
+@@ -0,0 +1,243 @@
++#include <stdint.h>
++#include "jhash.h"
++
++#include "hosttrack_arp2host.h"
++#include "hosttrack_memory.h"
++
++/* arp-to-host if hash struct to find if node */
++static struct hash *arp2host_if_hash;
++
++static unsigned int arp2host_if_hash_key_make(const void *p)
++{
++    const struct arp2host_if_node_t *n = p;
++
++    return jhash_2words(n->ifindex, n->vrf_id, 0);
++}
++
++static bool arp2host_if_hash_cmp(const void *p1, const void *p2)
++{
++    const struct arp2host_if_node_t *n1 = p1;
++    const struct arp2host_if_node_t *n2 = p2;
++
++    if ((n1->ifindex == n2->ifindex) && (n1->vrf_id == n2->vrf_id)) {
++        return true;
++    }
++
++    return false;
++}
++
++static void arp2host_if_node_free(void *p)
++{
++    struct arp2host_if_node_t *node = p;
++
++    if (node == NULL) {
++        return;
++    }
++
++    hosttrack_arp2host_if_destory_ip_hash(node);
++    XFREE(MTYPE_HOSTTRACK_ARP2HOST_IF_NODE, node);
++}
++
++static unsigned int arp2host_ip_hash_key_make(const void *p)
++{
++    const struct arp2host_ip_node_t *n = p;
++
++    return jhash_1word(n->ip.s_addr, 0);
++}
++
++static bool arp2host_ip_hash_cmp(const void *p1, const void *p2)
++{
++    const struct arp2host_ip_node_t *n1 = p1;
++    const struct arp2host_ip_node_t *n2 = p2;
++
++    if (n1->ip.s_addr == n2->ip.s_addr) {
++        return true;
++    }
++
++    return false;
++}
++
++static void arp2host_ip_node_free(void *p)
++{
++    struct arp2host_ip_node_t *node = p;
++    
++    if (node == NULL) {
++        return;
++    }
++
++    XFREE(MTYPE_HOSTTRACK_ARP2HOST_IP_NODE, node);
++}
++
++void hosttrack_arp2host_init(void)
++{
++    arp2host_if_hash = 
++        hash_create(arp2host_if_hash_key_make, arp2host_if_hash_cmp,
++            "hosttrack arp2host IF hash");
++}
++
++void hosttrack_arp2host_finish(void)
++{
++    hosttrack_arp2host_destroy_if_hash();
++}
++
++/**
++ * Find arp2host IF node by ifindx and vrf id.
++ * Return pointer of IF node if found, or return NULL if not found.
++*/
++struct arp2host_if_node_t *hosttrack_arp2host_find_if(ifindex_t ifindex,
++                            vrf_id_t vrf_id)
++{
++    struct arp2host_if_node_t *node_found = NULL;
++    struct arp2host_if_node_t key = {.ifindex = ifindex, .vrf_id = vrf_id};
++
++    node_found = hash_lookup(arp2host_if_hash, &key);
++    return node_found;
++}
++
++/**
++ * Add arp2host IF node. Return pointer of IF node if success, or return NULL if failed.
++*/
++struct arp2host_if_node_t *hosttrack_arp2host_add_if(ifindex_t ifindex,
++                            vrf_id_t vrf_id)
++{
++    struct arp2host_if_node_t *node;
++    struct arp2host_if_node_t *node_found;
++
++    node = XCALLOC(MTYPE_HOSTTRACK_ARP2HOST_IF_NODE, sizeof(struct arp2host_if_node_t));
++
++    node->ifindex = ifindex;
++    node->vrf_id = vrf_id;
++    node->ip_hash =
++        hash_create(arp2host_ip_hash_key_make, arp2host_ip_hash_cmp,
++            "hosttrack arp2host IP hash");
++
++    node_found = hash_get(arp2host_if_hash, node, hash_alloc_intern);
++    if (node_found != node) {
++        XFREE(MTYPE_HOSTTRACK_ARP2HOST_IF_NODE, node);
++        return NULL;
++    }
++
++    return node;
++}
++
++/**
++ * Del arp2host IF node.
++*/
++void hosttrack_arp2host_del_if(ifindex_t ifindex, vrf_id_t vrf_id)
++{
++    struct arp2host_if_node_t *node_found;
++
++    node_found = hosttrack_arp2host_find_if(ifindex, vrf_id);
++    
++    if (node_found == NULL) {
++        return;
++    }
++
++    hosttrack_arp2host_if_destory_ip_hash(node_found);
++
++    hash_release(arp2host_if_hash, node_found);
++    XFREE(MTYPE_HOSTTRACK_ARP2HOST_IF_NODE, node_found);
++}
++
++/**
++ * Destroy arp2host IF hash.
++*/
++void hosttrack_arp2host_destroy_if_hash(void)
++{
++    hash_clean(arp2host_if_hash, arp2host_if_node_free);
++    hash_free(arp2host_if_hash);
++}
++
++/**
++ * Find arp2host IP node by IF node and IP. Return pointer of IP node if found, 
++ * or return NULL if not found.
++*/
++struct arp2host_ip_node_t *hosttrack_arp2host_if_find_ip(struct arp2host_if_node_t *if_node, 
++                            struct in_addr *ip)
++{
++    struct arp2host_ip_node_t *node_found = NULL;
++    struct arp2host_ip_node_t key;
++
++    if ((if_node == NULL) || (ip == NULL)) {
++        return NULL;
++    }
++
++    memset(&key, 0, sizeof(key));
++    memcpy(&key.ip, ip, sizeof(key.ip));
++
++    node_found = hash_lookup(if_node->ip_hash, &key);
++    
++    return node_found;
++}
++
++/**
++ * Add arp2host IP node. Return pointer of IP node added if sunccess,
++ * or return NULL if failed.
++*/
++struct arp2host_ip_node_t *hosttrack_arp2host_if_add_ip(struct arp2host_if_node_t *if_node, 
++                            struct in_addr *ip)
++{
++    struct arp2host_ip_node_t *node;
++    struct arp2host_ip_node_t *node_found;
++
++    if ((if_node == NULL) || (ip == NULL)) {
++        return NULL;
++    }
++
++    node = XCALLOC(MTYPE_HOSTTRACK_ARP2HOST_IP_NODE, sizeof(struct arp2host_ip_node_t));
++    memset(node, 0, sizeof(*node));
++    memcpy(&node->ip, ip, sizeof(node->ip));
++    node->state = ARP2HOST_IP_STATE_INIT;
++
++    node_found = hash_get(if_node->ip_hash, node, hash_alloc_intern);
++    
++    if (node_found != node) {
++        XFREE(MTYPE_HOSTTRACK_ARP2HOST_IP_NODE, node);
++        return NULL;
++    }
++
++    return node;
++}
++
++/**
++ * Del arp2host ip node.
++*/
++void hosttrack_arp2host_if_del_ip(struct arp2host_if_node_t *if_node,
++        struct in_addr *ip)
++{
++    struct arp2host_ip_node_t *node;
++
++    if ((if_node == NULL) || (ip == NULL)) {
++        return;
++    }
++
++    node = hosttrack_arp2host_if_find_ip(if_node, ip);
++
++    if (node == NULL) {
++        return;
++    }
++
++    hash_release(if_node->ip_hash, node);
++    XFREE(MTYPE_HOSTTRACK_ARP2HOST_IP_NODE, node);
++}
++
++/**
++ * Destroy arp2host IP hash.
++*/
++void hosttrack_arp2host_if_destory_ip_hash(struct arp2host_if_node_t *if_node)
++{
++    if (if_node == NULL) {
++        return;
++    }
++
++    hash_clean(if_node->ip_hash, arp2host_ip_node_free);
++    hash_free(if_node->ip_hash);
++}
++
++/**
++ * Check whether arp-to-host is enabled under the interface.
++*/
++bool hosttrack_arp2host_enabled(ifindex_t ifindex, vrf_id_t vrf_id)
++{
++    return hosttrack_arp2host_find_if(ifindex, vrf_id) != NULL;
++}
+diff --git a/hosttrackd/hosttrack_arp2host.h b/hosttrackd/hosttrack_arp2host.h
+new file mode 100644
+index 0000000..c0495ee
+--- /dev/null
++++ b/hosttrackd/hosttrack_arp2host.h
+@@ -0,0 +1,41 @@
++#ifndef __HOSTTRACK_ARP2HOST_H__
++#define __HOSTTRACK_ARP2HOST_H__
++
++#include <stdbool.h>
++#include "hash.h"
++#include "if.h"
++
++#define ARP2HOST_IP_STATE_INIT  (0)
++#define ARP2HOST_IP_STATE_DELAY (1)
++#define ARP2HOST_IP_STATE_DONE  (2)
++
++struct arp2host_ip_node_t {
++    uint8_t state;
++    uint8_t pad[3];
++    struct in_addr ip;
++};
++
++struct arp2host_if_node_t {
++    ifindex_t ifindex;
++    vrf_id_t vrf_id;
++    struct hash *ip_hash;
++};
++
++extern void hosttrack_arp2host_init(void);
++extern void hosttrack_arp2host_finish(void);
++extern struct arp2host_if_node_t *hosttrack_arp2host_find_if(ifindex_t ifindex,
++                                   vrf_id_t vrf_id);
++extern struct arp2host_if_node_t *hosttrack_arp2host_add_if(ifindex_t ifindex,
++                                   vrf_id_t vrf_id);
++extern void hosttrack_arp2host_del_if(ifindex_t ifindex, vrf_id_t vrf_id);
++extern void hosttrack_arp2host_destroy_if_hash(void);
++extern struct arp2host_ip_node_t *hosttrack_arp2host_if_find_ip(struct arp2host_if_node_t *if_node, 
++                                   struct in_addr *ip);
++extern struct arp2host_ip_node_t *hosttrack_arp2host_if_add_ip(struct arp2host_if_node_t *if_node, 
++                                   struct in_addr *ip);
++extern void hosttrack_arp2host_if_del_ip(struct arp2host_if_node_t *if_node,
++                struct in_addr *ip);
++extern void hosttrack_arp2host_if_destory_ip_hash(struct arp2host_if_node_t *if_node);
++extern bool hosttrack_arp2host_enabled(ifindex_t ifindex, vrf_id_t vrf_id);
++
++#endif
+diff --git a/hosttrackd/hosttrack_main.c b/hosttrackd/hosttrack_main.c
+index 85d60b0..1c05a3f 100644
+--- a/hosttrackd/hosttrack_main.c
++++ b/hosttrackd/hosttrack_main.c
+@@ -4,6 +4,7 @@
+ #include "libfrr.h"
+ #include "vrf.h"
+ #include "filter.h"
++#include "hosttrack_arp2host.h"
+ 
+ zebra_capabilities_t _caps_p[] = {
+ };
+@@ -38,6 +39,7 @@ static void sigint(void)
+ {
+ 	zlog_notice("Terminating on signal");
+ 
++	hosttrack_arp2host_finish();
+ 	frr_fini();
+ 
+ 	exit(0);
+@@ -109,6 +111,8 @@ int main(int argc, char **argv, char **envp)
+ 
+ 	master = frr_init();
+ 
++	hosttrack_arp2host_init();
++
+ 	frr_config_fork();
+ 	frr_run(master);
+ 
+diff --git a/hosttrackd/hosttrack_memory.c b/hosttrackd/hosttrack_memory.c
+new file mode 100644
+index 0000000..fce0893
+--- /dev/null
++++ b/hosttrackd/hosttrack_memory.c
+@@ -0,0 +1,10 @@
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++
++#include "hosttrack_memory.h"
++
++DEFINE_MGROUP(HOSTTRACK, "hosttrackd")
++DEFINE_MTYPE(HOSTTRACK, HOSTTRACK_ARP2HOST_IF_NODE, "Hosttrack Arp2host IF Node");
++DEFINE_MTYPE(HOSTTRACK, HOSTTRACK_ARP2HOST_IP_NODE, "Hosttrack Arp2host IP Node");
++
+diff --git a/hosttrackd/hosttrack_memory.h b/hosttrackd/hosttrack_memory.h
+new file mode 100644
+index 0000000..f632b86
+--- /dev/null
++++ b/hosttrackd/hosttrack_memory.h
+@@ -0,0 +1,11 @@
++#ifndef __HOSTTRACK_MEMORY_H__
++#define __HOSTTRACK_MEMORY_H__
++
++#include "memory.h"
++
++DECLARE_MGROUP(HOSTTRACK)
++
++DECLARE_MTYPE(HOSTTRACK_ARP2HOST_IF_NODE);
++DECLARE_MTYPE(HOSTTRACK_ARP2HOST_IP_NODE);
++
++#endif
+diff --git a/hosttrackd/subdir.am b/hosttrackd/subdir.am
+index 59f1e83..cfdaa3c 100644
+--- a/hosttrackd/subdir.am
++++ b/hosttrackd/subdir.am
+@@ -3,13 +3,21 @@
+ #
+ 
+ if HOSTTRACKD
++noinst_LIBRARIES += hosttrackd/libhosttack.a
+ sbin_PROGRAMS += hosttrackd/hosttrackd
+ endif
+ 
++hosttrackd_libhosttack_a_SOURCES = \
++	hosttrackd/hosttrack_arp2host.c \
++	hosttrackd/hosttrack_memory.c \
++	# end
++
+ noinst_HEADERS += \
++	hosttrackd/hosttrack_arp2host.h \
+ 	hosttrackd/hosttrack_main.h \
++	hosttrackd/hosttrack_memory.h \
+ 	# end
+ 
+ 
+ hosttrackd_hosttrackd_SOURCES = hosttrackd/hosttrack_main.c
+-hosttrackd_hosttrackd_LDADD = lib/libfrr.la
++hosttrackd_hosttrackd_LDADD = hosttrackd/libhosttack.a lib/libfrr.la
+-- 
+1.8.3.1
+

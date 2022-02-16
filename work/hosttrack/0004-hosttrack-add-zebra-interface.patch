@@ -1,0 +1,134 @@
+From 332d38507b5e3b9ebd2369af81627d98b08dc99f Mon Sep 17 00:00:00 2001
+From: wenxu <wenxu@ucloud.cn>
+Date: Wed, 26 Jan 2022 18:16:55 +0800
+Subject: [PATCH 4/8] hosttrack: add zebra interface
+
+Signed-off-by: wenxu <wenxu@ucloud.cn>
+---
+ hosttrackd/hosttrack_main.c  |  2 ++
+ hosttrackd/hosttrack_zebra.c | 18 ++++++++++++++++++
+ hosttrackd/hosttrack_zebra.h |  9 +++++++++
+ hosttrackd/subdir.am         |  4 +++-
+ lib/route_types.txt          |  2 ++
+ zebra/zebra_rib.c            |  3 ++-
+ 6 files changed, 36 insertions(+), 2 deletions(-)
+ create mode 100644 hosttrackd/hosttrack_zebra.c
+ create mode 100644 hosttrackd/hosttrack_zebra.h
+
+diff --git a/hosttrackd/hosttrack_main.c b/hosttrackd/hosttrack_main.c
+index 54103ee..8a4908a 100644
+--- a/hosttrackd/hosttrack_main.c
++++ b/hosttrackd/hosttrack_main.c
+@@ -6,6 +6,7 @@
+ #include "filter.h"
+ #include "hosttrack_arp2host.h"
+ #include "hosttrack_vty.h"
++#include "hosttrack_zebra.h"
+ 
+ zebra_capabilities_t _caps_p[] = {
+ };
+@@ -114,6 +115,7 @@ int main(int argc, char **argv, char **envp)
+ 
+ 	hosttrack_arp2host_init();
+ 	hosttrack_vty_init();
++	hosttrack_zebra_init();
+ 
+ 	frr_config_fork();
+ 	frr_run(master);
+diff --git a/hosttrackd/hosttrack_zebra.c b/hosttrackd/hosttrack_zebra.c
+new file mode 100644
+index 0000000..b7f5a5f
+--- /dev/null
++++ b/hosttrackd/hosttrack_zebra.c
+@@ -0,0 +1,18 @@
++#include <stdbool.h>
++#include <stdint.h>
++
++#include "zclient.h"
++
++#include "hosttrack_zebra.h"
++#include "hosttrack_main.h"
++
++struct zclient *zclient;
++
++void hosttrack_zebra_init(void)
++{
++    struct zclient_options opt = { .receive_notify = true };
++
++    zclient = zclient_new(master, &opt);
++
++    zclient_init(zclient, ZEBRA_ROUTE_ARP_TO_HOST, 0, &hosttrack_privs);
++}
+diff --git a/hosttrackd/hosttrack_zebra.h b/hosttrackd/hosttrack_zebra.h
+new file mode 100644
+index 0000000..de5f3f3
+--- /dev/null
++++ b/hosttrackd/hosttrack_zebra.h
+@@ -0,0 +1,9 @@
++#ifndef __HOSTTRACK_ZEBRA_H__
++#define __HOSTTRACK_ZEBRA_H__
++
++#include <zebra.h>
++#include "if.h"
++
++extern void hosttrack_zebra_init(void);
++
++#endif
+diff --git a/hosttrackd/subdir.am b/hosttrackd/subdir.am
+index dac5ed4..e039dbc 100644
+--- a/hosttrackd/subdir.am
++++ b/hosttrackd/subdir.am
+@@ -12,6 +12,7 @@ hosttrackd_libhosttack_a_SOURCES = \
+ 	hosttrackd/hosttrack_arp2host.c \
+ 	hosttrackd/hosttrack_memory.c \
+ 	hosttrackd/hosttrack_vty.c \
++	hosttrackd/hosttrack_zebra.c \
+ 	# end
+ 
+ noinst_HEADERS += \
+@@ -19,9 +20,10 @@ noinst_HEADERS += \
+ 	hosttrackd/hosttrack_main.h \
+ 	hosttrackd/hosttrack_memory.h \
+ 	hosttrackd/hosttrack_vty.h \
++	hosttrackd/hosttrack_zebra.h \
+ 	# end
+ 
+-clippy_scan += \
++clippy_scan = \
+ 	hosttrackd/hosttrack_vty.c \
+ 	# end
+ 
+diff --git a/lib/route_types.txt b/lib/route_types.txt
+index 59f3a91..6d2913b 100644
+--- a/lib/route_types.txt
++++ b/lib/route_types.txt
+@@ -84,6 +84,7 @@ ZEBRA_ROUTE_PBR,        pbr,       pbrd,   'F', 1, 1, 0,     "PBR"
+ ZEBRA_ROUTE_BFD,        bfd,       bfdd,   '-', 0, 0, 0,     "BFD"
+ ZEBRA_ROUTE_OPENFABRIC, openfabric, fabricd,  'f', 1, 1, 1, "OpenFabric"
+ ZEBRA_ROUTE_VRRP,       vrrp,      vrrpd,  '-', 0, 0, 0,     "VRRP"
++ZEBRA_ROUTE_ARP_TO_HOST, arp-to-host, hosttrackd, 'a', 1, 0, 1, "ARP-To-Host"
+ ZEBRA_ROUTE_ALL,        wildcard,  none,   '-', 0, 0, 0,     "-"
+ 
+ 
+@@ -113,3 +114,4 @@ ZEBRA_ROUTE_PBR, "Policy Based Routing (PBR)"
+ ZEBRA_ROUTE_BFD, "Bidirectional Fowarding Detection (BFD)"
+ ZEBRA_ROUTE_VRRP, "Virtual Router Redundancy Protocol (VRRP)"
+ ZEBRA_ROUTE_OPENFABRIC, "OpenFabric Routing Protocol"
++ZEBRA_ROUTE_ARP_TO_HOST, "Address Resolution Protocol To Host Route"
+diff --git a/zebra/zebra_rib.c b/zebra/zebra_rib.c
+index eb2fc2a..dd8f463 100644
+--- a/zebra/zebra_rib.c
++++ b/zebra/zebra_rib.c
+@@ -104,7 +104,8 @@ static const struct {
+ 	[ZEBRA_ROUTE_PBR] = {ZEBRA_ROUTE_PBR, 200, 4},
+ 	[ZEBRA_ROUTE_BFD] = {ZEBRA_ROUTE_BFD, 255, 4},
+ 	[ZEBRA_ROUTE_OPENFABRIC] = {ZEBRA_ROUTE_OPENFABRIC, 115, 2},
+-	[ZEBRA_ROUTE_VRRP] = {ZEBRA_ROUTE_VRRP, 255, 4}
++	[ZEBRA_ROUTE_VRRP] = {ZEBRA_ROUTE_VRRP, 255, 4},
++	[ZEBRA_ROUTE_ARP_TO_HOST] = {ZEBRA_ROUTE_ARP_TO_HOST, 0, 3}
+ 	/* Any new route type added to zebra, should be mirrored here */
+ 
+ 	/* no entry/default: 150 */
+-- 
+1.8.3.1
+

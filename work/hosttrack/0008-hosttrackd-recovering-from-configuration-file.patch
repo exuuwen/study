@@ -1,0 +1,861 @@
+From ce9f570eefe295484efe5af36ea0267f8804c93b Mon Sep 17 00:00:00 2001
+From: wenxu <wenxu@ucloud.cn>
+Date: Wed, 16 Feb 2022 15:41:46 +0800
+Subject: [PATCH 8/8] hosttrackd: recovering from configuration file.
+
+Move arp-to-host information to the info field of struct interface.
+Struct interface can be obtained in time when hosttrackd daemon recovers,
+then arp-to-host information can be set successfully.
+
+Signed-off-by: wenxu <wenxu@ucloud.cn>
+---
+ hosttrackd/hosttrack_arp2host.c | 191 +++++++++++++++-------------------------
+ hosttrackd/hosttrack_arp2host.h |  33 ++++---
+ hosttrackd/hosttrack_if.c       |  46 ++++++++++
+ hosttrackd/hosttrack_if.h       |  13 +++
+ hosttrackd/hosttrack_main.c     |   2 +
+ hosttrackd/hosttrack_memory.c   |   2 +-
+ hosttrackd/hosttrack_memory.h   |   2 +-
+ hosttrackd/hosttrack_netlink.c  | 114 +++++++++++++++++-------
+ hosttrackd/hosttrack_netlink.h  |   2 +
+ hosttrackd/hosttrack_vty.c      |  29 ++++--
+ hosttrackd/hosttrack_zebra.c    |   3 +
+ hosttrackd/subdir.am            |   2 +
+ 12 files changed, 262 insertions(+), 177 deletions(-)
+ create mode 100644 hosttrackd/hosttrack_if.c
+ create mode 100644 hosttrackd/hosttrack_if.h
+
+diff --git a/hosttrackd/hosttrack_arp2host.c b/hosttrackd/hosttrack_arp2host.c
+index 95bc5a1..7ff7e60 100644
+--- a/hosttrackd/hosttrack_arp2host.c
++++ b/hosttrackd/hosttrack_arp2host.c
+@@ -1,44 +1,11 @@
+ #include <stdint.h>
+ #include "jhash.h"
++#include "if.h"
+ 
+ #include "hosttrack_arp2host.h"
+ #include "hosttrack_memory.h"
+ #include "hosttrack_zebra.h"
+ 
+-/* arp-to-host if hash struct to find if node */
+-static struct hash *arp2host_if_hash;
+-
+-static unsigned int arp2host_if_hash_key_make(const void *p)
+-{
+-    const struct arp2host_if_node_t *n = p;
+-
+-    return jhash_2words(n->ifindex, n->vrf_id, 0);
+-}
+-
+-static bool arp2host_if_hash_cmp(const void *p1, const void *p2)
+-{
+-    const struct arp2host_if_node_t *n1 = p1;
+-    const struct arp2host_if_node_t *n2 = p2;
+-
+-    if ((n1->ifindex == n2->ifindex) && (n1->vrf_id == n2->vrf_id)) {
+-        return true;
+-    }
+-
+-    return false;
+-}
+-
+-static void arp2host_if_node_free(void *p)
+-{
+-    struct arp2host_if_node_t *node = p;
+-
+-    if (node == NULL) {
+-        return;
+-    }
+-
+-    hosttrack_arp2host_if_destory_ip_hash(node);
+-    XFREE(MTYPE_HOSTTRACK_ARP2HOST_IF_NODE, node);
+-}
+-
+ static unsigned int arp2host_ip_hash_key_make(const void *p)
+ {
+     const struct arp2host_ip_node_t *n = p;
+@@ -71,102 +38,72 @@ static void arp2host_ip_node_free(void *p)
+ 
+ void hosttrack_arp2host_init(void)
+ {
+-    arp2host_if_hash = 
+-        hash_create(arp2host_if_hash_key_make, arp2host_if_hash_cmp,
+-            "hosttrack arp2host IF hash");
+ }
+ 
+ void hosttrack_arp2host_finish(void)
+ {
+-    hosttrack_arp2host_destroy_if_hash();
+ }
+ 
+ /**
+- * Find arp2host IF node by ifindx and vrf id.
+- * Return pointer of IF node if found, or return NULL if not found.
++ * Enable arp-to-host in interface.
+ */
+-struct arp2host_if_node_t *hosttrack_arp2host_find_if(ifindex_t ifindex,
+-                            vrf_id_t vrf_id)
++void hosttrack_arp2host_if_enable(struct arp2host_if_info_t *info)
+ {
+-    struct arp2host_if_node_t *node_found = NULL;
+-    struct arp2host_if_node_t key = {.ifindex = ifindex, .vrf_id = vrf_id};
++    if (info == NULL) {
++        return;
++    }
+ 
+-    node_found = hash_lookup(arp2host_if_hash, &key);
+-    return node_found;
++    info->enabled = true;
+ }
+ 
+-/**
+- * Add arp2host IF node. Return pointer of IF node if success, or return NULL if failed.
+-*/
+-struct arp2host_if_node_t *hosttrack_arp2host_add_if(ifindex_t ifindex,
+-                            vrf_id_t vrf_id)
++static void arp2host_ip_node_iter_zebra_route_del(struct hash_bucket *bucket, void *arg)
+ {
+-    struct arp2host_if_node_t *node;
+-    struct arp2host_if_node_t *node_found;
+-
+-    node = XCALLOC(MTYPE_HOSTTRACK_ARP2HOST_IF_NODE, sizeof(struct arp2host_if_node_t));
+-
+-    node->ifindex = ifindex;
+-    node->vrf_id = vrf_id;
+-    node->ip_hash =
+-        hash_create(arp2host_ip_hash_key_make, arp2host_ip_hash_cmp,
+-            "hosttrack arp2host IP hash");
++    struct arp2host_if_info_t *if_info = (struct arp2host_if_info_t *)arg;
++    struct arp2host_ip_node_t *ip_node = (struct arp2host_ip_node_t *)(bucket->data);
+ 
+-    node_found = hash_get(arp2host_if_hash, node, hash_alloc_intern);
+-    if (node_found != node) {
+-        XFREE(MTYPE_HOSTTRACK_ARP2HOST_IF_NODE, node);
+-        return NULL;
++    if (if_info->ifp == NULL) {
++        return;
+     }
+ 
+-    return node;
++    if (ip_node->state == ARP2HOST_IP_STATE_DONE) {
++        hosttrack_zebra_route_del(if_info->ifp->ifindex, if_info->ifp->vrf_id, &ip_node->ip);
++        ip_node->state = ARP2HOST_IP_STATE_INIT;
++    }
+ }
+ 
++
+ /**
+- * Del arp2host IF node.
++ * Disable arp-to-host in interface.
+ */
+-void hosttrack_arp2host_del_if(ifindex_t ifindex, vrf_id_t vrf_id)
++void hosttrack_arp2host_if_disable(struct arp2host_if_info_t *info)
+ {
+-    struct arp2host_if_node_t *node_found;
+-
+-    node_found = hosttrack_arp2host_find_if(ifindex, vrf_id);
+-    
+-    if (node_found == NULL) {
++    if (info == NULL) {
+         return;
+     }
+ 
+-    hosttrack_arp2host_if_destory_ip_hash(node_found);
+-
+-    hash_release(arp2host_if_hash, node_found);
+-    XFREE(MTYPE_HOSTTRACK_ARP2HOST_IF_NODE, node_found);
+-}
+-
+-/**
+- * Destroy arp2host IF hash.
+-*/
+-void hosttrack_arp2host_destroy_if_hash(void)
+-{
+-    hash_clean(arp2host_if_hash, arp2host_if_node_free);
+-    hash_free(arp2host_if_hash);
++    info->enabled = false;
++    hash_iterate(info->ip_hash, arp2host_ip_node_iter_zebra_route_del, info);
++    hash_clean(info->ip_hash, arp2host_ip_node_free);
+ }
+ 
+ /**
+- * Find arp2host IP node by IF node and IP. Return pointer of IP node if found, 
++ * Find arp2host IP node by IF info and IP. Return pointer of IP node if found, 
+  * or return NULL if not found.
+ */
+-struct arp2host_ip_node_t *hosttrack_arp2host_if_find_ip(struct arp2host_if_node_t *if_node, 
+-                            struct in_addr *ip)
++struct arp2host_ip_node_t *hosttrack_arp2host_if_find_ip(struct arp2host_if_info_t *info, 
++                                                         const struct in_addr *ip)
+ {
+     struct arp2host_ip_node_t *node_found = NULL;
+     struct arp2host_ip_node_t key;
+ 
+-    if ((if_node == NULL) || (ip == NULL)) {
++    if ((info == NULL) || (ip == NULL)) {
+         return NULL;
+     }
+ 
+     memset(&key, 0, sizeof(key));
+     memcpy(&key.ip, ip, sizeof(key.ip));
+ 
+-    node_found = hash_lookup(if_node->ip_hash, &key);
++    node_found = hash_lookup(info->ip_hash, &key);
+     
+     return node_found;
+ }
+@@ -175,13 +112,13 @@ struct arp2host_ip_node_t *hosttrack_arp2host_if_find_ip(struct arp2host_if_node
+  * Add arp2host IP node. Return pointer of IP node added if sunccess,
+  * or return NULL if failed.
+ */
+-struct arp2host_ip_node_t *hosttrack_arp2host_if_add_ip(struct arp2host_if_node_t *if_node, 
+-                            struct in_addr *ip)
++struct arp2host_ip_node_t *hosttrack_arp2host_if_add_ip(struct arp2host_if_info_t *info, 
++                                                        const struct in_addr *ip)
+ {
+     struct arp2host_ip_node_t *node;
+     struct arp2host_ip_node_t *node_found;
+ 
+-    if ((if_node == NULL) || (ip == NULL)) {
++    if ((info == NULL) || (ip == NULL)) {
+         return NULL;
+     }
+ 
+@@ -190,14 +127,14 @@ struct arp2host_ip_node_t *hosttrack_arp2host_if_add_ip(struct arp2host_if_node_
+     memcpy(&node->ip, ip, sizeof(node->ip));
+     node->state = ARP2HOST_IP_STATE_INIT;
+ 
+-    node_found = hash_get(if_node->ip_hash, node, hash_alloc_intern);
++    node_found = hash_get(info->ip_hash, node, hash_alloc_intern);
+     
+     if (node_found != node) {
+         XFREE(MTYPE_HOSTTRACK_ARP2HOST_IP_NODE, node);
+         return NULL;
+     }
+ 
+-    hosttrack_zebra_route_add(if_node->ifindex, if_node->vrf_id, ip);
++    hosttrack_zebra_route_add(info->ifp->ifindex, info->ifp->vrf_id, ip);
+     node->state = ARP2HOST_IP_STATE_DONE;
+ 
+     return node;
+@@ -206,61 +143,73 @@ struct arp2host_ip_node_t *hosttrack_arp2host_if_add_ip(struct arp2host_if_node_
+ /**
+  * Del arp2host ip node.
+ */
+-void hosttrack_arp2host_if_del_ip(struct arp2host_if_node_t *if_node,
+-        struct in_addr *ip)
++void hosttrack_arp2host_if_del_ip(struct arp2host_if_info_t *info,
++                                  const struct in_addr *ip)
+ {
+     struct arp2host_ip_node_t *node;
+ 
+-    if ((if_node == NULL) || (ip == NULL)) {
++    if ((info == NULL) || (ip == NULL)) {
+         return;
+     }
+ 
+-    node = hosttrack_arp2host_if_find_ip(if_node, ip);
++    node = hosttrack_arp2host_if_find_ip(info, ip);
+ 
+     if (node == NULL) {
+         return;
+     }
+ 
+     if (node->state == ARP2HOST_IP_STATE_DONE) {
+-        hosttrack_zebra_route_del(if_node->ifindex, if_node->vrf_id, ip);
++        hosttrack_zebra_route_del(info->ifp->ifindex, info->ifp->vrf_id, ip);
+         node->state = ARP2HOST_IP_STATE_INIT;
+     }
+ 
+-    hash_release(if_node->ip_hash, node);
++    hash_release(info->ip_hash, node);
+     XFREE(MTYPE_HOSTTRACK_ARP2HOST_IP_NODE, node);
+ }
+ 
+-static void arp2host_ip_node_iter_zebra_route_del(struct hash_bucket *bucket, void *arg)
++/**
++ * Check whether arp-to-host is enabled.
++*/
++bool hosttrack_arp2host_if_is_enabled(const struct arp2host_if_info_t *info)
+ {
+-    struct arp2host_if_node_t *if_node = (struct arp2host_if_node_t *)arg;
+-    struct arp2host_ip_node_t *ip_node = (struct arp2host_ip_node_t *)(bucket->data);
+-
+-    if (ip_node->state == ARP2HOST_IP_STATE_DONE) {
+-        hosttrack_zebra_route_del(if_node->ifindex, if_node->vrf_id, &ip_node->ip);
+-        ip_node->state = ARP2HOST_IP_STATE_INIT;
++    if (info == NULL) {
++        return false;
+     }
++
++    return info->enabled;
+ }
+ 
+ /**
+- * Destroy arp2host IP hash.
++ * Init arp2host IF info
+ */
+-void hosttrack_arp2host_if_destory_ip_hash(struct arp2host_if_node_t *if_node)
++void hosttrack_arp2host_if_info_init(struct arp2host_if_info_t *info, struct interface *ifp)
++{
++    if (info == NULL) {
++        return;
++    }
++
++    info->enabled = false;
++    info->ifp = ifp;
++    info->ip_hash = 
++        hash_create(arp2host_ip_hash_key_make, arp2host_ip_hash_cmp,
++            "hosttrack arp2host IP hash");
++}
++
++void hosttrack_arp2host_if_info_destory(struct arp2host_if_info_t *info)
+ {
+-    if (if_node == NULL) {
++    if (info == NULL) {
+         return;
+     }
+ 
+-    hash_iterate(if_node->ip_hash, arp2host_ip_node_iter_zebra_route_del,
+-                 if_node);
++    info->enabled = false;
+ 
+-    hash_clean(if_node->ip_hash, arp2host_ip_node_free);
+-    hash_free(if_node->ip_hash);
++    hash_iterate(info->ip_hash, arp2host_ip_node_iter_zebra_route_del,
++                 info);
++    hash_clean(info->ip_hash, arp2host_ip_node_free);
++    hash_free(info->ip_hash);
+ }
+ 
+-/**
+- * Check whether arp-to-host is enabled under the interface.
+-*/
+-bool hosttrack_arp2host_enabled(ifindex_t ifindex, vrf_id_t vrf_id)
++bool hosttrack_arp2host_ip_exist(struct arp2host_if_info_t *info, const struct in_addr *ip)
+ {
+-    return hosttrack_arp2host_find_if(ifindex, vrf_id) != NULL;
++    return hosttrack_arp2host_if_find_ip(info, ip) != NULL;
+ }
+diff --git a/hosttrackd/hosttrack_arp2host.h b/hosttrackd/hosttrack_arp2host.h
+index c0495ee..00600db 100644
+--- a/hosttrackd/hosttrack_arp2host.h
++++ b/hosttrackd/hosttrack_arp2host.h
+@@ -11,31 +11,28 @@
+ 
+ struct arp2host_ip_node_t {
+     uint8_t state;
+-    uint8_t pad[3];
+     struct in_addr ip;
+ };
+ 
+-struct arp2host_if_node_t {
+-    ifindex_t ifindex;
+-    vrf_id_t vrf_id;
++struct arp2host_if_info_t {
++    bool enabled;
++    struct interface *ifp;
+     struct hash *ip_hash;
+ };
+ 
+ extern void hosttrack_arp2host_init(void);
+ extern void hosttrack_arp2host_finish(void);
+-extern struct arp2host_if_node_t *hosttrack_arp2host_find_if(ifindex_t ifindex,
+-                                   vrf_id_t vrf_id);
+-extern struct arp2host_if_node_t *hosttrack_arp2host_add_if(ifindex_t ifindex,
+-                                   vrf_id_t vrf_id);
+-extern void hosttrack_arp2host_del_if(ifindex_t ifindex, vrf_id_t vrf_id);
+-extern void hosttrack_arp2host_destroy_if_hash(void);
+-extern struct arp2host_ip_node_t *hosttrack_arp2host_if_find_ip(struct arp2host_if_node_t *if_node, 
+-                                   struct in_addr *ip);
+-extern struct arp2host_ip_node_t *hosttrack_arp2host_if_add_ip(struct arp2host_if_node_t *if_node, 
+-                                   struct in_addr *ip);
+-extern void hosttrack_arp2host_if_del_ip(struct arp2host_if_node_t *if_node,
+-                struct in_addr *ip);
+-extern void hosttrack_arp2host_if_destory_ip_hash(struct arp2host_if_node_t *if_node);
+-extern bool hosttrack_arp2host_enabled(ifindex_t ifindex, vrf_id_t vrf_id);
++extern void hosttrack_arp2host_if_enable(struct arp2host_if_info_t *info);
++extern void hosttrack_arp2host_if_disable(struct arp2host_if_info_t *info);
++extern struct arp2host_ip_node_t *hosttrack_arp2host_if_find_ip(struct arp2host_if_info_t *if_node, 
++                                                                const struct in_addr *ip);
++extern struct arp2host_ip_node_t *hosttrack_arp2host_if_add_ip(struct arp2host_if_info_t *if_node, 
++                                                               const struct in_addr *ip);
++extern void hosttrack_arp2host_if_del_ip(struct arp2host_if_info_t *if_node,
++                                         const struct in_addr *ip);
++extern bool hosttrack_arp2host_if_is_enabled(const struct arp2host_if_info_t *info);
++extern void hosttrack_arp2host_if_info_init(struct arp2host_if_info_t *info, struct interface *ifp);
++extern void hosttrack_arp2host_if_info_destory(struct arp2host_if_info_t *info);
++extern bool hosttrack_arp2host_ip_exist(struct arp2host_if_info_t *info, const struct in_addr *ip);
+ 
+ #endif
+diff --git a/hosttrackd/hosttrack_if.c b/hosttrackd/hosttrack_if.c
+new file mode 100644
+index 0000000..be631c5
+--- /dev/null
++++ b/hosttrackd/hosttrack_if.c
+@@ -0,0 +1,46 @@
++#include <zebra.h>
++
++#include "if.h"
++#include "zclient.h"
++
++#include "hosttrack_memory.h"
++#include "hosttrack_arp2host.h"
++#include "hosttrack_if.h"
++#include "hosttrack_netlink.h"
++
++static int hosttrack_if_new_hook(struct interface *ifp)
++{
++    struct hosttrack_if_info_t *if_info = XCALLOC(MTYPE_HOSTTRACK_IF_INFO, sizeof(struct hosttrack_if_info_t));
++
++    hosttrack_arp2host_if_info_init(&if_info->arp2host_if_info, ifp);
++    ifp->info = if_info;
++
++    return 0;
++}
++
++static int hosttrack_if_delete_hook(struct interface *ifp)
++{
++    struct hosttrack_if_info_t *if_info = ifp->info;
++
++    hosttrack_arp2host_if_info_destory(&if_info->arp2host_if_info);
++    XFREE(MTYPE_HOSTTRACK_IF_INFO, if_info);
++    ifp->info = NULL;
++
++    return 0;
++}
++
++int hosttrack_ifp_up(ZAPI_CALLBACK_ARGS)
++{
++    hosttrack_netlink_get_neighs();
++
++    return 0;
++}
++
++void hosttrack_if_init(void)
++{
++    //if_zapi_callbacks(NULL, hosttrack_ifp_up, NULL, NULL);
++
++    hook_register_prio(if_add, 0, hosttrack_if_new_hook);
++    hook_register_prio(if_del, 0, hosttrack_if_delete_hook);
++}
++
+diff --git a/hosttrackd/hosttrack_if.h b/hosttrackd/hosttrack_if.h
+new file mode 100644
+index 0000000..c8275b2
+--- /dev/null
++++ b/hosttrackd/hosttrack_if.h
+@@ -0,0 +1,13 @@
++#ifndef __HOSTTRACK_IF_H__
++#define __HOSTTRACK_IF_H__
++
++struct hosttrack_if_info_t {
++    struct arp2host_if_info_t arp2host_if_info;
++};
++
++
++extern void hosttrack_if_init(void);
++extern int hosttrack_ifp_up(ZAPI_CALLBACK_ARGS);
++
++#endif
++
+diff --git a/hosttrackd/hosttrack_main.c b/hosttrackd/hosttrack_main.c
+index 837819b..e37eb86 100644
+--- a/hosttrackd/hosttrack_main.c
++++ b/hosttrackd/hosttrack_main.c
+@@ -8,6 +8,7 @@
+ #include "hosttrack_vty.h"
+ #include "hosttrack_zebra.h"
+ #include "hosttrack_netlink.h"
++#include "hosttrack_if.h"
+ 
+ zebra_capabilities_t _caps_p[] = {
+ };
+@@ -119,6 +120,7 @@ int main(int argc, char **argv, char **envp)
+ 	hosttrack_vty_init();
+ 	hosttrack_zebra_init();
+ 	hosttrack_netlink_init(master);
++	hosttrack_if_init();
+ 
+ 	frr_config_fork();
+ 	frr_run(master);
+diff --git a/hosttrackd/hosttrack_memory.c b/hosttrackd/hosttrack_memory.c
+index fce0893..c824f69 100644
+--- a/hosttrackd/hosttrack_memory.c
++++ b/hosttrackd/hosttrack_memory.c
+@@ -5,6 +5,6 @@
+ #include "hosttrack_memory.h"
+ 
+ DEFINE_MGROUP(HOSTTRACK, "hosttrackd")
+-DEFINE_MTYPE(HOSTTRACK, HOSTTRACK_ARP2HOST_IF_NODE, "Hosttrack Arp2host IF Node");
++DEFINE_MTYPE(HOSTTRACK, HOSTTRACK_IF_INFO, "Hosttrack IF Info");
+ DEFINE_MTYPE(HOSTTRACK, HOSTTRACK_ARP2HOST_IP_NODE, "Hosttrack Arp2host IP Node");
+ 
+diff --git a/hosttrackd/hosttrack_memory.h b/hosttrackd/hosttrack_memory.h
+index f632b86..9e01179 100644
+--- a/hosttrackd/hosttrack_memory.h
++++ b/hosttrackd/hosttrack_memory.h
+@@ -5,7 +5,7 @@
+ 
+ DECLARE_MGROUP(HOSTTRACK)
+ 
+-DECLARE_MTYPE(HOSTTRACK_ARP2HOST_IF_NODE);
++DECLARE_MTYPE(HOSTTRACK_IF_INFO);
+ DECLARE_MTYPE(HOSTTRACK_ARP2HOST_IP_NODE);
+ 
+ #endif
+diff --git a/hosttrackd/hosttrack_netlink.c b/hosttrackd/hosttrack_netlink.c
+index ee4bcb6..b38d500 100644
+--- a/hosttrackd/hosttrack_netlink.c
++++ b/hosttrackd/hosttrack_netlink.c
+@@ -7,6 +7,7 @@
+ #include "hosttrack_netlink.h"
+ #include "vrf.h"
+ #include "hosttrack_arp2host.h"
++#include "hosttrack_if.h"
+ 
+ static struct hosttrack_netlink_t netlink = {
+     .socket = NULL,
+@@ -14,6 +15,7 @@ static struct hosttrack_netlink_t netlink = {
+     .read = NULL,
+     .master = NULL,
+     .link_cache = NULL,
++    .neigh_cache = NULL,
+ };
+ 
+ static int netlink_read(struct thread *thread)
+@@ -116,19 +118,20 @@ static vrf_id_t get_vrf_id(int ifindex)
+     return vrf_name_to_id(name);
+ }
+ 
+-static void arp2host_ip_install(int ifindex, vrf_id_t vrf_id, struct nl_addr *addr)
++static void arp2host_ip_install(struct interface *ifp, struct nl_addr *addr)
+ {
+-    struct arp2host_if_node_t *if_node;
++    struct hosttrack_if_info_t *info;
+     struct sockaddr_in sin;
+     socklen_t len = sizeof(sin);
+ 
++    info = ifp->info;
++    assert(info != NULL);
++
+     if (nl_addr_get_family(addr) != AF_INET) {
+         return;
+     }
+ 
+-    if_node = hosttrack_arp2host_find_if(ifindex, vrf_id);
+-
+-    if (if_node == NULL) {
++    if (!hosttrack_arp2host_if_is_enabled(&info->arp2host_if_info)) {
+         return;
+     }
+ 
+@@ -136,29 +139,31 @@ static void arp2host_ip_install(int ifindex, vrf_id_t vrf_id, struct nl_addr *ad
+         return;
+     }
+ 
+-    if (hosttrack_arp2host_if_find_ip(if_node, &sin.sin_addr) != NULL) {
++    if (hosttrack_arp2host_ip_exist(&info->arp2host_if_info, &sin.sin_addr)) {
+         return;
+     }
+ 
+-    if (hosttrack_arp2host_if_add_ip(if_node, &sin.sin_addr) == NULL) {
++    if (hosttrack_arp2host_if_add_ip(&info->arp2host_if_info, &sin.sin_addr) == NULL) {
+ 
+     }
++
+     return;
+ }
+ 
+-static void arp2host_ip_uninstall(int ifindex, vrf_id_t vrf_id, struct nl_addr *addr)
++static void arp2host_ip_uninstall(struct interface *ifp, struct nl_addr *addr)
+ {
+-    struct arp2host_if_node_t *if_node;
++    struct hosttrack_if_info_t *info;
+     struct sockaddr_in sin;
+     socklen_t len = sizeof(sin);
+ 
++    info = ifp->info;
++    assert(info != NULL);
++
+     if (nl_addr_get_family(addr) != AF_INET) {
+         return;
+     }
+ 
+-    if_node = hosttrack_arp2host_find_if(ifindex, vrf_id);
+-
+-    if (if_node == NULL) {
++    if (!hosttrack_arp2host_if_is_enabled(&info->arp2host_if_info)) {
+         return;
+     }
+ 
+@@ -166,29 +171,21 @@ static void arp2host_ip_uninstall(int ifindex, vrf_id_t vrf_id, struct nl_addr *
+         return;
+     }
+ 
+-    if (hosttrack_arp2host_if_find_ip(if_node, &sin.sin_addr) == NULL) {
++    if (!hosttrack_arp2host_ip_exist(&info->arp2host_if_info, &sin.sin_addr)) {
+         return;
+     }
+ 
+-    hosttrack_arp2host_if_del_ip(if_node, &sin.sin_addr);
++    hosttrack_arp2host_if_del_ip(&info->arp2host_if_info, &sin.sin_addr);
+ }
+ 
+-static void nl_msg_parse_callback(struct nl_object *object, void *arg)
++static void nl_neigh_update(struct rtnl_neigh *neigh, bool install)
+ {
+-    int nl_msg_type;
+-    struct rtnl_neigh *neigh;
+-    struct nl_addr *addr;
++    int state;
+     int ifindex;
+     vrf_id_t vrf_id;
+-    int state;
+-
+-    nl_msg_type = nl_object_get_msgtype(object);
+-
+-    if ((nl_msg_type != RTM_NEWNEIGH) && (nl_msg_type != RTM_DELNEIGH)) {
+-        return;
+-    }
+-
+-    neigh = (struct rtnl_neigh *)object;
++    struct nl_addr *addr;
++    char name[IFNAMSIZ];
++    struct interface *ifp;
+ 
+     if (rtnl_neigh_get_family(neigh) != AF_INET) {
+         return;
+@@ -204,19 +201,53 @@ static void nl_msg_parse_callback(struct nl_object *object, void *arg)
+     vrf_id = get_vrf_id(ifindex);
+     addr = rtnl_neigh_get_dst(neigh);
+ 
+-    if (nl_msg_type == RTM_NEWNEIGH) {
+-         arp2host_ip_install(ifindex, vrf_id, addr);
+-    } else if (nl_msg_type == RTM_DELNEIGH) {
+-        arp2host_ip_uninstall(ifindex, vrf_id, addr);
++    /*Get interface struct*/
++    if (!get_link_name_by_idx(ifindex, name, IFNAMSIZ)) {
++        return;
++    }
++
++    ifp = if_lookup_by_name(name, vrf_id);
++    if ((ifp == NULL) || !CHECK_FLAG(ifp->status, ZEBRA_INTERFACE_ACTIVE)) {
++       return;
++    }
++
++    if (install) {
++         arp2host_ip_install(ifp, addr);
++    } else {
++        arp2host_ip_uninstall(ifp, addr);
+     }
+ }
+ 
++static void nl_msg_parse_callback(struct nl_object *object, void *arg)
++{
++    int nl_msg_type;
++    struct rtnl_neigh *neigh;
++    bool install;
++
++    nl_msg_type = nl_object_get_msgtype(object);
++
++    if ((nl_msg_type != RTM_NEWNEIGH) && (nl_msg_type != RTM_DELNEIGH)) {
++        return;
++    }
++
++    neigh = (struct rtnl_neigh *)object;
++    install = (nl_msg_type == RTM_NEWNEIGH) ? true : false;
++
++    nl_neigh_update(neigh, install);
++}
++
+ static int rcv_netlink_msg(struct nl_msg *msg, void *arg)
+ {
+     nl_msg_parse(msg, nl_msg_parse_callback, NULL);
+     return NL_OK;
+ }
+ 
++static void nl_neigh_obj_add_callback(struct nl_object *obj, void *arg)
++{
++    struct rtnl_neigh *neigh = (struct rtnl_neigh *)obj;
++    nl_neigh_update(neigh, true);
++}
++
+ /**
+  * Initialize hosttrack netlink.
+ */
+@@ -261,6 +292,13 @@ void hosttrack_netlink_init(struct thread_master *master)
+         exit(1);
+     }
+ 
++    err = rtnl_neigh_alloc_cache(socket, &netlink.neigh_cache);
++
++    if (err < 0) {
++        nl_socket_free(socket);
++        exit(1);
++    }
++
+     thread_add_read(netlink.master, netlink_read, NULL, netlink.fd, &netlink.read);
+ }
+ /**
+@@ -273,6 +311,11 @@ void hosttrack_netlink_finish(void)
+         netlink.link_cache = NULL;
+     }
+ 
++    if (netlink.neigh_cache != NULL) {
++        nl_cache_free(netlink.neigh_cache);
++        netlink.neigh_cache = NULL;
++    }
++
+     if (netlink.socket != NULL) {
+         nl_socket_free(netlink.socket);
+         netlink.fd = -1;
+@@ -283,3 +326,12 @@ void hosttrack_netlink_finish(void)
+         netlink.read = NULL;
+     }
+ }
++
++/**
++ * Get neighbors from caches and add arp2host ip.
++*/
++void hosttrack_netlink_get_neighs(void)
++{
++    nl_cache_refill(netlink.socket, netlink.neigh_cache);
++    nl_cache_foreach(netlink.neigh_cache, nl_neigh_obj_add_callback, NULL);
++}
+diff --git a/hosttrackd/hosttrack_netlink.h b/hosttrackd/hosttrack_netlink.h
+index aedfbbb..ba92e40 100644
+--- a/hosttrackd/hosttrack_netlink.h
++++ b/hosttrackd/hosttrack_netlink.h
+@@ -8,10 +8,12 @@ struct hosttrack_netlink_t {
+     struct thread *read;
+     struct thread_master *master;
+     struct nl_cache *link_cache;
++    struct nl_cache *neigh_cache;
+ };
+ 
+ extern void hosttrack_netlink_init(struct thread_master *master);
+ extern void hosttrack_netlink_finish(void);
++extern void hosttrack_netlink_get_neighs(void);
+ 
+ #endif
+ 
+diff --git a/hosttrackd/hosttrack_vty.c b/hosttrackd/hosttrack_vty.c
+index 7568e6e..4a42719 100644
+--- a/hosttrackd/hosttrack_vty.c
++++ b/hosttrackd/hosttrack_vty.c
+@@ -5,6 +5,8 @@
+ 
+ #include "hosttrack_vty.h"
+ #include "hosttrack_arp2host.h"
++#include "hosttrack_if.h"
++#include "hosttrack_netlink.h"
+ 
+ static int hosttrackd_interface_config_write(struct vty *vty);
+ 
+@@ -20,10 +22,17 @@ static int hosttrackd_interface_config_write(struct vty *vty)
+     struct vrf *vrf;
+     struct interface *ifp;
+     int write = 0;
++    struct hosttrack_if_info_t *if_info;
+ 
+     RB_FOREACH(vrf, vrf_name_head, &vrfs_by_name) {
+ 		FOR_ALL_INTERFACES(vrf, ifp) {
+-            if (!hosttrack_arp2host_enabled(ifp->ifindex, ifp->vrf_id)) {
++            if_info = ifp->info;
++
++            if (if_info == NULL) {
++                continue;
++            }
++
++            if (!hosttrack_arp2host_if_is_enabled(&if_info->arp2host_if_info)) {
+                 continue;
+             }
+ 
+@@ -58,13 +67,19 @@ DEFUN (ip_route_arp_to_host,
+        "Enable ARP to host route\n")
+ {
+     VTY_DECLVAR_CONTEXT(interface, ifp);
++    struct hosttrack_if_info_t *if_info;
+     
++    if_info = ifp->info;
++    assert(if_info != NULL);
++
+     /*have enabled arp-to-host*/
+-    if (hosttrack_arp2host_find_if(ifp->ifindex, ifp->vrf_id) != NULL) {
++    if (hosttrack_arp2host_if_is_enabled(&if_info->arp2host_if_info)) {
+         return CMD_SUCCESS;
+     }
+ 
+-    assert(hosttrack_arp2host_add_if(ifp->ifindex, ifp->vrf_id) != NULL);
++    hosttrack_arp2host_if_enable(&if_info->arp2host_if_info);
++
++    hosttrack_netlink_get_neighs();
+ 
+     return CMD_SUCCESS;
+ }
+@@ -78,13 +93,17 @@ DEFUN (no_ip_route_arp_to_host,
+        "Disable ARP to host route\n")
+ {
+     VTY_DECLVAR_CONTEXT(interface, ifp);
++    struct hosttrack_if_info_t *if_info;
++
++    if_info = ifp->info;
++    assert(if_info != NULL);
+ 
+     /*have disabled arp-to-host*/
+-    if (hosttrack_arp2host_find_if(ifp->ifindex, ifp->vrf_id) == NULL) {
++    if (!hosttrack_arp2host_if_is_enabled(&if_info->arp2host_if_info)) {
+         return CMD_SUCCESS;
+     }
+ 
+-    hosttrack_arp2host_del_if(ifp->ifindex, ifp->vrf_id);
++    hosttrack_arp2host_if_disable(&if_info->arp2host_if_info);
+ 
+     return CMD_SUCCESS;
+ }
+diff --git a/hosttrackd/hosttrack_zebra.c b/hosttrackd/hosttrack_zebra.c
+index ff4dd61..394a23d 100644
+--- a/hosttrackd/hosttrack_zebra.c
++++ b/hosttrackd/hosttrack_zebra.c
+@@ -5,6 +5,8 @@
+ 
+ #include "hosttrack_zebra.h"
+ #include "hosttrack_main.h"
++#include "hosttrack_arp2host.h"
++#include "hosttrack_if.h"
+ 
+ struct zclient *zclient;
+ 
+@@ -15,6 +17,7 @@ void hosttrack_zebra_init(void)
+     zclient = zclient_new(master, &opt);
+ 
+     zclient_init(zclient, ZEBRA_ROUTE_ARP_TO_HOST, 0, &hosttrack_privs);
++    zclient->interface_up = hosttrack_ifp_up;
+ }
+ 
+ void hosttrack_zebra_route_update(ifindex_t ifindex,
+diff --git a/hosttrackd/subdir.am b/hosttrackd/subdir.am
+index 7dc9609..cc6571c 100644
+--- a/hosttrackd/subdir.am
++++ b/hosttrackd/subdir.am
+@@ -14,6 +14,7 @@ hosttrackd_libhosttack_a_SOURCES = \
+ 	hosttrackd/hosttrack_vty.c \
+ 	hosttrackd/hosttrack_zebra.c \
+ 	hosttrackd/hosttrack_netlink.c \
++	hosttrackd/hosttrack_if.c \
+ 	# end
+ 
+ noinst_HEADERS += \
+@@ -23,6 +24,7 @@ noinst_HEADERS += \
+ 	hosttrackd/hosttrack_vty.h \
+ 	hosttrackd/hosttrack_zebra.h \
+ 	hosttrackd/hosttrack_netlink.h \
++	hosttrackd/hosttrack_if.h \
+ 	# end
+ 
+ hosttrackd_libhosttack_a_CFLAGS = -I/usr/include/libnl3
+-- 
+1.8.3.1
+

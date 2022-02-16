@@ -1,0 +1,135 @@
+From ece92f5adae2075ef814566a6e4f6a94daf4791d Mon Sep 17 00:00:00 2001
+From: wenxu <wenxu@ucloud.cn>
+Date: Tue, 8 Feb 2022 16:45:01 +0800
+Subject: [PATCH 6/8] hosttrackd: add support distrbute the arp2host route
+
+Signed-off-by: wenxu <wenxu@ucloud.cn>
+---
+ hosttrackd/hosttrack_arp2host.c | 23 +++++++++++++++++++++++
+ hosttrackd/hosttrack_zebra.c    | 39 +++++++++++++++++++++++++++++++++++++++
+ hosttrackd/hosttrack_zebra.h    |  4 ++++
+ 3 files changed, 66 insertions(+)
+
+diff --git a/hosttrackd/hosttrack_arp2host.c b/hosttrackd/hosttrack_arp2host.c
+index 29ab09f..95bc5a1 100644
+--- a/hosttrackd/hosttrack_arp2host.c
++++ b/hosttrackd/hosttrack_arp2host.c
+@@ -3,6 +3,7 @@
+ 
+ #include "hosttrack_arp2host.h"
+ #include "hosttrack_memory.h"
++#include "hosttrack_zebra.h"
+ 
+ /* arp-to-host if hash struct to find if node */
+ static struct hash *arp2host_if_hash;
+@@ -196,6 +197,9 @@ struct arp2host_ip_node_t *hosttrack_arp2host_if_add_ip(struct arp2host_if_node_
+         return NULL;
+     }
+ 
++    hosttrack_zebra_route_add(if_node->ifindex, if_node->vrf_id, ip);
++    node->state = ARP2HOST_IP_STATE_DONE;
++
+     return node;
+ }
+ 
+@@ -217,10 +221,26 @@ void hosttrack_arp2host_if_del_ip(struct arp2host_if_node_t *if_node,
+         return;
+     }
+ 
++    if (node->state == ARP2HOST_IP_STATE_DONE) {
++        hosttrack_zebra_route_del(if_node->ifindex, if_node->vrf_id, ip);
++        node->state = ARP2HOST_IP_STATE_INIT;
++    }
++
+     hash_release(if_node->ip_hash, node);
+     XFREE(MTYPE_HOSTTRACK_ARP2HOST_IP_NODE, node);
+ }
+ 
++static void arp2host_ip_node_iter_zebra_route_del(struct hash_bucket *bucket, void *arg)
++{
++    struct arp2host_if_node_t *if_node = (struct arp2host_if_node_t *)arg;
++    struct arp2host_ip_node_t *ip_node = (struct arp2host_ip_node_t *)(bucket->data);
++
++    if (ip_node->state == ARP2HOST_IP_STATE_DONE) {
++        hosttrack_zebra_route_del(if_node->ifindex, if_node->vrf_id, &ip_node->ip);
++        ip_node->state = ARP2HOST_IP_STATE_INIT;
++    }
++}
++
+ /**
+  * Destroy arp2host IP hash.
+ */
+@@ -230,6 +250,9 @@ void hosttrack_arp2host_if_destory_ip_hash(struct arp2host_if_node_t *if_node)
+         return;
+     }
+ 
++    hash_iterate(if_node->ip_hash, arp2host_ip_node_iter_zebra_route_del,
++                 if_node);
++
+     hash_clean(if_node->ip_hash, arp2host_ip_node_free);
+     hash_free(if_node->ip_hash);
+ }
+diff --git a/hosttrackd/hosttrack_zebra.c b/hosttrackd/hosttrack_zebra.c
+index b7f5a5f..ff4dd61 100644
+--- a/hosttrackd/hosttrack_zebra.c
++++ b/hosttrackd/hosttrack_zebra.c
+@@ -16,3 +16,42 @@ void hosttrack_zebra_init(void)
+ 
+     zclient_init(zclient, ZEBRA_ROUTE_ARP_TO_HOST, 0, &hosttrack_privs);
+ }
++
++void hosttrack_zebra_route_update(ifindex_t ifindex,
++        vrf_id_t vrf_id,
++        const struct in_addr *ip,
++        bool install)
++{
++    struct zapi_route api;
++    struct zapi_nexthop *api_nh;
++
++    memset(&api, 0, sizeof(api));
++    api.vrf_id = vrf_id;
++    api.type = ZEBRA_ROUTE_ARP_TO_HOST;
++    api.safi = SAFI_UNICAST;
++    api.prefix.family = AF_INET;
++    api.prefix.prefixlen = 32;
++    memcpy(&api.prefix.u.prefix4, ip, sizeof(api.prefix.u.prefix4));
++    SET_FLAG(api.flags, ZEBRA_FLAG_ALLOW_RECURSION);
++    SET_FLAG(api.message, ZAPI_MESSAGE_NEXTHOP);
++
++    api_nh = &api.nexthops[0];
++    api_nh->vrf_id = vrf_id;
++    api_nh->ifindex = ifindex;
++    api_nh->type = NEXTHOP_TYPE_IFINDEX;
++    api.nexthop_num = 1;
++
++    zclient_route_send(install ?
++        ZEBRA_ROUTE_ADD : ZEBRA_ROUTE_DELETE,
++        zclient, &api);
++}
++
++void hosttrack_zebra_route_add(ifindex_t ifindex, vrf_id_t vrf_id, const struct in_addr *ip)
++{
++    hosttrack_zebra_route_update(ifindex, vrf_id, ip, true);
++}
++
++void hosttrack_zebra_route_del(ifindex_t ifindex, vrf_id_t vrf_id, const struct in_addr *ip)
++{
++    hosttrack_zebra_route_update(ifindex, vrf_id, ip, false);
++}
+diff --git a/hosttrackd/hosttrack_zebra.h b/hosttrackd/hosttrack_zebra.h
+index de5f3f3..ebd80e5 100644
+--- a/hosttrackd/hosttrack_zebra.h
++++ b/hosttrackd/hosttrack_zebra.h
+@@ -5,5 +5,9 @@
+ #include "if.h"
+ 
+ extern void hosttrack_zebra_init(void);
++extern void hosttrack_zebra_route_update(ifindex_t ifindex, vrf_id_t vrf_id,
++                                         const struct in_addr *ip, bool install);
++extern void hosttrack_zebra_route_add(ifindex_t ifindex, vrf_id_t vrf_id, const struct in_addr *ip);
++extern void hosttrack_zebra_route_del(ifindex_t ifindex, vrf_id_t vrf_id, const struct in_addr *ip);
+ 
+ #endif
+-- 
+1.8.3.1
+

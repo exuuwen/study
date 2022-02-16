@@ -1,0 +1,85 @@
+From c6321f5f99cda56eddc73895454ece33255f3024 Mon Sep 17 00:00:00 2001
+From: wenxu <wenxu@ucloud.cn>
+Date: Wed, 9 Feb 2022 17:18:56 +0800
+Subject: [PATCH 7/8] hosttrackd: support  running-config in vtysh
+
+Signed-off-by: wenxu <wenxu@ucloud.cn>
+---
+ hosttrackd/hosttrack_vty.c | 38 ++++++++++++++++++++++++++++++++++++++
+ lib/command.h              |  4 ++--
+ 2 files changed, 40 insertions(+), 2 deletions(-)
+
+diff --git a/hosttrackd/hosttrack_vty.c b/hosttrackd/hosttrack_vty.c
+index c2a9ebb..7568e6e 100644
+--- a/hosttrackd/hosttrack_vty.c
++++ b/hosttrackd/hosttrack_vty.c
+@@ -6,12 +6,50 @@
+ #include "hosttrack_vty.h"
+ #include "hosttrack_arp2host.h"
+ 
++static int hosttrackd_interface_config_write(struct vty *vty);
++
+ static struct cmd_node hosttrack_interface_node = {
+     .node = INTERFACE_NODE,
+     .prompt = "%s(config-if)# ",
+     .vtysh = 1,
++    .func = hosttrackd_interface_config_write,
+ };
+ 
++static int hosttrackd_interface_config_write(struct vty *vty)
++{
++    struct vrf *vrf;
++    struct interface *ifp;
++    int write = 0;
++
++    RB_FOREACH(vrf, vrf_name_head, &vrfs_by_name) {
++		FOR_ALL_INTERFACES(vrf, ifp) {
++            if (!hosttrack_arp2host_enabled(ifp->ifindex, ifp->vrf_id)) {
++                continue;
++            }
++
++            if (vrf->vrf_id == VRF_DEFAULT) {
++                vty_out(vty, "interface %s\n", ifp->name);
++                write++;
++            } else {
++                vty_out(vty, "interface %s vrf %s\n", ifp->name, vrf->name);
++                write++;
++            }
++            
++            if (ifp->desc) {
++                vty_out(vty, " description %s\n", ifp->desc);
++                write++;
++            }
++
++            vty_out(vty, " ip route arp-to-host\n");
++            write++;
++
++            vty_out (vty, "!\n");
++        }
++    }
++
++    return write;
++}
++
+ DEFUN (ip_route_arp_to_host,
+        ip_route_arp_to_host_cmd,
+        "ip route arp-to-host",
+diff --git a/lib/command.h b/lib/command.h
+index 137d374..044e49b 100644
+--- a/lib/command.h
++++ b/lib/command.h
+@@ -414,9 +414,9 @@ struct cmd_node {
+ 
+ /* Dameons lists */
+ #define DAEMONS_STR                                                            \
+-	"For the zebra daemon\nFor the rip daemon\nFor the ripng daemon\nFor the ospf daemon\nFor the ospfv6 daemon\nFor the bgp daemon\nFor the isis daemon\nFor the pbr daemon\nFor the fabricd daemon\nFor the pim daemon\nFor the static daemon\nFor the sharpd daemon\nFor the vrrpd daemon\n"
++	"For the zebra daemon\nFor the rip daemon\nFor the ripng daemon\nFor the ospf daemon\nFor the ospfv6 daemon\nFor the bgp daemon\nFor the isis daemon\nFor the pbr daemon\nFor the fabricd daemon\nFor the pim daemon\nFor the static daemon\nFor the sharpd daemon\nFor the vrrpd daemon\nFor the hosttrackd daemon\n"
+ #define DAEMONS_LIST                                                           \
+-	"<zebra|ripd|ripngd|ospfd|ospf6d|bgpd|isisd|pbrd|fabricd|pimd|staticd|sharpd|vrrpd>"
++	"<zebra|ripd|ripngd|ospfd|ospf6d|bgpd|isisd|pbrd|fabricd|pimd|staticd|sharpd|vrrpd|hosttrackd>"
+ 
+ /* Prototypes. */
+ extern void install_node(struct cmd_node *, int (*)(struct vty *));
+-- 
+1.8.3.1
+

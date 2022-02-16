@@ -1,0 +1,388 @@
+From 1939582bd7825e955dbe868a280547077296bd8b Mon Sep 17 00:00:00 2001
+From: wenxu <wenxu@ucloud.cn>
+Date: Tue, 8 Feb 2022 16:31:39 +0800
+Subject: [PATCH 5/8] hosttrackd: add hosttrack_netlink
+
+Signed-off-by: wenxu <wenxu@ucloud.cn>
+---
+ hosttrackd/hosttrack_main.c    |   3 +
+ hosttrackd/hosttrack_netlink.c | 285 +++++++++++++++++++++++++++++++++++++++++
+ hosttrackd/hosttrack_netlink.h |  17 +++
+ hosttrackd/subdir.am           |   6 +-
+ 4 files changed, 310 insertions(+), 1 deletion(-)
+ create mode 100644 hosttrackd/hosttrack_netlink.c
+ create mode 100644 hosttrackd/hosttrack_netlink.h
+
+diff --git a/hosttrackd/hosttrack_main.c b/hosttrackd/hosttrack_main.c
+index 8a4908a..837819b 100644
+--- a/hosttrackd/hosttrack_main.c
++++ b/hosttrackd/hosttrack_main.c
+@@ -7,6 +7,7 @@
+ #include "hosttrack_arp2host.h"
+ #include "hosttrack_vty.h"
+ #include "hosttrack_zebra.h"
++#include "hosttrack_netlink.h"
+ 
+ zebra_capabilities_t _caps_p[] = {
+ };
+@@ -42,6 +43,7 @@ static void sigint(void)
+ 	zlog_notice("Terminating on signal");
+ 
+ 	hosttrack_arp2host_finish();
++	hosttrack_netlink_finish();
+ 	frr_fini();
+ 
+ 	exit(0);
+@@ -116,6 +118,7 @@ int main(int argc, char **argv, char **envp)
+ 	hosttrack_arp2host_init();
+ 	hosttrack_vty_init();
+ 	hosttrack_zebra_init();
++	hosttrack_netlink_init(master);
+ 
+ 	frr_config_fork();
+ 	frr_run(master);
+diff --git a/hosttrackd/hosttrack_netlink.c b/hosttrackd/hosttrack_netlink.c
+new file mode 100644
+index 0000000..ee4bcb6
+--- /dev/null
++++ b/hosttrackd/hosttrack_netlink.c
+@@ -0,0 +1,285 @@
++#include <netlink/netlink.h>
++#include <netlink/netlink.h>
++#include <netlink/route/rtnl.h>
++#include <netlink/route/link.h>
++#include <netlink/route/neighbour.h>
++
++#include "hosttrack_netlink.h"
++#include "vrf.h"
++#include "hosttrack_arp2host.h"
++
++static struct hosttrack_netlink_t netlink = {
++    .socket = NULL,
++    .fd = -1,
++    .read = NULL,
++    .master = NULL,
++    .link_cache = NULL,
++};
++
++static int netlink_read(struct thread *thread)
++{
++    int err;
++
++    do {
++        err = nl_recvmsgs_default(netlink.socket);
++    }
++    while(err == -NLE_INTR); // Retry if the process was interrupted by a signal
++
++    if (err < 0) {
++        if (err == -NLE_NOMEM) {
++
++        }
++        else if (err == -NLE_AGAIN) {
++
++        }
++        else {
++
++        }
++    }
++
++    thread_add_read(netlink.master, netlink_read, NULL, netlink.fd, &netlink.read);
++    return 0;
++}
++
++static struct rtnl_link *get_rtnl_link(int idx)
++{
++    struct rtnl_link *link;
++
++    link = rtnl_link_get(netlink.link_cache, idx);
++
++    if (link == NULL) {
++        nl_cache_refill(netlink.socket, netlink.link_cache);
++        link = rtnl_link_get(netlink.link_cache, idx);
++    }
++
++    return link;
++}
++
++static bool get_link_name_by_idx(int idx, char *name, int len)
++{
++    if (!name || len == 0) {
++        return false;
++    }
++
++    memset(name, 0, len);
++
++    if (!rtnl_link_i2name(netlink.link_cache, idx, name, len)) {
++        nl_cache_refill(netlink.socket, netlink.link_cache);
++        if (!rtnl_link_i2name(netlink.link_cache, idx, name, len)) {
++            return false;
++        }
++    }
++
++    return true;
++}
++
++static vrf_id_t get_vrf_id(int ifindex)
++{
++    struct rtnl_link *link;
++    int master;
++    char *type;
++    char name[IFNAMSIZ];
++
++    link = get_rtnl_link(ifindex);
++
++    if (link == NULL) {
++        return VRF_DEFAULT;
++    }
++
++    master = rtnl_link_get_master(link);
++    rtnl_link_put(link);
++
++    if (!master) {
++        return VRF_DEFAULT;
++    }
++
++    link = get_rtnl_link(master);
++
++    if (link == NULL) {
++        return VRF_DEFAULT;
++    }
++
++    type = rtnl_link_get_type(link);
++    rtnl_link_put(link);
++
++    if (type == NULL) {
++        return VRF_DEFAULT;
++    }
++    if (strcmp(type, "vrf") != 0) {
++        return VRF_DEFAULT;
++    }
++
++    if (!get_link_name_by_idx(master, name, IFNAMSIZ)) {
++        return VRF_DEFAULT;
++    }
++
++    return vrf_name_to_id(name);
++}
++
++static void arp2host_ip_install(int ifindex, vrf_id_t vrf_id, struct nl_addr *addr)
++{
++    struct arp2host_if_node_t *if_node;
++    struct sockaddr_in sin;
++    socklen_t len = sizeof(sin);
++
++    if (nl_addr_get_family(addr) != AF_INET) {
++        return;
++    }
++
++    if_node = hosttrack_arp2host_find_if(ifindex, vrf_id);
++
++    if (if_node == NULL) {
++        return;
++    }
++
++    if (nl_addr_fill_sockaddr(addr, (struct sockaddr *)&sin, &len) < 0) {
++        return;
++    }
++
++    if (hosttrack_arp2host_if_find_ip(if_node, &sin.sin_addr) != NULL) {
++        return;
++    }
++
++    if (hosttrack_arp2host_if_add_ip(if_node, &sin.sin_addr) == NULL) {
++
++    }
++    return;
++}
++
++static void arp2host_ip_uninstall(int ifindex, vrf_id_t vrf_id, struct nl_addr *addr)
++{
++    struct arp2host_if_node_t *if_node;
++    struct sockaddr_in sin;
++    socklen_t len = sizeof(sin);
++
++    if (nl_addr_get_family(addr) != AF_INET) {
++        return;
++    }
++
++    if_node = hosttrack_arp2host_find_if(ifindex, vrf_id);
++
++    if (if_node == NULL) {
++        return;
++    }
++
++    if (nl_addr_fill_sockaddr(addr, (struct sockaddr *)&sin, &len) < 0) {
++        return;
++    }
++
++    if (hosttrack_arp2host_if_find_ip(if_node, &sin.sin_addr) == NULL) {
++        return;
++    }
++
++    hosttrack_arp2host_if_del_ip(if_node, &sin.sin_addr);
++}
++
++static void nl_msg_parse_callback(struct nl_object *object, void *arg)
++{
++    int nl_msg_type;
++    struct rtnl_neigh *neigh;
++    struct nl_addr *addr;
++    int ifindex;
++    vrf_id_t vrf_id;
++    int state;
++
++    nl_msg_type = nl_object_get_msgtype(object);
++
++    if ((nl_msg_type != RTM_NEWNEIGH) && (nl_msg_type != RTM_DELNEIGH)) {
++        return;
++    }
++
++    neigh = (struct rtnl_neigh *)object;
++
++    if (rtnl_neigh_get_family(neigh) != AF_INET) {
++        return;
++    }
++
++    state = rtnl_neigh_get_state(neigh);
++    if (state == NUD_NOARP)
++    {
++        return;
++    }
++
++    ifindex = rtnl_neigh_get_ifindex(neigh);
++    vrf_id = get_vrf_id(ifindex);
++    addr = rtnl_neigh_get_dst(neigh);
++
++    if (nl_msg_type == RTM_NEWNEIGH) {
++         arp2host_ip_install(ifindex, vrf_id, addr);
++    } else if (nl_msg_type == RTM_DELNEIGH) {
++        arp2host_ip_uninstall(ifindex, vrf_id, addr);
++    }
++}
++
++static int rcv_netlink_msg(struct nl_msg *msg, void *arg)
++{
++    nl_msg_parse(msg, nl_msg_parse_callback, NULL);
++    return NL_OK;
++}
++
++/**
++ * Initialize hosttrack netlink.
++*/
++void hosttrack_netlink_init(struct thread_master *master)
++{
++    struct nl_sock *socket = NULL;
++    int err;
++
++    socket = nl_socket_alloc();
++
++    if (socket == NULL) {
++        exit(1);
++    }
++
++    nl_socket_disable_seq_check(socket);
++    nl_socket_modify_cb(socket, NL_CB_VALID, NL_CB_CUSTOM, rcv_netlink_msg, NULL);
++
++    err = nl_connect(socket, NETLINK_ROUTE);
++
++    if (err < 0) {
++        nl_socket_free(socket);
++        exit(1);
++    }
++
++    nl_socket_set_nonblocking(socket);
++
++    err = nl_socket_add_membership(socket, RTNLGRP_NEIGH);
++
++    if (err < 0) {
++        nl_socket_free(socket);
++        exit(1);
++    }
++
++    netlink.socket = socket;
++    netlink.fd = nl_socket_get_fd(socket);
++    netlink.master = master;
++
++    err = rtnl_link_alloc_cache(socket, AF_UNSPEC, &netlink.link_cache);
++
++    if (err < 0) {
++        nl_socket_free(socket);
++        exit(1);
++    }
++
++    thread_add_read(netlink.master, netlink_read, NULL, netlink.fd, &netlink.read);
++}
++/**
++ * Finish hosttrack netlink.
++*/
++void hosttrack_netlink_finish(void)
++{
++    if (netlink.link_cache != NULL) {
++        nl_cache_free(netlink.link_cache);
++        netlink.link_cache = NULL;
++    }
++
++    if (netlink.socket != NULL) {
++        nl_socket_free(netlink.socket);
++        netlink.fd = -1;
++    }
++
++    if (netlink.read != NULL) {
++        thread_cancel(netlink.read);
++        netlink.read = NULL;
++    }
++}
+diff --git a/hosttrackd/hosttrack_netlink.h b/hosttrackd/hosttrack_netlink.h
+new file mode 100644
+index 0000000..aedfbbb
+--- /dev/null
++++ b/hosttrackd/hosttrack_netlink.h
+@@ -0,0 +1,17 @@
++#ifndef __HOSTTRACK_NETLINK_H__
++#define __HOSTTRACK_NETLINK_H__
++#include <zebra.h>
++
++struct hosttrack_netlink_t {
++    struct nl_sock *socket;
++    int fd;
++    struct thread *read;
++    struct thread_master *master;
++    struct nl_cache *link_cache;
++};
++
++extern void hosttrack_netlink_init(struct thread_master *master);
++extern void hosttrack_netlink_finish(void);
++
++#endif
++
+diff --git a/hosttrackd/subdir.am b/hosttrackd/subdir.am
+index e039dbc..7dc9609 100644
+--- a/hosttrackd/subdir.am
++++ b/hosttrackd/subdir.am
+@@ -13,6 +13,7 @@ hosttrackd_libhosttack_a_SOURCES = \
+ 	hosttrackd/hosttrack_memory.c \
+ 	hosttrackd/hosttrack_vty.c \
+ 	hosttrackd/hosttrack_zebra.c \
++	hosttrackd/hosttrack_netlink.c \
+ 	# end
+ 
+ noinst_HEADERS += \
+@@ -21,11 +22,14 @@ noinst_HEADERS += \
+ 	hosttrackd/hosttrack_memory.h \
+ 	hosttrackd/hosttrack_vty.h \
+ 	hosttrackd/hosttrack_zebra.h \
++	hosttrackd/hosttrack_netlink.h \
+ 	# end
+ 
++hosttrackd_libhosttack_a_CFLAGS = -I/usr/include/libnl3
++
+ clippy_scan = \
+ 	hosttrackd/hosttrack_vty.c \
+ 	# end
+ 
+ hosttrackd_hosttrackd_SOURCES = hosttrackd/hosttrack_main.c
+-hosttrackd_hosttrackd_LDADD = hosttrackd/libhosttack.a lib/libfrr.la
++hosttrackd_hosttrackd_LDADD = hosttrackd/libhosttack.a lib/libfrr.la -lnl-genl-3 -lnl-route-3 -lnl-3
+-- 
+1.8.3.1
+
