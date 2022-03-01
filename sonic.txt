@@ -482,3 +482,7 @@ STATE_DB - 6
 system mac
 arp ---> route notify
 qos
+
+
+
+install: git submodule init && git submodule update && make init && make configure PLATFORM=mellanox && make target/sonic-mellanox.bin
