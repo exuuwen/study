@@ -1,0 +1,46 @@
+#!/usr/bin/expect
+
+if { $argc != 3 } { 
+    puts "usage : local_as ip_address mode"
+    exit 1
+}
+
+set local-as [lindex $argv 0]
+set address [lindex $argv 1]
+set mode [lindex $argv 2]
+
+set userview_mark "Hello"
+set passwd "root"
+
+spawn ssh -o checkhostip=no -o StrictHostKeyChecking=no -o GSSAPIAuthentication=no root@127.0.0.1
+expect "password:" {send "${passwd}\r"} "*login*" {}
+sleep 1
+
+send "vtysh\r"
+expect "*${userview_mark}*" {
+  send "configure terminal\r"
+  expect "*config)#"
+  send "router bgp ${local-as}\r"
+  expect "*config-router"
+  send "address-family ipv4 unicast\r"
+  expect "*config-router"
+  if { ${mode} == "add" } {
+  	send "network ${address}\r"
+  } else {
+  	send "no network ${address}\r"
+  }
+  expect "*config-router"
+  send "exit-address-family\r"
+  expect "*config-router"
+  send "quit\r"
+  expect "*config"
+  send "exit\r"
+  expect "*#"
+  send "write\r"
+  expect "*staticd.conf"
+  send "exit\r"
+  expect "*"
+}
+send "exit\r"
+expect eof     
+

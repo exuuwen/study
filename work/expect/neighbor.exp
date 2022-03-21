@@ -1,0 +1,45 @@
+#!/usr/bin/expect
+
+if { $argc != 4 } { 
+    puts "usage : neigbor local_as remote_as mode"
+    exit 1
+}
+
+set neighbor [lindex $argv 0]
+set local-as [lindex $argv 1]
+set remote-as [lindex $argv 2]
+set mode [lindex $argv 3]
+
+set userview_mark "Hello"
+set passwd "root"
+
+spawn ssh -o checkhostip=no -o StrictHostKeyChecking=no -o GSSAPIAuthentication=no root@127.0.0.1
+expect "password:" {send "${passwd}\r"} "*login*" {}
+sleep 1
+
+send "vtysh\r"
+expect "*${userview_mark}*" {
+  send "configure terminal\r"
+  expect "*config)#"
+  send "router bgp ${local-as}\r"
+  expect "*config-router"
+  if { ${mode} == "add" } {
+  	send "neighbor ${neighbor} remote-as ${remote-as}\r"
+  	expect "*config-router"
+  	send "neighbor ${neighbor} timers connect 3\r"
+  } else {
+  	send "no neighbor ${neighbor} remote-as ${remote-as}\r"
+  }
+  expect "*config-router"
+  send "quit\r"
+  expect "*config"
+  send "exit\r"
+  expect "*#"
+  send "write\r"
+  expect "*staticd.conf"
+  send "exit\r"
+  expect "*"
+}
+send "exit\r"
+expect eof     
+

@@ -1,0 +1,46 @@
+#!/usr/bin/expect
+
+if { $argc != 3 } { 
+    puts "usage : router_id local_as mode"
+    exit 1
+}
+
+set router-id [lindex $argv 0]
+set local-as [lindex $argv 1]
+set mode [lindex $argv 2]
+
+set userview_mark "Hello"
+set passwd "root"
+
+spawn ssh -o checkhostip=no -o StrictHostKeyChecking=no -o GSSAPIAuthentication=no root@127.0.0.1
+expect "password:" {send "${passwd}\r"} "*login*" {}
+sleep 1
+
+send "vtysh\r"
+expect "*${userview_mark}*" {
+  send "configure terminal\r"
+  expect "*config)#"
+  if { ${mode} == "add" } {
+  	send "router bgp ${local-as}\r"
+  	expect "*config-router"
+  	send "bgp router-id ${router-id}\r"
+  	expect "*config-router"
+	send "no bgp ebgp-requires-policy\r"
+  	expect "*config-router"
+  	send "timers bgp 3 10\r"
+  	expect "*config-router"
+  	send "quit\r"
+  } else {
+  	send "no router bgp ${local-as}\r"
+  }
+  expect "*config"
+  send "exit\r"
+  expect "*#"
+  send "write\r"
+  expect "*staticd.conf"
+  send "exit\r"
+  expect "*"
+}
+send "exit\r"
+expect eof     
+
