@@ -48,6 +48,8 @@ ovs-vsctl add-port br0 vnet0 -- set in vnet0 type=dpdk options:dpdk-devargs="000
 export PKG_CONFIG_PATH=/opt/mellanox/dpdk/lib64/pkgconfig/
 export LD_LIBRARY_PATH=/opt/mellanox/dpdk/lib64/
 
+export PKG_CONFIG_PATH=/usr/lib64/pkgconfig/
+
 
 
 

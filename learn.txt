@@ -218,23 +218,23 @@ mod -s mlx5_core /usr/lib/debug/lib/modules/kernelxx/driver/net/ethernet/mellano
 
 llvm
 
-https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.1/llvm-10.0.1.src.tar.xz
-https://github.com/llvm/llvm-project/releases/download/llvmorg-10.0.1/clang-10.0.1.src.tar.xz
-tar -xf clang-10.0.1.src.tar.xz
-tar -xf llvm-10.0.1.src.tar.xz
+https://github.com/llvm/llvm-project/releases/download/llvmorg-12.0.1/llvm-12.0.1.src.tar.xz
+https://github.com/llvm/llvm-project/releases/download/llvmorg-12.0.1/clang-12.0.1.src.tar.xz
+tar -xf clang-12.0.1.src.tar.xz
+tar -xf llvm-12.0.1.src.tar.xz
 
 mkdir clang-build
 mkdir llvm-build
 
 cd llvm-build
 cmake3 -G "Unix Makefiles" -DLLVM_TARGETS_TO_BUILD="BPF;X86" \
-  -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_RTTI=ON -DCMAKE_INSTALL_PREFIX=/usr ../llvm-10.0.1.src
+  -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_RTTI=ON -DCMAKE_INSTALL_PREFIX=/usr ../llvm-12.0.1.src
 make -j 32
 make install
 
 cd ../clang-build
 cmake3 -G "Unix Makefiles" -DLLVM_TARGETS_TO_BUILD="BPF;X86" \
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr ../clang-10.0.1.src
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr ../clang-12.0.1.src
 make -j 32
 make install
 
