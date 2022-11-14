@@ -1,0 +1,66 @@
+#!/bin/bash
+
+set -o xtrace
+
+echo "Exporting PATHs...."
+
+#...OvS...#
+export OVS_DIR=/root/work/purple/ovs-ctyun/output/usr/local
+#export OVS_DIR=/usr/
+
+#...VHOST USER SOCK SUBDIRECTORY...#
+#export VHOST_SOCK_DIR="/usr/local/var/run/openvswitch"
+
+#...Enabling Huge Pages..."
+echo "Setting Huge Pages...."
+echo 6 > /sys/devices/system/node/node0/hugepages/hugepages-1048576kB/nr_hugepages
+mkdir -p /dev/huge
+mount -t hugetlbfs -o pagesize=1G none /dev/huge
+
+echo "Preparing vhost-user-* path..."
+rm -rf /var/run/openvswitch/vhost-user-*
+mkdir -p /var/run/openvswitch
+mkdir -p /var/log/openvswitch
+
+echo "Starting OvS DB server...."
+rm -rf /etc/openvswitch/conf.db
+rm -rf /etc/openvswitch/.conf.db*
+rm -rf /var/run/openvswitch/*.pid
+rm -rf /var/run/openvswitch/*.ctl
+
+mkdir -p /etc/openvswitch
+mkdir -p /var/run/openvswitch
+${OVS_DIR}/bin/ovsdb-tool create /etc/openvswitch/conf.db \
+        ${OVS_DIR}/share/openvswitch/vswitch.ovsschema
+
+${OVS_DIR}/sbin/ovsdb-server \
+        --remote=punix:/usr/local/var/run/openvswitch/db.sock \
+        --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+        --pidfile --detach
+
+${OVS_DIR}/bin/ovs-vsctl --no-wait init
+
+echo "Setting OvS DPDK Configuration..."
+${OVS_DIR}/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-extra=" --log-level 8 --no-pci --vdev 'eth_af_packet0,iface=upcall-soc' --vdev 'eth_af_packet1,iface=flow-soc' --vdev 'dpe0,upcall=eth_af_packet0,flow=eth_af_packet1' --file-prefix pg0"
+${OVS_DIR}/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem="1024"
+#${OVS_DIR}/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-socket-mem="0"
+${OVS_DIR}/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-lcore-mask=0x0000007
+${OVS_DIR}/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:pmd-cpu-mask=0x00000002
+${OVS_DIR}/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:dpdk-init=true
+${OVS_DIR}/bin/ovs-vsctl --no-wait set Open_vSwitch . other_config:hw-offload=true
+
+echo "Staring OvS VSWITCHD Process...."
+#/root/work/purple/ovs-ctyun/output/usr/local/sbin/ovs-vswitchd  unix:/usr/local/var/run/openvswitch/db.sock --pidfile --log-file=/tmp/ovs-vswitchd.log &
+
+ovs-vsctl add-port br-int vf1 -- set Interface vf1 type=dpdk options:dpdk-devargs=vport102
+ovs-vsctl add-port br-int vf0 -- set Interface vf0 type=dpdk options:dpdk-devargs=vport101
+
+
+
+
+
+
+examples/dpdk-skeleton -l 1-1 --no-pci --file-prefix pg1 --vdev  'eth_af_packet0,iface=upcall-fpga' --vdev 'eth_af_packet1,iface=flow-fpga' --vdev 'eth_af_packet2,iface=vport1-fpga' --vdev 'eth_af_packet3,iface=vport2-fpga' --file-prefix pg1 --log-level 6 -- --upcall=eth_af_packet0 --flow=eth_af_packet1 --vport=eth_af_packet2:101 --vport=eth_af_packet3:102
+
+
+
