@@ -2,7 +2,7 @@
 systemctl start docker
 
 docker rmi image-id
-docker docker commit -m "Added json gem" -a "Kate Smith" container-id newimage-id:tage
+docker commit -m "Added json gem" -a "Kate Smith" container-id newimage-id:tage
 
 docker rm container-id
 

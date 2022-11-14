@@ -629,7 +629,8 @@ The address of an EBGP neighbor must be directly connected by default; the loopb
 
 
 
-
+ make check-system-userspace TESTSUITEFLAGS=--list
+ make check-system-userspace TESTSUITEFLAGS='-v  117'
 
 
 

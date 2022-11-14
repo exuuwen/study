@@ -1,0 +1,3 @@
+ssh -fN -D 64002 ubuntu@128.1.131.3
+export https_proxy="socks5h://127.0.0.1:64002"
+export http_proxy="socks5h://127.0.0.1:64002"

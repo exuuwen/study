@@ -1,1 +1,2 @@
-docker run  --net=host --rm --name vpn -tid vpn
+docker pull wenxu/vpn:latest
+docker run  --net=host --rm --name vpn -tid wenxu/vpn

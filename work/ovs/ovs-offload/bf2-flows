@@ -1,0 +1,198 @@
+struct flow_miss_ctx {
+    odp_port_t vport;
+    uint32_t recirc_id;
+    struct flow_tnl tnl;
+    uint8_t skip_actions;
+};
+flow_miss_ctx_id---> mark id
+
+struct ct_miss_ctx {
+    uint8_t state;
+    uint16_t zone;
+    uint32_t mark;
+    ovs_u128 label;
+};
+ct_miss_ctx_id--->REG_FIELD_CT_CTX--->set_meta 0x0000ffff
+
+table key: phys_port, vport, recirc_id
+flow table
+ct table 
+post_ct table
+
+zone_id ---> REG_FIELD_CT_ZONE ---> tag index 0  0x0000ff00
+tunnel_info_id ----> REG_FIELD_TUN_INFO ---> tag index 0 0xffff0000
+ct_state--->REG_FIELD_CT_STATE--->set_tag index 0 0x000000ff
+
+
+
+ufid:2a6058c4-70b1-4db0-9f5f-4d3e8b7fdd3a, mega_ufid:e8b3d054-c036-4e72-967a-9afedf497455, skb_priority(0/0),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(bond0),packet_type(ns=0,id=0),eth(src=00:00:5e:00:01:b2,dst=10:70:fd:3b:a8:1a),eth_type(0x8100),vlan(vid=301,pcp=0),encap(eth_type(0x0800),ipv4(src=10.24.110.49/0.0.0.0,dst=10.24.40.66,proto=17,tos=0/0,ttl=59/0,frag=no),udp(src=56776/0,dst=4789)), packets:24, bytes:8323, used:0.000s, offloaded:yes, dp:dpdk, actions:pop_vlan,tnl_pop(vxlan_sys_4789), dp-extra-info:miniflow_bits(5,3)
+
+
+miss flow: bond0: rte_flow 0x11   flow create 0 ingress priority 1 group 22 transfer pattern port_id id is 0 / eth / end actions mark id 16 / jump group 4294967294 / end
+
+add_tnl_pop_action:
+   get_context_data_id_by_data: flow_miss_ctx: 'vport=2, recirc_id=0, 0.0.0.0 -> 0.0.0.0, tun_id=0', refcnt=1, id=90
+   add_jump_action(actions, 0);
+                                 
+self table:                    
+   get_table_id(phys_port, act_vars->vport(0), act_vars->recirc_id(0),
+                         TABLE_TYPE_FLOW, act_vars->is_e2e_cache_flow,
+                         &self_table_id)
+   self_table_id = 0;
+next_table:
+    get_table_id(phys_port, flow_miss_ctx.vport(2),
+                         flow_miss_ctx.recirc_id(0), TABLE_TYPE_FLOW,
+                         act_vars->is_e2e_cache_flow, &next_table_id))
+    --->get_context_data_id_by_data: table_id: '(flow): phys_port=0, vport=2, recirc_id=0', refcnt=11, id=22
+
+
+2022-09-05T08:24:42.527Z|02537|netdev_offload_dpdk(hw_offload5)|DBG|bond0: rte_flow 0x13a   flow create 0 ingress priority 0 group 0 transfer pattern port_id id is 0 / eth src is 00:00:5e:00:01:b2 dst is 10:70:fd:3b:a8:1a type is 0x8100 has_vlan is 1 / vlan inner_type is 0x800 tci spec 0x12d tci mask 0xefff / ipv4 dst is 10.24.40.66 proto is 0x11 fragment_offset is 0x0 / udp dst is 4789 / end actions count shared 0 identifier 0 / of_pop_vlan / jump group 22 / end
+
+
+
+
+ufid:85135607-3ac3-448c-a5e4-b47182254128, mega_ufid:fb4442fe-be2d-4c1c-821c-5ce85c99a067, skb_priority(0/0),tunnel(tun_id=0x694d7,src=10.24.110.49,dst=10.24.40.66,ttl=59/0,tp_src=56776/0,tp_dst=4789/0,flags(-df-csum+key)),skb_mark(0/0),ct_state(0/0),ct_zone(0/0),ct_mark(0/0),ct_label(0/0),recirc_id(0),dp_hash(0/0),in_port(vxlan_sys_4789),packet_type(ns=0,id=0),eth(src=ac:1f:6b:9e:08:10,dst=fa:16:3e:f4:c9:65),eth_type(0x0800),ipv4(src=10.25.144.18/0.0.0.0,dst=10.80.1.3,proto=6,tos=0/0xfc,ttl=57,frag=no),tcp(src=34614/0,dst=22/0),tcp_flags(0/0), packets:16, bytes:2915, used:4.516s, flags:P., offloaded:yes, dp:dpdk, actions:set(eth(src=fa:16:3e:f4:c9:65,dst=fa:16:3e:7d:2d:fd)),set(ipv4(ttl=56)),ct(zone=5),recirc(0xc5), dp-extra-info:miniflow_bits(9,2)
+
+zone_id:
+    get_zone_id(nl_attr_get_u16(cta), &act_resources->ct_action_zone_id)
+    --> get_context_data_id_by_data: zone_id: 'zone = 5', refcnt=35, id=24
+    add_action_set_reg_field(actions, REG_FIELD_CT_ZONE,act_resources->ct_action_zone_id,ct_zone_mask)--->REG TAG 0 index 0x0000ff00 action 
+
+add_recirc_action:
+    get_flow_miss_ctx_id(&flow_miss_ctx, &act_resources->flow_miss_ctx_id)
+    --->get_context_data_id_by_data: flow_miss_ctx: 'vport=2, recirc_id=197, 10.24.110.49 -> 10.24.40.66, tun_id=431319', refcnt=1, id=16
+    get_tnl_id(act_vars->tnl_key, &act_vars->tnl_mask, &act_resources->tnl_id
+    --->get_context_data_id_by_data: tunnel: '10.24.110.49 -> 10.24.40.66, tun_id=431319', refcnt=1, id=3
+    add_action_set_reg_field(actions, REG_FIELD_TUN_INFO,act_resources->tnl_id, 0xFFFFFFFF)--->tag index 0 0xffff0000
+    add_jump_action(actions, 0);
+
+miss flow: bond0: rte_flow 0x110   flow create 0 ingress priority 1 group 27 transfer pattern port_id id is 0 / eth / end actions mark id 16 / jump group 4294967294 / end
+
+post_ct:
+    rte_flow_item post_ct_items[] = {
+        { .type = RTE_FLOW_ITEM_TYPE_PORT_ID, .spec = &post_ct_port_id, },
+        { .type = RTE_FLOW_ITEM_TYPE_MARK, .spec = &post_ct_mark, },
+        { .type = RTE_FLOW_ITEM_TYPE_END, } }
+    post_ct_mark.id = act_resources->flow_id;
+    self_table_id:
+    get_table_id(0, act_vars->vport, 0, TABLE_TYPE_POST_CT, false, &act_resources->post_ct_table_id)
+    ---->get_context_data_id_by_data: table_id: '(post-ct): phys_port=0, vport=2, recirc_id=0', refcnt=154, id=2
+    split_pre_post_ct_actions(actions, &pre_ct_actions, &post_ct_actions);//decap/set tag/set meta/meter in pre or others in post 
+    next_table_id:
+    find_flow_miss_ctx(act_resources->flow_miss_ctx_id, &flow_miss_ctx))
+    get_table_id(phys_port, flow_miss_ctx.vport, flow_miss_ctx.recirc_id, TABLE_TYPE_FLOW, act_vars->is_e2e_cache_flow, &next_table_id)
+    ---->get_context_data_id_by_data: table_id: '(flow): phys_port=0, vport=2, recirc_id=197', refcnt=1, id=27
+
+2022-09-05T08:24:42.529Z|02549|netdev_offload_dpdk(hw_offload5)|DBG|bond0: rte_flow 0x94   flow create 0 ingress priority 0 group 2 transfer pattern port_id id is 0 / mark id spec 71 / end actions count shared 0 identifier 0 / set_mac_src mac_addr fa:16:3e:f4:c9:65 / set_mac_dst mac_addr fa:16:3e:7d:2d:fd / set_ipv4_ttl ttl_value 56 / jump group 27 / end
+
+
+pre_ct:
+ct_table_id:
+    get_table_id(0, act_vars->vport, 0, tbl_type, false,&act_resources->ct_table_id)
+    ---->get_context_data_id_by_data: table_id: '(ct): phys_port=0, vport=2, recirc_id=0', refcnt=154, id=16
+    pre_ct_jump.group = act_resources->ct_table_id;
+    add_flow_action(&pre_ct_actions, RTE_FLOW_ACTION_TYPE_JUMP, &pre_ct_jump);
+flow mark:
+    associate_flow_id(act_resources->flow_id, &pre_flow_miss_ctx)
+    ---->associate_id_data: flow_miss_ctx: 'vport=2, recirc_id=0, 10.24.110.49 -> 10.24.40.66, tun_id=431319', refcnt=1, id=71 //mark id with miss info
+    pre_ct_mark.id = act_resources->flow_id;
+    add_flow_action(&pre_ct_actions, RTE_FLOW_ACTION_TYPE_MARK, &pre_ct_mark);
+self_table_id:
+    get_table_id(phys_port, act_vars->vport, act_vars->recirc_id, TABLE_TYPE_FLOW, act_vars->is_e2e_cache_flow, &self_table_id)
+    --->get_context_data_id_by_data: table_id: '(flow): phys_port=0, vport=2, recirc_id=0', refcnt=12, id=22
+
+
+2022-09-05T08:24:42.535Z|02553|netdev_offload_dpdk(hw_offload5)|DBG|bond0: rte_flow 0x4eb   flow create 0 ingress priority 0 group 22 transfer pattern port_id id is 0 / ipv4 src is 10.24.110.49 dst is 10.24.40.66 proto is 0x11 tos is 0x0 / udp / vxlan vni is 431319 / eth src is ac:1f:6b:9e:08:10 dst is fa:16:3e:f4:c9:65 type is 0x0800 has_vlan is 0 / ipv4 dst is 10.80.1.3 proto is 0x6 tos spec 0x0 tos mask 0xfc ttl is 0x39 fragment_offset is 0x0 / tcp / end actions vxlan_decap / set_tag index 0 data 0x00001800 mask 0x0000ff00 / set_tag index 0 data 0x00030000 mask 0xffff0000 / mark id 71 / jump group 16 / end
+
+
+0------------>22----------->16---session--->2------------>27
+           pre ct(flow)     ct            post ct     forward(flow)
+         set_flow_miss   set_ct_cxt_miss        
+                          flow_miss                   flow_miss/ct_miss
+ 
+pre: set zone_id, set tunnel_info_id, set mark(flow_miss_ctx)             
+ct: match zone_id, set ct_state, set miss_ct_ctx 
+post:match mark, 
+flow: match tunnel_info_id, ct_state(no ct_zone for datapath reason)
+
+ct_add: ufid:84fc5cf7-cd6f-4e9e-beb5-88f4f22329b3 ct_zone(0x5),in_port(2),eth_type(0x0800),ipv4(src=10.25.144.18,dst=10.80.1.3,proto=6),tcp(src=34614,dst=22),tcp_flags(-fin-rst), actions:ct(zone=5,helper=offl,st(0x22),id_key(0xffff5804dae0))
+
+
+zone_id:
+    get_zone_id(match->flow.ct_zone, &act_resources->ct_match_zone_id)
+    ---->get_context_data_id_by_data: zone_id: 'zone = 5', refcnt=36, id=24
+    add_pattern_match_reg_field(patterns,REG_FIELD_CT_ZONE,act_resources->ct_match_zone_id,reg_fields[REG_FIELD_CT_ZONE].mask))
+    
+ct_action:helper:
+    get_ct_counter_id(ctid_key, &act_resources->ctid)
+    ---->get_context_data_id_by_data: counter_id: 'counter_id_key=[0x0ffff5804dae0]', refcnt=1, id=104
+next_table_id:
+    get_table_id(0, act_vars->vport(2), 0, TABLE_TYPE_POST_CT, false, &act_resources->next_table_id)
+    --->get_context_data_id_by_data: table_id: '(post-ct): phys_port=0, vport=2, recirc_id=0', refcnt=155, id=2
+    dd_jump_action(actions,act_resources->next_table_id)
+ct_action:state
+    get_ct_ctx_id(&ct_miss_ctx, &act_resources->ct_miss_ctx_id)
+    ---->get_context_data_id_by_data: ct_miss_ctx: 'ct_state=0x22, zone=5', refcnt=17, id=13
+    add_action_set_reg_field(actions, REG_FIELD_CT_STATE,ct_miss_ctx.state, 0xFF);
+    --->set_tag index 0 0x000000ff
+    add_action_set_reg_field(actions, REG_FIELD_CT_CTX,act_resources->ct_miss_ctx_id, 0xFFFFFFFF);
+    --->set_meta 0x0000ffff
+self_table_id
+    get_table_id(0, act_vars->vport, 0, TABLE_TYPE_CT, false, &act_resources->self_table_id)
+    ---->get_context_data_id_by_data: table_id: '(ct): phys_port=0, vport=2, recirc_id=0', refcnt=155, id=16
+
+2022-09-05T08:24:42.541Z|02582|netdev_offload_dpdk(hw_offload5)|DBG|bond0: rte_flow 0x505   flow create 0 ingress priority 0 group 16 transfer pattern port_id id is 0 / eth / ipv4 src is 10.25.144.18 dst is 10.80.1.3 proto is 0x6 / tcp src is 34614 dst is 22 flags spec 0x0 flags mask 0x5 / tag index is 0 data spec 0x1800 data mask 0xff00 / end actions count shared 1 identifier 104 / set_tag index 0 data 0x00000022 mask 0x000000ff / set_meta data 0x0000000d mask 0x0000ffff / jump group 2 / end
+
+
+            
+ufid:356ae740-0d0e-417c-aab1-d3bc94767d83,mega_ufid:e49ea558-5f4a-4d9d-9a86-891e66a1bbec skb_priority(0/0),tunnel(tun_id=0x694d7,src=10.24.110.49,dst=10.24.40.66,ttl=59/0,tp_src=56776/0,tp_dst=4789/0,flags(-df-csum+key)),skb_mark(0/0),ct_state(0x22/0x37),ct_zone(0x5/0),ct_mark(0/0),ct_label(0/0),ct_tuple4(src=10.25.144.18/0.0.0.0,dst=10.80.1.3/0.0.0.0,proto=6/0,tp_src=34614/0,tp_dst=22/0),recirc_id(0xc5),dp_hash(0/0),in_port(vxlan_sys_4789),packet_type(ns=0,id=0),eth(src=fa:16:3e:f4:c9:65/00:00:00:00:00:00,dst=fa:16:3e:7d:2d:fd),eth_type(0x0800),ipv4(src=10.25.144.18/0.0.0.0,dst=10.80.1.3/192.0.0.0,proto=6,tos=0/0xfc,ttl=56/0,frag=no),tcp(src=34614/0,dst=22/0),tcp_flags(0/0), packets:15, bytes:2855, used:4.515s, flags:P., offloaded:yes, dp:dpdk, actions:port-z9aio28zx7, dp-extra-info:miniflow_bits(9,2)
+
+tunnel_info_id:
+    get_tnl_id(&match->flow.tunnel, &match->wc.masks.tunnel,&act_resources->tnl_id)
+    ---->get_context_data_id_by_data: tunnel: '10.24.110.49 -> 10.24.40.66, tun_id=431319', refcnt=3, id=3
+    add_pattern_match_reg_field(patterns, REG_FIELD_TUN_INFO,act_resources->tnl_id, 0xFFFFFFFF)
+ct_state:
+    add_pattern_match_reg_field(patterns, REG_FIELD_CT_STATE,match->flow.ct_state,match->wc.masks.ct_state)
+self_table_id:
+    get_table_id(phys_port, act_vars->vport, act_vars->recirc_id,TABLE_TYPE_FLOW, act_vars->is_e2e_cache,&self_table_id
+    ---->get_context_data_id_by_data: table_id: '(flow): phys_port=0, vport=2, recirc_id=197', refcnt=2, id=27
+
+
+2022-09-05T08:24:42.543Z|02597|netdev_offload_dpdk(hw_offload5)|DBG|bond0: rte_flow 0x4f1   flow create 0 ingress priority 0 group 27 transfer pattern port_id id is 0 / tag index is 0 data spec 0x30000 data mask 0xffff0000 / eth dst is fa:16:3e:7d:2d:fd type is 0x0800 has_vlan is 0 / ipv4 dst spec 10.80.1.3 dst mask 192.0.0.0 proto is 0x6 tos spec 0x0 tos mask 0xfc fragment_offset is 0x0 / tcp / tag index is 0 data spec 0x22 data mask 0x37 / end actions count shared 0 identifier 0 / port_id original 0 id 1 / end
+
+
+
+
+
+
+
+
+
+
+
+
+/////////////////////////////////////////////////
+
+ufid:162ea10c-22e3-4d82-a778-1d362b7ca42f, skb_priority(0/0),skb_mark(0/0),ct_state(0x2a/0x37),ct_zone(0x5/0),ct_mark(0/0),ct_label(0/0),ct_tuple4(src=10.25.144.18/0.0.0.0,dst=10.80.1.3/0.0.0.0,proto=6/0,tp_src=34614/0,tp_dst=22/0),recirc_id(0x81),dp_hash(0/0),in_port(port-z9aio28zx7),packet_type(ns=0,id=0),eth(src=fa:16:3e:7d:2d:fd/00:00:00:00:00:00,dst=fa:16:3e:f4:c9:65),eth_type(0x0800),ipv4(src=10.80.1.3,dst=10.25.144.18,proto=6,tos=0,ttl=64,frag=no),tcp(src=22/0,dst=34614/0),tcp_flags(0/0), packets:12, bytes:3005, used:4.517s, flags:P., offloaded:yes, dp:dpdk, actions:set(eth(dst=66:65:3a:87:22:16)),set(ipv4(ttl=63)),clone(tnl_push(tnl_port(vxlan_sys_4789),header(size=50,type=4,eth(dst=00:00:5e:00:01:b2,src=10:70:fd:3b:a8:1a,dl_type=0x0800),ipv4(src=10.24.40.66,dst=10.24.110.49,proto=17,tos=0,ttl=64,frag=0x4000),udp(src=0,dst=4789,csum=0x0),vxlan(flags=0x8000000,vni=0x694d7)),out_port(br-ext)),push_vlan(vid=301,pcp=0),bond0), dp-extra-info:miniflow_bits(5,2)
+
+2022-09-05T08:24:42.540Z|02572|netdev_offload_dpdk(hw_offload5)|DBG|port-z9aio28zx7: rte_flow 0xb7 set vxlan-with-vlan ip-version ipv4 vni 431319 udp-src 0 udp-dst 4789 ip-src 10.24.40.66 ip-dst 10.24.110.49 vlan-tci 0x12d eth-src 10:70:fd:3b:a8:1a eth-dst 00:00:5e:00:01:b2;  flow create 0 ingress priority 0 group 15 transfer pattern port_id id is 1 / eth dst is fa:16:3e:f4:c9:65 type is 0x0800 has_vlan is 0 / ipv4 src is 10.80.1.3 dst is 10.25.144.18 proto is 0x6 tos is 0x0 ttl is 0x40 fragment_offset is 0x0 / tcp / tag index is 0 data spec 0x2a data mask 0x37 / end actions count shared 0 identifier 0 / set_mac_dst mac_addr 66:65:3a:87:22:16 / set_ipv4_ttl ttl_value 63 / vxlan_encap / port_id original 0 id 0 / end
+
+0---> 7---session-->26---->15
+
+
+
+
+
+2022-09-05T08:24:42.541Z|02585|dpif_netdev(hw_offload5)|DBG|ct_add: ufid:fc392ece-55bf-464a-8aa7-89df74fb0917 ct_zone(0x5),in_port(3),eth_type(0x0800),ipv4(src=10.80.1.3,dst=10.25.144.18,proto=6),tcp(src=22,dst=34614),tcp_flags(-fin-rst), actions:ct(zone=5,helper=offl,st(0x2a),id_key(0xffff5804dae0))
+
+
+2022-09-05T08:24:42.542Z|02591|netdev_offload_dpdk(hw_offload5)|DBG|port-z9aio28zx7: rte_flow 0x52c   flow create 0 ingress priority 0 group 7 transfer pattern port_id id is 1 / eth / ipv4 src is 10.80.1.3 dst is 10.25.144.18 proto is 0x6 / tcp src is 22 dst is 34614 flags spec 0x0 flags mask 0x5 / tag index is 0 data spec 0x1800 data mask 0xff00 / end actions count shared 1 identifier 104 / set_tag index 0 data 0x0000002a mask 0x000000ff / set_meta data 0x0000000e mask 0x0000ffff / jump group 26 / end
+
+
+
+
+reply ct dpflow
+2022-09-05T07:12:50.121Z|00128|dpif_netdev(pmd-c01/id:10)|DBG|flow_add: ufid:5300be6b-8873-4096-9ecb-cd1d4ebeab2d mega_ufid:c5de88ac-25c5-4a50-b6a4-03f7eb4e2eae recirc_id(0),in_port(3),packet_type(ns=0,id=0),eth(src=fa:16:3e:7d:2d:fd,dst=fa:16:3e:f4:c9:65/ff:ff:00:00:00:00),eth_type(0x0800),ipv4(dst=10.25.144.18/192.0.0.0,proto=1,frag=no), actions:ct(zone=5),recirc(0x81)
+
+2022-09-05T07:12:50.201Z|00144|netdev_offload_dpdk(hw_offload5)|DBG|port-z9aio28zx7: rte_flow 0x6e   flow create 0 ingress priority 0 group 26 transfer pattern port_id id is 1 / mark id spec 8 / end actions count shared 0 identifier 0 / jump group 15 / end
+2022-09-05T07:12:50.201Z|00147|netdev_offload_dpdk(hw_offload5)|DBG|port-z9aio28zx7: rte_flow 0x13a   flow create 0 ingress priority 0 group 0 transfer pattern port_id id is 1 / eth src is fa:16:3e:7d:2d:fd dst spec fa:16:3e:f4:c9:65 dst mask ff:ff:00:00:00:00 type is 0x0800 has_vlan is 0 / ipv4 dst spec 10.25.144.18 dst mask 192.0.0.0 proto is 0x1 fragment_offset is 0x0 / icmp / end actions set_tag index 0 data 0x00001800 mask 0x0000ff00 / mark id 8 / jump group 7 / end

@@ -18,8 +18,9 @@ portsyncd:
 10) "9100"
 
 portsorch:
-1). appdb PORT table get port, addPort: sai->create_port with speed, lane, neg, fec, attr and get the port_id
+1). appdb PORT table get port, addPort: sai_port_api->create_port with speed, lane, neg, fec, attr and get the port_id
 m_lanesAliasSpeedMap[lane_set] = make_tuple(alias, speed, an, fec_mode, index);
+AddPort--->
 sai_port_api->create_port(&port_id, gSwitchId, static_cast<uint32_t>(attrs.size()), attrs.data());
 m_portListLaneMap[lane_set] = port_id; 
 
@@ -37,7 +38,10 @@ SAI_PORT_ATTR_ADVERTISED_SPEED
 SAI_PORT_ATTR_MTU
 SAI_PORT_ATTR_FEC_MODE
 
-4. get the PortInitDone and set m_initDone
+4). get the PortInitDone and set m_initDone
+APP_SYSTEM_PORT_TABLE_NAME get system port
+Port port(alias, Port::SYSTEM);
+setPort(port.m_alias, port);
 
 127.0.0.1:6379> hgetall PORT_TABLE:Ethernet0
  1) "admin_status"
@@ -52,6 +56,8 @@ SAI_PORT_ATTR_FEC_MODE
 10) "9100"
 11) "oper_status"
 12) "up"
+
+
 
 
 in the config_db
@@ -318,12 +324,14 @@ vrfmgr
 The "VRF_OBJECT_TABLE" in statedb used by the vrforch to check vrf is create in the hw
 
 
-
 INTERFACE table里放的L3的port 不能成为vlan member, 配置ip address和bind vrf的interface都属于L3 interface 包括INTERFACE/VLAN_SUB_INTERFACE/PORTCHANNEL_INTERFACE/VLAN_INTERFACE/LOOPBACK_INTERFACE
 
 
-bgp:
 
+
+
+
+bgp:
 
 neighbor PGNAME peer-group
 neighbor PEER peer-group PGNAME
@@ -477,7 +485,7 @@ STATE_DB - 6
 
 
 
-快杰:
+
 
 system mac
 arp ---> route notify
