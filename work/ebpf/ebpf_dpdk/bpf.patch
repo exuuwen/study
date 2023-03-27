@@ -1,0 +1,116 @@
+diff --git a/lib/conntrack-private.h b/lib/conntrack-private.h
+index fae8b3a..faf9ad8 100644
+--- a/lib/conntrack-private.h
++++ b/lib/conntrack-private.h
+@@ -32,6 +32,7 @@
+ #include "rculist.h"
+ #include "unaligned.h"
+ #include "dp-packet.h"
++#include <rte_bpf.h>
+ 
+ struct ct_endpoint {
+     union ct_addr addr;
+@@ -224,6 +225,7 @@ struct conntrack {
+     struct ipf *ipf; /* Fragmentation handling context. */
+     uint32_t zone_limit_seq; /* Used to disambiguate zone limit counts. */
+     atomic_bool tcp_seq_chk; /* Check TCP sequence numbers. */
++    struct rte_bpf_jit jit;
+ };
+ 
+ /* Lock acquisition order:
+diff --git a/lib/conntrack.c b/lib/conntrack.c
+index 550b2be..c261429 100644
+--- a/lib/conntrack.c
++++ b/lib/conntrack.c
+@@ -41,6 +41,7 @@
+ #include "random.h"
+ #include "rculist.h"
+ #include "timeval.h"
++#include <rte_bpf.h>
+ 
+ VLOG_DEFINE_THIS_MODULE(conntrack);
+ 
+@@ -287,6 +288,64 @@ ct_print_conn_info(const struct conn *c, const char *log_msg,
+     }
+ }
+ 
++static uint64_t conn_key_add_zone(struct conn_key *key, uint16_t zone) {
++    return key->zone + zone;
++}
++
++static const struct rte_bpf_xsym test_xsym[] = {
++    {
++        .name = RTE_STR(conn_key_add_zone),
++        .type = RTE_BPF_XTYPE_FUNC,
++        .func = {
++            .val = (void *)conn_key_add_zone,
++            .nb_args = 2,
++            .args = {
++                [0] = {
++                    .type = RTE_BPF_ARG_PTR,
++                    .size = sizeof(struct conn_key),
++                },
++                [1] = {
++                    .type = RTE_BPF_ARG_RAW,
++                    .size = sizeof(uint16_t),
++                },
++            },
++            .ret = {
++                .type = RTE_BPF_ARG_RAW,
++                .size = sizeof(uint64_t),
++            },   
++        },
++    },
++};
++
++static int conntrack_ct_bpf(struct conntrack *ct) {
++    struct rte_bpf_prm prm;
++    const char *fname, *sname;
++    struct rte_bpf *bpf;
++    struct rte_bpf_jit jit;
++
++    memset(&prm, 0, sizeof(prm));
++    fname = "/root/test.o";
++    sname = ".text";
++    prm.prog_arg.type = RTE_BPF_ARG_PTR;
++    prm.prog_arg.size = sizeof(struct conn_key);
++    prm.xsym = test_xsym;
++    prm.nb_xsym = RTE_DIM(test_xsym);
++
++    bpf = rte_bpf_elf_load(&prm, fname, sname);
++    if (bpf == NULL)
++        return -1;
++
++    rte_bpf_get_jit(bpf, &jit);
++    if (jit.func == NULL) {
++        rte_bpf_destroy(bpf);
++        return -1;
++    }
++
++    ct->jit = jit;
++
++    return 0;
++}
++
+ /* Initializes the connection tracker 'ct'.  The caller is responsible for
+  * calling 'conntrack_destroy()', when the instance is not needed anymore */
+ struct conntrack *
+@@ -336,6 +395,9 @@ conntrack_init(void)
+ 
+         ovsthread_once_done(&setup_l4_once);
+     }
++ 
++    VLOG_INFO("hahah ct bpf %d", conntrack_ct_bpf(ct));
++
+     return ct;
+ }
+ 
+@@ -2716,6 +2778,8 @@ conntrack_dump_next(struct conntrack_dump *dump, struct ct_dpif_entry *entry)
+ 
+         if ((!dump->filter_zone || conn->key.zone == dump->zone) &&
+             (conn->conn_type != CT_CONN_TYPE_UN_NAT)) {
++            int ret = ct->jit.func(&conn->key);
++            VLOG_INFO("ct jit func ret %d 0x%x 0x%x\n", ret, conn->key.src.addr.ipv4, conn->key.dst.addr.ipv4);
+             conn_to_ct_dpif_entry(conn, entry, now);
+             return 0;
+         }

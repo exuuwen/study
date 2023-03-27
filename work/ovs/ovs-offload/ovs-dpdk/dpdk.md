@@ -391,3 +391,8 @@ struct malloc_heap {
 	rte_memseg_contig_walk(malloc_add_seg, NULL);
 }
 
+
+
+
+
+rte_eal_hotplug_add: do devargs  scan  find_device probe
