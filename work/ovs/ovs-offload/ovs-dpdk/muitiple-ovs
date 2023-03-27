@@ -7,6 +7,7 @@ meson --prefix=/usr -Dexamples=all build
 ninja -C build
 ninja -C build install
 
+yum install libtool
 ./configure --prefix=/usr --localstatedir=/var --sysconfdir=/etc --with-dpdk=shared
 
 
