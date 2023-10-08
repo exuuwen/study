@@ -171,6 +171,7 @@ cd build
 
 
 rpm2cpio *.src.rpm | cpio -idmv
+rpm -qlp *.rpm
 
 ip link add test type gre local 192.168.152.71 remote 192.168.152.72 nopmtudisc ignore-df
 
@@ -696,6 +697,23 @@ frr:
 
 
 1. push_dp_ops--> xlate_push_stats & xlate_key (delete case)
-2. revalidate_ukey--->xlate_push_stats ( dump case)
-3. upcall_xlate-->xlate_action (upcall)
+2. revalidate_ukey--->xlate_push_stats ( dump case, includes modify)
+3. upcall_xlate-->xlate_action (upcall case)
 
+
+
+ > /var/log/openvswitch/ovs-vswitchd.log && systemctl restart openvswitch && ovs-appctl vlog/set dpif_netdev:file:dbg && ovs-appctl vlog/disable-rate-limit netdev_offload_dpdk && ovs-appctl vlog/set netdev_offload_dpdk:file:db
+
+
+
+cmake3 -D CMAKE_INSTALL_PREFIX=/root/ofed/  ..
+or
+./confiugre --prefix=/root/ofed
+or
+make DESTDIR=/root/ofed install
+or
+meson --prefix $(pwd)/output $(pwd)/build
+
+make uninstall 
+or
+xargs rm < install_manifest.txt

@@ -1,0 +1,317 @@
+1). 内核rcu
+全局计数 :
+struct rcu_ctrlblk {  
+    long cur;  
+    long completed;  
+    cpumask_t  cpumask;   
+    int   next_pending;
+};
+a. cur 所有提交进行quiesc次数 
+b. complete 所有完成quiesc次数,不停的追逐cur
+c. cpumask 一次quiesc的cpumask标识
+d. next_pending 表示全局有quiesc在进行
+
+本地计数:
+struct rcu_data {  
+    long quiescbatch;       
+    int passed_quiesc;  
+    long            batch;           
+    struct rcu_head *nxtlist;  
+    struct rcu_head **nxttail;  
+    struct rcu_head *curlist;  
+    struct rcu_head **curtail;  
+    struct rcu_head *donelist;  
+    struct rcu_head **donetail;  
+};
+a. quiescbatch 本地的调度check次数(经历一次quiesc)，当不等于全局cur的时候表示需要开启一次调度check, 这个值在不停的同步全局的cur
+b. batch 本地的提交quiesc次数,为当前全局cur+1.如果没有quesic_pending,全局cur也加1
+c. passed_quiesc 标识是否完成本次调度
+d. qs_pending 标识本cpu是否正在进行调度check
+
+本地链表:
+a. next list: rcu_call提交到这里,当next不为空, cur list为空的时候batch为全局cur + 1, 如果全局quiesc_pending为false就进入新的quiesc,全局cur++,quiesc_pending为true
+b. cur list表示当前核心正在等待一次提交的quiesc完成的list  当batch不多余于complete的时候 就表示完成了  cur list移动到done list
+c. done list表示可以回收的callback
+
+处理逻辑:
+1. rcu使用者  call_rcu 将callback放到本地nextlist
+
+rcu处理都在rcusoftirq里
+在时钟中断里判断是否需要arise rcu softirq
+2.时钟中断rcu_pending
+static int __rcu_pending(struct rcu_ctrlblk *rcp, struct rcu_data *rdp) 
+{ 
+    /* This cpu has pending rcu entries and the grace period 
+     * for them has completed. 
+     */ 
+    if (rdp->curlist && !rcu_batch_before(rcp->completed, rdp->batch)) 
+        return 1; 
+ 
+    /* This cpu has no pending entries, but there are new entries */ 
+    if (!rdp->curlist && rdp->nxtlist) 
+        return 1; 
+ 
+    /* This cpu has finished callbacks to invoke */ 
+    if (rdp->donelist) 
+        return 1; 
+ 
+    /* The rcu core waits for a quiescent state from the cpu */ 
+    if (rdp->quiescbatch != rcp->cur || rdp->qs_pending) 
+        return 1; 
+ 
+    /* nothing to do */ 
+    return 0; 
+}
+a. 有nextlist 无curlist 说明需要一次新提交
+b. 本地quiescbatch比全局cur落后 表示本cpu需要check一次调度
+c. 本地qs_pending 表示本cpu正在check一次调度中, 需要进入软中断rcu处理
+d. 有cur list && complete不落后于本地batch 说明本地发起的一次quiesc提交完成
+e. donelist不为空 说明有需要老化的回调了
+
+3. rcu softirq
+a. 首先做本地quiescbatch check:  
+void rcu_check_quiescent_state(struct rcu_ctrlblk *rcp,  
+                    struct rcu_data *rdp)  
+{  
+    if (rdp->quiescbatch != rcp->cur) {  
+        /* start new grace period: */  
+        rdp->qs_pending = 1;  
+        rdp->passed_quiesc = 0;  
+        rdp->quiescbatch = rcp->cur;  
+        return;  
+    }  
+  
+    if (!rdp->passed_quiesc)  
+        return;  
+
+    rdp->qs_pending = 0;
+
+    /*this cpu has passed a quies state*/  
+    if (likely(rdp->quiescbatch == rcp->cur)) {  
+        cpu_clear(cpu, rcp->cpumask);  
+        if (cpus_empty(rcp->cpumask))   
+            rcp->completed = rcp->cur;  
+    }  
+}
+1). if quiescbatch != cur 说明本cpu需要经历一次调度check 设置qs_pending=1, paassed_quiesc =0, quiescbatch = cur
+2). if quiescbatch == cur && passed_quiesc == 1 说明本cpu刚经历了一次需要check的调度 cpu_clear(cpu, cpumask), 如果cpumask变为空 设置complete = cur  
+
+void __rcu_process_callbacks(struct rcu_ctrlblk *rcp,  
+                    struct rcu_data *rdp)  
+{  
+    if (rdp->curlist && !rcu_batch_before(rcp->completed, rdp->batch)) {  
+        *rdp->donetail = rdp->curlist;  
+        rdp->donetail = rdp->curtail;  
+        rdp->curlist = NULL;  
+        rdp->curtail = &rdp->curlist;  
+    }  
+  
+    if (rdp->nxtlist && !rdp->curlist) {  
+        move_local_cpu_nxtlist_to_curlist();  
+  
+        rdp->batch = rcp->cur + 1;  
+  
+        if (!rcp->next_pending) {  
+            rcp->next_pending = 1;  
+            rcp->cur++;  
+            cpus_andnot(rcp->cpumask, cpu_online_map, nohz_cpu_mask);  
+        }  
+    }  
+    if (rdp->donelist)  
+        rcu_do_batch(rdp);  
+}
+b. 如果有cur list && complete不落后于本地batch, 将curlist move到donelist 
+c. 没有curlist && 有nextlist 需要一次新的提交
+move nextlist到curlist, batch=cur+1
+if quiesc_pending!=1 说明没有全局qiuesc正在处理
+    quiesc_pending=1, cur++; cpumask=0xfffff
+d. 有donelist  老化donelist回调
+
+4. schedule 中设置passed_quiesc
+asmlinkage void __sched schedule(void) 
+{ 
+   rcu_qsctr_inc(cpu);--->rdp->passed_quiesc = 1; 
+}
+
+计数同步路径:
+complete/quiescbatch-->追逐-->cur-->追逐-->batch
+
+
+2). ovsrcu
+struct ovsrcu_cb {
+    void (*function)(void *aux);
+    void *aux;
+};
+struct ovsrcu_cbset {
+    //当线程未进入停顿态时，此节点不会链入任何链表；当线程进入停顿态时链入全局 flushed_cbsets 链表
+    struct ovs_list list_node;        
+    struct ovsrcu_cb *cbs;   // 当
+    size_t n_allocated;
+    int n_cbs;
+};
+struct ovsrcu_perthread {
+    struct ovs_list list_node;  // 链入全局 ovsrcu_threads 链表
+
+    uint64_t seqno;
+    struct ovsrcu_cbset *cbset;  // 当前线程的回调函数集合
+    char name[16];              // 当前RCU归属的线程名
+};
+1. 业务线程里:
+a.使用者  call_rcu将cb放到本地链表中  
+ovsrcu_postpone__(void (*function)(void *aux), void *aux)
+{
+    struct ovsrcu_perthread *perthread = ovsrcu_perthread_get();
+    struct ovsrcu_cbset *cbset;
+    struct ovsrcu_cb *cb;
+
+    cbset = perthread->cbset;
+    if (!cbset) {
+        cbset = perthread->cbset = xmalloc(sizeof *perthread->cbset);
+        cbset->cbs = xmalloc(MIN_CBS * sizeof *cbset->cbs);
+        cbset->n_allocated = MIN_CBS;
+        cbset->n_cbs = 0;
+    }   
+
+    if (cbset->n_cbs == cbset->n_allocated) {
+        cbset->cbs = x2nrealloc(cbset->cbs, &cbset->n_allocated,
+                                sizeof *cbset->cbs);
+    }   
+
+    cb = &cbset->cbs[cbset->n_cbs++];
+    cb->function = function;
+    cb->aux = aux;
+}
+
+b. 停顿时 获取全局版本号到本地, 提交本地链表到全局, 更新全局版本号, 通知老化rcu线程 
+xnanosleep(uint64_t nanoseconds)
+{
+    ovsrcu_quiesce_start();
+    xnanosleep__(nanoseconds);
+    ovsrcu_quiesce_end();
+}
+pmd线程里主动ovsrcu_try_quiesce 还有些定期ovsrcu_quiesce: 本质一样的
+
+ovsrcu_quiesce_start(void)
+{
+    struct ovsrcu_perthread *perthread;
+
+    ovsrcu_init_module();
+    perthread = pthread_getspecific(perthread_key);
+    if (perthread) {
+        // 设置当前线程的perthread_key为NULL
+        pthread_setspecific(perthread_key, NULL);
+        // 刷新当前线程目前的回调链表到全局回调链表flushed_cbsets中，并释放当前perthread指向的ovsrcu_perthread结构体
+        ovsrcu_unregister__(perthread);
+    }
+
+    ovsrcu_quiesced();
+}
+
+ovsrcu_unregister__(struct ovsrcu_perthread *perthread)
+{
+    if (perthread->cbset) {
+        //这里直接将当前线程的回调刷到全局链表flushed_cbsets
+        ovsrcu_flush_cbset(perthread);
+    }
+
+    ovs_mutex_lock(&ovsrcu_threads_mutex);
+    ovs_list_remove(&perthread->list_node);
+    ovs_mutex_unlock(&ovsrcu_threads_mutex);
+
+    free(perthread);
+
+    seq_change(global_seqno);
+}
+
+void
+ovsrcu_quiesce_end(void)
+{
+    ovsrcu_perthread_get();  //该函数会设置perthread_key不为NULL
+}
+
+2. 老化线程里:  收到通知后，取链全局表， 获取当前全局版本号作为目标版本，扫描各个线程本地版本都不小于目标版本后，进行老化取链的cbs
+ovsrcu_postpone_thread-->ovsrcu_call_postponed
+{
+    struct ovsrcu_cbset *cbset;
+    struct ovs_list cbsets;
+
+    //摘下全局回调链表，等待合适时间处理
+    guarded_list_pop_all(&flushed_cbsets, &cbsets);
+    if (ovs_list_is_empty(&cbsets)) {
+        return false;
+    }
+
+    ovsrcu_synchronize();   //这里阻塞等待所有线程seqno大于最开始的global_seqno
+
+    //挨个处理全局回调链表，
+    LIST_FOR_EACH_POP (cbset, list_node, &cbsets) {
+        struct ovsrcu_cb *cb;
+
+        for (cb = cbset->cbs; cb < &cbset->cbs[cbset->n_cbs]; cb++) {
+            cb->function(cb->aux);
+        }
+        free(cbset->cbs);
+        free(cbset);
+    }
+
+    return true;
+}
+
+void ovsrcu_synchronize(void)
+{
+    unsigned int warning_threshold = 1000;
+    uint64_t target_seqno;
+    long long int start;
+
+    if (single_threaded()) {
+        return;
+    }
+
+    //先定个小目标，确定当前要释放小于哪个版本的旧数据，假设比如是v4.0版本旧数据
+    target_seqno = seq_read(global_seqno);
+    ovsrcu_quiesce_start();
+    start = time_msec();
+
+    for (;;) {
+        //不停循环，可能当前cur_seqno远大于target_seq，语义上等效于
+        //全局版本进入v10.0时代，而当前urcu线程，需要释放v4.0时代的旧版本数据
+        uint64_t cur_seqno = seq_read(global_seqno);  
+        struct ovsrcu_perthread *perthread;
+        char stalled_thread[16];
+        unsigned int elapsed;
+        bool done = true;
+
+        ovs_mutex_lock(&ovsrcu_threads_mutex);
+        LIST_FOR_EACH (perthread, list_node, &ovsrcu_threads) {
+            //这里是关键，循环检测所有ovs线程，比对线程的数据版本号和v4.0版本，看是否还有线程还在用v3.0版本
+            if (perthread->seqno <= target_seqno) {
+                ovs_strlcpy_arrays(stalled_thread, perthread->name);
+                //如果还有线程在用v3.0版本，很显然，我们现在还不能执行v4.0版本的释放
+                done = false;
+                break;
+            }
+        }
+        ovs_mutex_unlock(&ovsrcu_threads_mutex);
+
+        if (done) {
+            //如果所有线程的perthread->seqno都大于target_seqno，
+            // 即所有线程都没有用v4.0版本以前的数据了，
+            // 则我们不必再等待了，可以释放旧版本数据
+            break;
+        }
+
+        elapsed = time_msec() - start;
+        if (elapsed >= warning_threshold) {
+            VLOG_WARN("blocked %u ms waiting for %s to quiesce",
+                      elapsed, stalled_thread);
+            warning_threshold *= 2;
+        }
+        poll_timer_wait_until(start + warning_threshold);
+
+        //还有线程在用旧版本v3.0数据，所以等待global_seqno变化我们再做循环检测。
+        //而只有当有线程进入停顿态，才会导致global_seq变化
+        seq_wait(global_seqno, cur_seqno);
+        poll_block();
+    }
+    ovsrcu_quiesce_end();
+}
