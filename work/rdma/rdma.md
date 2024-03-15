@@ -30,11 +30,14 @@ struct ibv_device {
 
 
 
-2. ibv_open_device  ---> 
+2. ibv_open_device ---> verbs_open_device
 
 {
    open_cdev
-   rxe_alloc_context
+   verbs_device->ops->alloc_context
+   --->rxe_alloc_context
+       ----> DECLARE_FBCMD_BUFFER(cmdb, UVERBS_OBJECT_DEVICE,
+			     UVERBS_METHOD_GET_CONTEXT, 2, link);
 }
 
 struct rxe_context {
@@ -97,7 +100,9 @@ struct ib_uverbs_ioctl_hdr {
 	struct ib_uverbs_attr  attrs[0];
 };
 
-3. ibv_alloc_pd ---> rxe_alloc_pd
+3. ibv_alloc_pd ---> rxe_alloc_pd ----> execute_cmd_write(IB_USER_VERBS_CMD_ALLOC_PD)
+	pd->handle  = resp->pd_handle;
+	pd->context = context;
 
 struct ibv_pd {
         struct ibv_context     *context;
@@ -105,8 +110,15 @@ struct ibv_pd {
 };
 
 
+4. ibv_reg_mr ---> rxe_reg_mr ---> execute_cmd_write(IB_USER_VERBS_CMD_REG_MR)
 
-//rxe_alloc_context
+struct verbs_mr {
+	struct ibv_mr		ibv_mr;
+	enum ibv_mr_type        mr_type;
+	int access;
+};
+
+
 
 
 kernel:
@@ -115,11 +127,6 @@ nldev.c
 rxe.c   rxe_verbs.c
 uverbs_main.c   uverbs_ioctl.c
 uverbs_std_types_device.c
-
-struct rxe_ucontext {
-        struct ib_ucontext ibuc;
-        struct rxe_pool_entry   pelem;
-};
 
 
 struct rxe_dev {
@@ -187,16 +194,24 @@ cmd_method_key |= uapi_key_write_method(def->write.command_num)
 
 
 
+2. context
+UVERBS_HANDLER(UVERBS_METHOD_GET_CONTEXT)--->
+     ib_alloc_ucontext
+     ib_init_ucontext--->ops.alloc_ucontext--->rxe_alloc_ucontext--->rxe_add_to_pool(&rxe->uc_pool, &uc->pelem);
 
-
-
-
+struct rxe_ucontext {
+        struct ib_ucontext ibuc;
+        struct rxe_pool_entry   pelem;
+};
 
 
 3. IB_USER_VERBS_CMD_ALLOC_PD--->ib_uverbs_alloc_pd
 {
-      pd = rdma_zalloc_drv_obj(ib_dev, ib_pd);
-      rxe_alloc_pd
+      uobj = uobj_alloc(UVERBS_OBJECT_PD, attrs, &ib_dev);
+      --->obj->type_class->alloc_begin  ---> alloc_begin_idr_uobject
+      pd = rdma_zalloc_drv_obj(ib_dev, ib_pd);// rxe_pd
+      ops.alloc_ucontext--->rxe_alloc_pd--->rxe_add_to_pool(&rxe->pd_pool, &pd->pelem);
+      resp.pd_handle = uobj->id
 }
 
 struct ib_pd {
@@ -210,6 +225,9 @@ struct rxe_pd {
         struct ib_pd            ibpd;
         struct rxe_pool_entry   pelem;
 };
+
+
+4. ib_uverbs_reg_mr
 
 
 

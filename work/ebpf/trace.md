@@ -8,6 +8,7 @@ c. sys_perf_event_open: this mode can attach ebpf
 
 
 2. k/retprobe
+/sys/kernel/debug/tracing/kprobe_events
 1). echo xxx > kprobe_events: the trace file comeout, register the kprobe in kernel 
 Then like in the tracepoint
 
@@ -19,7 +20,7 @@ This is like in the tracepoint
 This is like in the kprobe
 
 5. perf_event
-Only work int the sys_perf_event_open
+Only work in the sys_perf_event_open
 
 
 

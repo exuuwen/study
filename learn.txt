@@ -236,7 +236,7 @@ make install
 cd ../clang-build
 cmake3 -G "Unix Makefiles" -DLLVM_TARGETS_TO_BUILD="BPF;X86" \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr ../clang-12.0.1.src
-make -j 32
+make
 make install
 
 
@@ -712,8 +712,14 @@ or
 or
 make DESTDIR=/root/ofed install
 or
+make prefix=/usr install
+or
 meson --prefix $(pwd)/output $(pwd)/build
 
 make uninstall 
 or
 xargs rm < install_manifest.txt
+
+
+
+

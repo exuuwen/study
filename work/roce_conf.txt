@@ -1,0 +1,152 @@
+﻿DSCP 46  roce data---> tos 184 (46<<2)
+DSCP 48 CNP
+
+1. PFC：
+Priority flow control (PFC) provides a link-level flow control mechanism that can be controlled independently for each class of service (CoS)
+Priority Flow control is for ingress ports
+Supports up to 8 different priorities
+
+link layer
+When RX buffer fills up，the receiver sends pause frame to the sender
+When RX buffer empties, the receiver sends un-pause frame to the sender
+Does not cross switches
+
+
+a. on nic
+qos classify---> CoS 
+mlnx_qos -i ethX --trust=dscp
+
+to enable PFC (e.g. on priority#3):
+mlnx_qos -i ethX --pfc=0,0,0,1,0,0,0,0
+prio map to tc:
+mlnx_qos -i ethX 0,1,2,3,4,5,6,7  (default is 1,0,2,3,4,5,6,7) 
+dscp map to prio:
+mlnx_qos -i ethX --dscp2prio set,46,3  (default map is  value/8  so 24-31 is 3)
+
+# set cable len
+mlnx_qos -I ethX --cable_len=20
+
+# setprio to buf, prio 3 to buffer 1, prio 6 to buffer 2
+mlnx_qos -i ethX --prio2buffer 0,0,0,1,0,0,2,0
+
+# set buffer 1,2 size
+mlnx_qos –i ethX --buffer_size 0,20016,156096,0,0,0,0,0
+
+
+b. on switch
+pg is ingress port queue
+dscp filter to tc
+tc to pg
+
+pg bind with a buffer
+
+ gaurenteen     shared
+----------------|-----------|    loss
+  
+ gaurenteen     shared      headroom
+----------------|-----------|--------------|   lossless
+
+
+
+2. CONGESTION CONTROL
+congestion control is for switch egress port
+
+a. Congestion Point:
+Indicates a congestion
+Marks packets with EC in switch
+
+1). ETS： outputqueue schdule rule
+
+SP+DWRR调度⽅式则将前两种调度⽅式结合起来，不仅能发挥两种调度的优势，⽽且能克服两种调度各⾃的缺点.
+将重要的协议报⽂和时延敏感业务报⽂放⼊SP队列中进⾏调度，并为该队列分配指定带宽(防⽌饿死其他队列)；
+⽽将其他报⽂按各⾃的优先级放⼊采⽤ DWRR 调度的各队列中，按照权值对各队列进⾏循环调度。
+
+dscp  48 to  sp tc
+dscp 46  to dwrr2 tc
+others to dwrr1  tc
+tc to queue
+
+
+2.) congestion avoid
+
+WRED
+加权随机先期检测WRED（Weighted Random Early Detection）基于丢弃参数随机丢弃报⽂。
+考虑到⾼优先级报⽂的利益并使其被丢弃的概率相对较⼩，WRED可以为不同业务的报⽂指定不同的丢弃策略。
+WRED技术为每个队列的⻓度都设定了阈值上下限，并规定
+
+Kmin，Kmax，Pmax
+当队列的⻓度⼩于阈值下限时，不丢弃报⽂。
+当队列的⻓度⼤于阈值上限时，丢弃所有新收到的报⽂。
+当队列的⻓度在阈值下限和阈值上限之间时，开始随机丢弃新收到的报⽂。⽅法是为每个新收到的报⽂赋予⼀个随机数，
+并⽤该随机数与当前队列的丢弃概率⽐较，如果⼤于丢弃概率则报⽂被丢弃。队列越⻓，报⽂被丢弃的概率越⾼。
+
+
+ecn标记利用了wred，开启ecn，并且报文ecn标记就不丢包但是打ecn拥塞标记：
+在队列⻓度超过Kmax时，标记概率出现⼀个跳变，从Pmax直接到达100%。
+现在设想⼀下：在⼀个拥塞场景中，当出⼝队列⻓度⼩于Kmin时，不会被标记，出⼝队列⻓度可能会稳步增
+⻓，当队列⻓度超过Kmin时，DCQCN才开始降速。所以Kmin的⼤⼩决定了RoCE⽹络的基础延时，这些缓存
+中的报⽂是发送者发出，但未被接收者确认的报⽂，我们称之为inflight bytes，约等于延时带宽积。所以，
+Kmin的配置规范为，⼩于期望的延时带宽积。有了这个理论基础后，实践测得理论符合实际，还可以根据测
+得的延时进⼀步调整该数值。
+理想状态下，标记概率在定义域Kmin~Kmax内的变化是连续的，⽽且队列的⻓度是准确的。但事与愿违，在交
+换芯⽚的实现中队列⻓度⼀般是采⽤轮询⽅式获取的⽽且将此刻的队列⻓度与历史值做指数平均，并依此计算
+QOS技术 11
+标记概率。轮询带来的结果是，标记概率在定义域Kmin~Kmax内的变化是不连续的，其次，指数平均值会让测
+得的队列⻓度是滞后的。所以不适⽤于⽤理论来推导Kmax、Pmax。
+
+b. Notification Point:
+Receives ECN-marked packets
+Notifies the server by sending back Congestion Notification Packet (CNP) (per Queue Pair)
+
+#Options:
+# -h show this help
+# -d <dev> use IB device <dev> (default mlx5_0) 
+# -p <port> use port <port> of IB device (default 1) 
+# -m <roce_mode> set RoCE mode of RDMA_CM applications (1 or 2) roce v1 or roce v2
+# -t : roce data tos value
+cma_roce_mode -d mlx5_0 -p 1 -m 2
+
+# set roce data dscp to 184 (46<<2), or set by application mod_qp
+echo 184 > /sys/class/infiniband/mlx5_0/tc/1/traffic_class
+
+roce data dscp设置几种方式
+
+cma_roce_tos : 只影响rdma_cm建链方式的UD报文
+应用设置-T： 只影响rdma_cm建链方式的UD报文
+tc/1/traffic_class: 影响非rdma_cm建链和rcmd_cm的RC
+应用设置-tclass:  影响非rdma_cm建链和rcmd_cm的RC
+
+rdma_cm建链方式UD报文场景：优先级cma_roce_tos低于“应用使用-T设置tos值”，应用设置的-tclass和(/sys/class/infiniband/<mlx-device>/tc/1/traffic_class)不生效。
+
+其他建链方式或者非UD报文场景：(/sys/class/infiniband/<mlx-device>/tc/1/traffic_class)优先级最高，不使用需要重启恢复成空，然后是应用设置的--tclass。
+
+
+echo 1 > /sys/class/net/ethX/ecn/roce_np/enable/3
+
+
+# set cnp packet dscp
+echo 48 > /sys/class/net/enp179s0f0/ecn/roce_np/cnp_dscp
+
+
+c. Reaction Point:
+DCQCN algorithm is used to adjust sending rate of Queue Pair based on CNP feedback
+
+
+# set roce data dscp to 184 (46<<2), or set by application mod_qp
+echo 184 > /sys/class/infiniband/mlx5_0/tc/1/traffic_class
+cma_roce_mode -d mlx5_0 -p 1 -m 2
+
+# set roce data dscp to 184 (46<<2), or set by application mod_qp
+echo 184 > /sys/class/infiniband/mlx5_0/tc/1/traffic_class
+
+# enable rp on tc 3. It will send packet with ecn 10/01
+echo 1 > /sys/class/net/ethX/ecn/roce_rp/enable/3
+
+# set tc 6 with strict shcdule for cnp send/recv
+mlnx_qos -i ethX -s ets,ets,ets,ets,ets,ets,strict,est
+
+
+
+
+
+

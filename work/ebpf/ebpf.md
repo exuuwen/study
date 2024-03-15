@@ -322,7 +322,7 @@ attach_type:
           return -1; 
   }   
   ioctl(efd, PERF_EVENT_IOC_ENABLE, 0); 
-  ioctl(efd, PERF_EVENT_IOC_SET_BPF, fd);
+  ioctl(efd, PERF_EVENT_IOC_SET_BPF, prog_fd);
 
 3. BPF_PROG_TYPE_SOCKET_FILTER
 

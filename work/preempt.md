@@ -47,19 +47,30 @@
 local_bh_disable ---> preempt_count_add(SOFTIRQ_DISABLE_OFFSET)
 local_bh_enable ---> preempt_count_sub(SOFTIRQ_DISABLE_OFFSET)
 
+
+DEFINE_IDTENTRY_IRQ(common_interrupt)
+{
+	irq_enter_rcu();
+        handle_irq(desc, regs);
+	irq_exit_rcu();
+	irqentry_exit();
+}
+
+/*
 do_IRQ 
 {
 	irq_enter();
 	irq_exit();
 }
+*/
 
-irq_enter 
+irq_enter_rcu 
 {
 	preempt_count_add(HARDIRQ_OFFSET);
 }
 
 
-irq_exit
+irq_exit_rcu
 {
 	local_irq_disable(); //why
 
@@ -80,12 +91,16 @@ invoke_softirq ---> __do_softirq
 	__local_bh_enable(SOFTIRQ_OFFSET); ----> preempt_count_sub(SOFTIRQ_OFFSET)
 }
 
-
-
-
 schedule point:
 1. interrupt to kernel
+	irqentry_exit();
+        ----> if (user_mode(regs))
+                 irqentry_exit_to_user_mode(regs);
+              else
+                 if (IS_ENABLED(CONFIG_PREEMPTION))
+                      irqentry_exit_cond_resched(); 
 
+/*
 retint_kernel:
 #ifdef CONFIG_PREEMPT
         /* Interrupts are off */
@@ -95,7 +110,7 @@ retint_kernel:
 0:      cmpl    $0, PER_CPU_VAR(__preempt_count)
         jnz     1f
         call    preempt_schedule_irq
-
+*/
 
 2. 
 #define preempt_enable() \

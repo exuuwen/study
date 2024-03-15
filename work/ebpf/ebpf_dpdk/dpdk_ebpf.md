@@ -35,11 +35,11 @@ typedef struct
 # readelf -r t3.o
 
 Relocation section '.rel.text' at offset 0x150 contains 2 entries:
-  Offset          Info           Type           Sym. Value    Sym. Name
-000000000048  000500000001 unrecognized: 1       0000000000000000 stdout
-000000000068  00040000000a unrecognized: a       0000000000000000 rte_pktmbuf_dump
+  Offset          Info           Type          
+000000000048  000500000001 unrecognized: 1    
+000000000068  00040000000a unrecognized: a   
 
-3. get rel.offset(0x68-->104 for rte_pktmbuf_dump) and symtab id (rel.info >> 32, 5 for rte_pktmbuf_dump)
+3. get rel.offset(0x68-->104 for rte_pktmbuf_dump) and symtab id (rel.info >> 32, 4 for rte_pktmbuf_dump)
  readelf -s t3.o
 
 Symbol table '.symtab' contains 6 entries:

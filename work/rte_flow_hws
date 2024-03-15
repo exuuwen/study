@@ -1,0 +1,457 @@
+export LD_LIBRARY_PATH=/home/wenxu/ofed/rdma-dpdk/dpdk/build/lib/:/home/wenxu/ofed/rdma-dpdk/rdma-core/build/lib/
+./dpdk-testpmd -c 0x1f  -n 4 -m 1024 --file-prefix=sample -a "0000:06:00.0,representor=pf0vf0,dv_flow_en=2,dv_esw_en=1,dv_xmeta_en=4,fdb_def_rule_en=0" --huge-dir=/mnt/ovsdpdk  -- -i --flow-isolate-all --rxq=4 --txq=4  --nb-cores=4
+
+
+flow actions_template 0 create ingress actions_template_id 1 template modify_field op set dst_type tag dst_level 0 dst_offset 0 src_type value src_value 0 width 32 / jump group 4 / end mask modify_field op set dst_type tag dst_level 0xffffffff dst_offset 0xffffffff src_type value src_value 0 width 0xffffffff / jump group 0xffffffff / end
+flow actions_template 0 create ingress actions_template_id 1 template mark id 0 / vxlan_decap / rss / end mask mark id 0 / vxlan_decap / rss / end
+
+
+
+/////////////////
+# ingress with transfer ok
+
+port stop 0
+flow configure 0 queues_number 4 queues_size 64
+port start 0
+
+flow pattern_template 0 create ingress relaxed no pattern_template_id 20 template eth / ipv4 / udp / vxlan / end
+
+flow actions_template 0 create ingress actions_template_id 20 template modify_field op set dst_type meta dst_level 0 dst_offset 0 src_type vxlan_vni src_level 0 src_offset 0 width 24 / jump group 1 / end mask modify_field op set dst_type meta dst_level 0xffffffff dst_offset 0xffffffff src_type vxlan_vni src_level 0xffffffff src_offset 0xffffffff width 0xffffffff / jump group 0xffffffff / end
+
+flow template_table 0 create group 0 priority 0 ingress table_id 20 rules_number 10 pattern_template 20 actions_template 20
+
+flow queue 0 create 0 template_table 20 pattern_template 0 actions_template 0 postpone no pattern eth / ipv4 / udp / vxlan / end actions modify_field op set dst_type meta src_type vxlan_vni width 24 / jump / end
+
+flow pull 0 queue 0
+
+
+flow actions_template 0 create ingress actions_template_id 21 template vxlan_decap / rss / end mask vxlan_decap / rss / end
+
+flow template_table 0 create group 1 priority 0 ingress table_id 21 rules_number 10 pattern_template 20 actions_template 21
+
+flow queue 0 create 0 template_table 21 pattern_template 0 actions_template 0 postpone no pattern eth / ipv4 / udp / vxlan / end actions vxlan_decap / rss / end
+
+flow pull 0 queue 0
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+#transfer root
+
+port stop 0
+flow configure 0 queues_number 4 queues_size 64
+port start 0
+
+
+flow pattern_template 0 create transfer relaxed no pattern_template_id 0 template represented_port ethdev_port_id mask 0xffff / end
+
+flow actions_template 0 create transfer actions_template_id 0 template jump group 0 / end  mask jump group 0 / end 
+
+flow template_table 0 create group 0 priority 0 transfer table_id 0 rules_number 10 pattern_template 0 actions_template 0
+
+flow queue 0 create 0 template_table 0 pattern_template 0 actions_template 0 postpone no pattern represented_port ethdev_port_id is 0 / end actions jump group 1 / end 
+flow queue 0 create 0 template_table 0 pattern_template 0 actions_template 0 postpone no pattern represented_port ethdev_port_id is 1 / end actions jump group 11 / end 
+
+flow pull 0 queue 0
+
+
+/////////////////
+#transfer input ok
+
+
+flow pattern_template 0 create transfer relaxed no pattern_template_id 1 template represented_port ethdev_port_id mask 0xffff / eth / ipv4 / udp / vxlan / end
+
+flow actions_template 0 create transfer actions_template_id 1 template modify_field op set dst_type meta dst_level 0 dst_offset 0 src_type vxlan_vni src_level 0 src_offset 0 width 24 / jump group 2 / end mask modify_field op set dst_type meta dst_level 0xffffffff dst_offset 0xffffffff src_type vxlan_vni src_level 0xffffffff src_offset 0xffffffff width 0xffffffff / jump group 0xffffffff / end
+
+flow template_table 0 create group 1 priority 0 transfer table_id 1 rules_number 10 pattern_template 1 actions_template 1
+
+flow queue 0 create 0 template_table 1 pattern_template 0 actions_template 0 postpone no pattern represented_port ethdev_port_id is 0 / eth / ipv4 / udp / vxlan / end actions modify_field op set dst_type meta src_type vxlan_vni width 24 / jump / end 
+
+flow pull 0 queue 0
+
+
+
+flow actions_template 0 create transfer actions_template_id 2 template vxlan_decap / jump group 3 / end mask vxlan_decap / jump group 0xffffffff / end
+
+flow template_table 0 create group 2 priority 0 transfer table_id 2 rules_number 10 pattern_template 1 actions_template 2
+
+flow queue 0 create 0 template_table 2 pattern_template 0 actions_template 0 postpone no pattern represented_port ethdev_port_id is 0 / eth / ipv4 / udp / vxlan / end actions vxlan_decap / jump / end
+
+flow pull 0 queue 0
+
+
+
+flow pattern_template 0 create transfer relaxed no pattern_template_id 3 template meta data mask 0xffffffff / eth / ipv4 src mask 255.255.255.255 dst mask 255.255.255.255 / icmp / end
+
+flow actions_template 0 create transfer actions_template_id 3 template represented_port ethdev_port_id 0 / end mask represented_port ethdev_port_id 0 / end 
+
+flow template_table 0 create group 3 priority 0 transfer table_id 3 rules_number 10000 pattern_template 3 actions_template 3
+
+flow queue 0 create 0 template_table 3 pattern_template 0 actions_template 0 postpone no pattern meta data is 1000 / eth / ipv4 src spec 1.1.1.134 dst spec 1.1.1.135 / icmp / end actions represented_port ethdev_port_id 1 / end
+
+flow pull 0 queue 0
+
+////////////////////////////////////////////////////////////
+
+//output transfer ok
+
+
+flow pattern_template 0 create transfer relaxed no pattern_template_id 11 template represented_port ethdev_port_id mask 0xffff / end
+
+flow actions_template 0 create transfer actions_template_id 11 template modify_field op set dst_type meta dst_level 0 dst_offset 0 src_type value src_value 0 width 32 / jump group 12 / end mask modify_field op set dst_type meta dst_level 0xffffffff dst_offset 0xffffffff src_type value src_value 0 width 0xffffffff / jump group 0xffffffff / end 
+
+flow template_table 0 create group 11 priority 0 transfer table_id 11 rules_number 100 pattern_template 11 actions_template 11
+
+flow queue 0 create 0 template_table 11 pattern_template 0 actions_template 0 postpone no pattern represented_port ethdev_port_id is 1 / end actions modify_field op set dst_type meta src_type value src_value 0x12340000 width 32 / jump / end 
+
+flow pull 0 queue 0
+
+
+flow pattern_template 0 create transfer relaxed no pattern_template_id 12 template meta data mask 0xffffffff / eth / ipv4 src mask 255.255.255.255 dst mask 255.255.255.255 / icmp / end
+
+flow actions_template 0 create transfer actions_template_id 12 template vxlan_encap / represented_port ethdev_port_id 0 / end mask vxlan_encap / represented_port ethdev_port_id 0 / end 
+
+flow template_table 0 create group 12 priority 0 transfer table_id 12 rules_number 10000 pattern_template 12 actions_template 12
+
+set vxlan ip-version ipv4 vni 1000 udp-src 12345 udp-dst 4789 ip-src 172.168.0.135 ip-dst 172.168.0.134 eth-src 08:c0:eb:4b:8f:54 eth-dst b8:ce:f6:1e:19:86
+
+flow queue 0 create 0 template_table 12 pattern_template 0 actions_template 0 postpone no pattern meta data is 0x3412 / eth / ipv4 src spec 1.1.1.135 dst spec 1.1.1.134 / icmp / end actions vxlan_encap / represented_port ethdev_port_id 0 / end
+
+flow pull 0 queue 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+////////////////////////////////////////////////////////
+
+hairpin two session table
+
+./dpdk-testpmd -c 0x1f  -n 4 -m 1024 --file-prefix=sample -a "0000:06:00.0,dv_flow_en=2,dv_esw_en=1,dv_xmeta_en=4,fdb_def_rule_en=0" --huge-dir=/mnt/ovsdpdk  -- -i --flow-isolate-all --rxq=4 --txq=4 --hairpinq=1 --nb-cores=4
+
+
+# hairpin  ingress ok
+
+port stop 0
+flow configure 0 queues_number 4 queues_size 64
+port start 0
+
+flow pattern_template 0 create ingress relaxed no pattern_template_id 0 template eth / ipv4 / udp / vxlan / end
+
+flow actions_template 0 create ingress actions_template_id 0 template modify_field op set dst_type meta dst_level 0 dst_offset 0 src_type vxlan_vni src_level 0 src_offset 0 width 24 / jump group 2 / end mask modify_field op set dst_type meta dst_level 0xffffffff dst_offset 0xffffffff src_type vxlan_vni src_level 0xffffffff src_offset 0xffffffff width 0xffffffff / jump group 0xffffffff / end
+
+flow template_table 0 create group 0 priority 0 ingress table_id 0 rules_number 10 pattern_template 0 actions_template 0
+
+flow queue 0 create 0 template_table 0 pattern_template 0 actions_template 0 postpone no pattern eth / ipv4 / udp / vxlan / end actions modify_field op set dst_type meta src_type vxlan_vni width 24 / jump / end
+
+flow pull 0 queue 0
+
+
+
+flow actions_template 0 create ingress actions_template_id 2 template vxlan_decap / jump group 3 / end mask vxlan_decap / jump group 0xffffffff / end
+
+flow template_table 0 create group 2 priority 0 ingress table_id 2 rules_number 10 pattern_template 0 actions_template 2
+
+flow queue 0 create 0 template_table 2 pattern_template 0 actions_template 0 postpone no pattern eth / ipv4 / udp / vxlan / end actions vxlan_decap / jump / end
+
+flow pull 0 queue 0
+
+
+flow pattern_template 0 create ingress relaxed no pattern_template_id 1 template meta data mask 0xffffffff / eth / ipv4 src mask 255.255.255.255 dst mask 255.255.255.255 / icmp / end
+
+flow actions_template 0 create ingress actions_template_id 3 template queue / end mask queue / end
+
+flow template_table 0 create group 3 priority 0 ingress table_id 3 rules_number 10 pattern_template 1 actions_template 3
+
+flow queue 0 create 0 template_table 3 pattern_template 0 actions_template 0 postpone no pattern meta data is 1000 / eth / ipv4 src spec 1.1.1.134 dst spec 1.1.2.134 / end actions queue index 4 / end
+
+flow pull 0 queue 0
+
+flow queue 0 create 0 template_table 3 pattern_template 0 actions_template 0 postpone no pattern meta data is 2000 / eth / ipv4 src spec 1.1.2.134 dst spec 1.1.1.134 / end actions queue index 4 / end
+
+flow pull 0 queue 0
+
+
+flow pattern_template 0 create ingress relaxed no pattern_template_id 2 template end
+
+flow actions_template 0 create ingress actions_template_id 4 template rss / end mask rss / end
+
+flow template_table 0 create group 3 priority 1 ingress table_id 4 rules_number 10 pattern_template 2 actions_template 4
+
+flow queue 0 create 0 template_table 4 pattern_template 0 actions_template 0 postpone no pattern end actions rss / end
+
+flow pull 0 queue 0
+
+/////////////////////////////////////////
+# hairpin  egress ok
+
+flow pattern_template 0 create egress relaxed no pattern_template_id 10 template end
+
+flow actions_template 0 create egress actions_template_id 10 template jump group 1 / end mask jump group 0xffffffff / end 
+
+flow template_table 0 create group 0 priority 0 egress table_id 10 rules_number 10 pattern_template 10 actions_template 10
+
+flow queue 0 create 0 template_table 10 pattern_template 0 actions_template 0 postpone no pattern end actions jump / end 
+
+flow pull 0 queue 0
+
+
+flow pattern_template 0 create egress relaxed no pattern_template_id 11 template meta data mask 0xffffffff / eth / ipv4 src mask 255.255.255.255 dst mask 255.255.255.255 / icmp / end
+
+flow actions_template 0 create egress actions_template_id 11 template vxlan_encap / end mask vxlan_encap / end 
+
+flow template_table 0 create group 1 priority 0 egress table_id 11 rules_number 10000 pattern_template 11 actions_template 11
+
+set vxlan ip-version ipv4 vni 2000 udp-src 2222 udp-dst 4789 ip-src 172.168.0.135 ip-dst 172.168.0.134 eth-src 08:c0:eb:4b:8f:54 eth-dst b8:ce:f6:1e:19:86
+
+flow queue 0 create 0 template_table 11 pattern_template 0 actions_template 0 postpone no pattern meta data is 1000 / eth / ipv4 src spec 1.1.1.134 dst spec 1.1.2.134 / icmp / end actions vxlan_encap / end
+
+flow pull 0 queue 0
+
+set vxlan ip-version ipv4 vni 1000 udp-src 1111 udp-dst 4789 ip-src 172.168.0.135 ip-dst 172.168.0.134 eth-src 08:c0:eb:4b:8f:54 eth-dst b8:ce:f6:1e:19:86
+
+flow queue 0 create 0 template_table 11 pattern_template 0 actions_template 0 postpone no pattern meta data is 2000 / eth / ipv4 src spec 1.1.2.134 dst spec 1.1.1.134 / icmp / end actions vxlan_encap / end
+
+flow pull 0 queue 0
+
+
+
+
+
+
+////////////////////////////////////////////////////////////
+
+hairpin two session table none half offload
+
+./dpdk-testpmd -c 0x1f  -n 4 -m 1024 --file-prefix=sample -a "0000:06:00.0,dv_flow_en=2,dv_esw_en=1,dv_xmeta_en=4,fdb_def_rule_en=0" --huge-dir=/mnt/ovsdpdk  -- -i --flow-isolate-all --rxq=4 --txq=4 --hairpinq=1 --nb-cores=4
+
+
+# hairpin  ingress ok
+
+port stop 0
+flow configure 0 queues_number 4 queues_size 64
+port start 0
+
+flow pattern_template 0 create ingress relaxed no pattern_template_id 0 template eth / ipv4 / udp / vxlan / end
+
+flow actions_template 0 create ingress actions_template_id 0 template modify_field op set dst_type meta dst_level 0 dst_offset 0 src_type vxlan_vni src_level 0 src_offset 0 width 24 / jump group 3 / end mask modify_field op set dst_type meta dst_level 0xffffffff dst_offset 0xffffffff src_type vxlan_vni src_level 0xffffffff src_offset 0xffffffff width 0xffffffff / jump group 0xffffffff / end
+
+flow template_table 0 create group 0 priority 0 ingress table_id 0 rules_number 10 pattern_template 0 actions_template 0
+
+flow queue 0 create 0 template_table 0 pattern_template 0 actions_template 0 postpone no pattern eth / ipv4 / udp / vxlan / end actions modify_field op set dst_type meta src_type vxlan_vni width 24 / jump / end
+
+flow pull 0 queue 0
+
+
+
+flow pattern_template 0 create ingress relaxed no pattern_template_id 1 template meta data mask 0xffffffff / eth / ipv4 / udp / vxlan / eth / ipv4 src mask 255.255.255.255 dst mask 255.255.255.255 / icmp / end
+
+flow actions_template 0 create ingress actions_template_id 3 template vxlan_decap / queue / end mask vxlan_decap / queue / end
+
+flow template_table 0 create group 3 priority 0 ingress table_id 3 rules_number 10 pattern_template 1 actions_template 3
+
+flow queue 0 create 0 template_table 3 pattern_template 0 actions_template 0 postpone no pattern meta data is 1000 / eth / ipv4 / udp / vxlan / eth / ipv4 src spec 1.1.1.134 dst spec 1.1.2.134 / end actions vxlan_decap / queue index 4 / end
+
+flow pull 0 queue 0
+
+flow queue 0 create 0 template_table 3 pattern_template 0 actions_template 0 postpone no pattern meta data is 2000 / eth / ipv4 / udp / vxlan / eth / ipv4 src spec 1.1.2.134 dst spec 1.1.1.134 / end actions vxlan_decap / queue index 4 / end
+
+flow pull 0 queue 0
+
+
+flow pattern_template 0 create ingress relaxed no pattern_template_id 2 template end
+
+flow actions_template 0 create ingress actions_template_id 4 template rss / end mask rss / end
+
+flow template_table 0 create group 3 priority 1 ingress table_id 4 rules_number 10 pattern_template 2 actions_template 4
+
+flow queue 0 create 0 template_table 4 pattern_template 0 actions_template 0 postpone no pattern end actions rss / end
+
+flow pull 0 queue 0
+
+/////////////////////////////////////////
+# hairpin  egress ok
+
+flow pattern_template 0 create egress relaxed no pattern_template_id 10 template end
+
+flow actions_template 0 create egress actions_template_id 10 template jump group 1 / end mask jump group 0xffffffff / end 
+
+flow template_table 0 create group 0 priority 0 egress table_id 10 rules_number 10 pattern_template 10 actions_template 10
+
+flow queue 0 create 0 template_table 10 pattern_template 0 actions_template 0 postpone no pattern end actions jump / end 
+
+flow pull 0 queue 0
+
+
+flow pattern_template 0 create egress relaxed no pattern_template_id 11 template meta data mask 0xffffffff / eth / ipv4 src mask 255.255.255.255 dst mask 255.255.255.255 / icmp / end
+
+flow actions_template 0 create egress actions_template_id 11 template vxlan_encap / end mask vxlan_encap / end 
+
+flow template_table 0 create group 1 priority 0 egress table_id 11 rules_number 10000 pattern_template 11 actions_template 11
+
+set vxlan ip-version ipv4 vni 2000 udp-src 2222 udp-dst 4789 ip-src 172.168.0.135 ip-dst 172.168.0.134 eth-src 08:c0:eb:4b:8f:54 eth-dst b8:ce:f6:1e:19:86
+
+flow queue 0 create 0 template_table 11 pattern_template 0 actions_template 0 postpone no pattern meta data is 1000 / eth / ipv4 src spec 1.1.1.134 dst spec 1.1.2.134 / icmp / end actions vxlan_encap / end
+
+flow pull 0 queue 0
+
+set vxlan ip-version ipv4 vni 1000 udp-src 1111 udp-dst 4789 ip-src 172.168.0.135 ip-dst 172.168.0.134 eth-src 08:c0:eb:4b:8f:54 eth-dst b8:ce:f6:1e:19:86
+
+flow queue 0 create 0 template_table 11 pattern_template 0 actions_template 0 postpone no pattern meta data is 2000 / eth / ipv4 src spec 1.1.2.134 dst spec 1.1.1.134 / icmp / end actions vxlan_encap / end
+
+flow pull 0 queue 0
+
+
+
+
+
+
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////
+
+hairpin simple session  not work for tag
+
+./dpdk-testpmd -c 0x1f  -n 4 -m 1024 --file-prefix=sample -a "0000:06:00.0,dv_flow_en=2,dv_esw_en=1,dv_xmeta_en=4,fdb_def_rule_en=0" --huge-dir=/mnt/ovsdpdk  -- -i --flow-isolate-all --rxq=4 --txq=4 --hairpinq=1 --nb-cores=4
+
+
+# hairpin  ingress ok
+
+port stop 0
+flow configure 0 queues_number 4 queues_size 64
+port start 0
+
+flow pattern_template 0 create ingress relaxed no pattern_template_id 0 template eth / ipv4 / udp / vxlan / end
+
+flow actions_template 0 create ingress actions_template_id 0 template modify_field op set dst_type meta dst_level 0 dst_offset 0 src_type vxlan_vni src_level 0 src_offset 0 width 24 / jump group 2 / end mask modify_field op set dst_type meta dst_level 0xffffffff dst_offset 0xffffffff src_type vxlan_vni src_level 0xffffffff src_offset 0xffffffff width 0xffffffff / jump group 0xffffffff / end
+
+flow template_table 0 create group 0 priority 0 ingress table_id 0 rules_number 10 pattern_template 0 actions_template 0
+
+flow queue 0 create 0 template_table 0 pattern_template 0 actions_template 0 postpone no pattern eth / ipv4 / udp / vxlan / end actions modify_field op set dst_type meta src_type vxlan_vni width 24 / jump / end
+
+flow pull 0 queue 0
+
+
+
+flow actions_template 0 create ingress actions_template_id 2 template vxlan_decap / jump group 3 / end mask vxlan_decap / jump group 0xffffffff / end
+
+flow template_table 0 create group 2 priority 0 ingress table_id 2 rules_number 10 pattern_template 0 actions_template 2
+
+flow queue 0 create 0 template_table 2 pattern_template 0 actions_template 0 postpone no pattern eth / ipv4 / udp / vxlan / end actions vxlan_decap / jump / end
+
+flow pull 0 queue 0
+
+
+flow pattern_template 0 create ingress relaxed no pattern_template_id 1 template meta data mask 0xffffffff / eth / ipv4 src mask 255.255.255.255 dst mask 255.255.255.255 / icmp / end
+
+flow actions_template 0 create ingress actions_template_id 3 template modify_field op set dst_type meta dst_level 0 dst_offset 0 src_type value src_value 0 width 32 / modify_field op set dst_type tag dst_level 0 dst_offset 0 src_type value src_value 0 width 32 / queue / end mask modify_field op set dst_type meta dst_level 0xffffffff dst_offset 0xffffffff src_type value src_value 0 width 0xffffffff / modify_field op set dst_type tag dst_level 0xffffffff dst_offset 0xffffffff src_type value src_value 0 width 0xffffffff / queue / end
+
+flow template_table 0 create group 3 priority 0 ingress table_id 3 rules_number 10 pattern_template 1 actions_template 3
+
+flow queue 0 create 0 template_table 3 pattern_template 0 actions_template 0 postpone no pattern meta data is 1000 / eth / ipv4 src spec 1.1.1.134 dst spec 1.1.2.134 / end actions modify_field op set dst_type meta src_type value src_value 0xd0070000 width 32 / modify_field op set dst_type tag src_type value src_value 0x8600a8ac width 32 / queue index 4 / end
+
+flow pull 0 queue 0
+
+flow queue 0 create 0 template_table 3 pattern_template 0 actions_template 0 postpone no pattern meta data is 2000 / eth / ipv4 src spec 1.1.2.134 dst spec 1.1.1.134 / end actions modify_field op set dst_type meta src_type value src_value 0xe8030000 width 32 / modify_field op set dst_type tag src_type value src_value 0x8600a8ac width 32 / queue index 4 / end
+
+flow pull 0 queue 0
+
+
+flow pattern_template 0 create ingress relaxed no pattern_template_id 2 template end
+
+flow actions_template 0 create ingress actions_template_id 4 template rss / end mask rss / end
+
+flow template_table 0 create group 3 priority 1 ingress table_id 4 rules_number 10 pattern_template 2 actions_template 4
+
+flow queue 0 create 0 template_table 4 pattern_template 0 actions_template 0 postpone no pattern end actions rss / end
+
+flow pull 0 queue 0
+
+/////////////////////////////////////////
+# hairpin  egress ok
+
+flow pattern_template 0 create egress relaxed no pattern_template_id 10 template end
+
+flow actions_template 0 create egress actions_template_id 10 template jump group 1 / end mask jump group 0xffffffff / end 
+
+flow template_table 0 create group 0 priority 0 egress table_id 10 rules_number 10 pattern_template 10 actions_template 10
+
+flow queue 0 create 0 template_table 10 pattern_template 0 actions_template 0 postpone no pattern end actions jump / end 
+
+flow pull 0 queue 0
+
+
+flow pattern_template 0 create egress relaxed no pattern_template_id 11 template meta data mask 0xffffffff / tag data mask 0xffffffff index is 0 /  end
+
+flow actions_template 0 create egress actions_template_id 11 template vxlan_encap / end mask vxlan_encap / end 
+
+flow template_table 0 create group 1 priority 0 egress table_id 11 rules_number 10000 pattern_template 11 actions_template 11
+
+set vxlan ip-version ipv4 vni 2000 udp-src 2222 udp-dst 4789 ip-src 172.168.0.135 ip-dst 172.168.0.134 eth-src 08:c0:eb:4b:8f:54 eth-dst b8:ce:f6:1e:19:86
+
+flow queue 0 create 0 template_table 11 pattern_template 0 actions_template 0 postpone no pattern meta data is 2000 / tag data is 0 index is 0 / end actions vxlan_encap / end
+
+flow pull 0 queue 0
+
+set vxlan ip-version ipv4 vni 1000 udp-src 1111 udp-dst 4789 ip-src 172.168.0.135 ip-dst 172.168.0.134 eth-src 08:c0:eb:4b:8f:54 eth-dst b8:ce:f6:1e:19:86
+
+flow queue 0 create 0 template_table 11 pattern_template 0 actions_template 0 postpone no pattern meta data is 1000 / tag data is 0 index is 0 / end actions vxlan_encap / end
+
+flow pull 0 queue 0
+
+
+////////////////////////////////////////////
+not work
+
+port stop 0
+flow configure 0 queues_number 4 queues_size 64
+port start 0
+
+
+flow pattern_template 0 create ingress relaxed no pattern_template_id 0 template end
+
+flow actions_template 0 create ingress actions_template_id 0 template modify_field op set dst_type mark dst_level 0 dst_offset 0 src_type vxlan_vni src_level 0 src_offset 0 width 24 / jump group 2 / end mask modify_field op set dst_type mark dst_level 0xffffffff dst_offset 0xffffffff src_type vxlan_vni src_level 0xffffffff src_offset 0xffffffff width 0xffffffff / jump group 0xffffffff / end
+
+flow template_table 0 create group 1 priority 0 ingress table_id 1 rules_number 10 pattern_template 0 actions_template 0
+
+flow queue 0 create 0 template_table 1 pattern_template 0 actions_template 0 postpone no pattern end actions modify_field op set dst_type mark src_type ipv4_src width 32 / jump / end
+
+flow pull 0 queue 0
+
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+port stop 0
+flow configure 0 queues_number 4 queues_size 64
+port start 0
+
+
+
+
+// indirect not ok
+
+flow indirect_action 0 create action_id 1 transfer list actions vxlan_encap / end
+
+flow pattern_template 0 create transfer relaxed no pattern_template_id 1 template meta data mask 0xffffffff / eth / ipv4 src mask 255.255.255.255 dst mask 255.255.255.255 / icmp / end
+
+flow actions_template 0 create transfer actions_template_id 1 template indirect_list handle 0 / represented_port ethdev_port_id 0 / end mask indirect_list / represented_port ethdev_port_id 0 / end 
+
+flow template_table 0 create group 10 priority 0 transfer table_id 10 rules_number 10000 pattern_template 0 actions_template 0
+
+flow queue 0 create 0 template_table 10 pattern_template 1 actions_template 1 postpone no pattern meta data is 1000 / eth / ipv4 src spec 1.1.1.134 dst spec 1.1.1.1 / icmp / end actions indirect_list hanle 1 / represented_port ethdev_port_id 0 / end
+
+
