@@ -1,0 +1,178 @@
+diff --git a/app/test-pmd/cmdline_flow.c b/app/test-pmd/cmdline_flow.c
+index ce71818..4aaa96a 100644
+--- a/app/test-pmd/cmdline_flow.c
++++ b/app/test-pmd/cmdline_flow.c
+@@ -8737,6 +8737,7 @@ struct indlst_conf {
+ }
+ 
+ /** Parse VXLAN encap action. */
++static int a = 0;
+ static int
+ parse_vc_action_vxlan_encap(struct context *ctx, const struct token *token,
+ 			    const char *str, unsigned int len,
+@@ -8761,7 +8762,13 @@ struct indlst_conf {
+ 	ctx->objmask = NULL;
+ 	action_vxlan_encap_data = ctx->object;
+ 	parse_setup_vxlan_encap_data(action_vxlan_encap_data);
+-	action->conf = &action_vxlan_encap_data->conf;
++        if (a == 1 && vxlan_encap_conf.vni[0] == 0 &&
++	    vxlan_encap_conf.vni[1] == 0 &&
++	    vxlan_encap_conf.vni[2] == 0)
++		action->conf = NULL;
++	else
++		action->conf = &action_vxlan_encap_data->conf;
++	a++;
+ 	return ret;
+ }
+ 
+diff --git a/app/test-pmd/iofwd.c b/app/test-pmd/iofwd.c
+index ba06fae..d30ef47 100644
+--- a/app/test-pmd/iofwd.c
++++ b/app/test-pmd/iofwd.c
+@@ -35,6 +35,49 @@
+ 
+ #include "testpmd.h"
+ 
++static inline void pkt_print(struct rte_mbuf *m) 
++{
++        uint8_t *m_data = rte_pktmbuf_mtod(m, uint8_t *);
++        struct rte_ether_hdr *ether_hdr = (struct rte_ether_hdr *)m_data;
++	bool has_meta = false;
++	bool has_mark = false;
++	uint32_t meta = 0, mark = 0;
++
++        if (ether_hdr->ether_type != rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4))
++        {
++                return;
++        }
++
++        struct rte_ipv4_hdr *ip_hdr =
++                (struct rte_ipv4_hdr *) &m_data[sizeof(struct rte_ether_hdr)];
++
++
++        uint8_t hlen = (ip_hdr->version_ihl & 0xf) * 4;
++
++	if (m->ol_flags & RTE_MBUF_DYNFLAG_RX_METADATA) {
++        	meta = rte_flow_dynf_metadata_get(m);
++		has_meta = true;
++ 	}    
++
++	if (m->ol_flags & (RTE_MBUF_F_RX_FDIR | RTE_MBUF_F_RX_FDIR_ID)) {
++        	mark = m->hash.fdir.hi;
++		has_mark = true;
++ 	}    
++
++        if (ip_hdr->next_proto_id == IPPROTO_UDP) {   
++                struct rte_udp_hdr *uhr = (struct rte_udp_hdr *)&m_data[sizeof(struct rte_ether_hdr) + hlen];
++
++                printf("udp ip_src 0x%x, ip_dst 0x%x, port_src %d, port_dst %d, has_meta %d, meta %u, has_mark %d, mark %u\n", rte_be_to_cpu_32(ip_hdr->src_addr), rte_be_to_cpu_32(ip_hdr->dst_addr), rte_be_to_cpu_16(uhr->src_port), rte_be_to_cpu_16(uhr->dst_port), has_meta, meta, has_mark, mark);
++        } else if (ip_hdr->next_proto_id == IPPROTO_TCP) {   
++                struct rte_tcp_hdr *uhr = (struct rte_tcp_hdr *)&m_data[sizeof(struct rte_ether_hdr) + hlen];
++
++                printf("tcp ip_src 0x%x, ip_dst 0x%x, port_src %d, port_dst %d, has_meta %d, meta %u, has_mark %d, mark %u\n", rte_be_to_cpu_32(ip_hdr->src_addr), rte_be_to_cpu_32(ip_hdr->dst_addr), rte_be_to_cpu_16(uhr->src_port), rte_be_to_cpu_16(uhr->dst_port), has_meta, meta, has_mark, mark);
++	} else {
++                printf("proto %d ip_src 0x%x, ip_dst 0x%x, has_meta %d, meta %u has_mark %d, mark %u\n", ip_hdr->next_proto_id, rte_be_to_cpu_32(ip_hdr->src_addr), rte_be_to_cpu_32(ip_hdr->dst_addr), has_meta, meta, has_mark, mark);
++	}
++}
++
++
+ /*
+  * Forwarding of packets in I/O mode.
+  * Forward packets "as-is".
+@@ -46,7 +89,9 @@
+ {
+ 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+ 	uint16_t nb_rx;
++        int i = 0;
+ 
++	//TESTPMD_LOG(ERR, "hahaha  a packet..\n");
+ 	/*
+ 	 * Receive a burst of packets and forward them.
+ 	 */
+@@ -54,6 +99,10 @@
+ 	if (unlikely(nb_rx == 0))
+ 		return false;
+ 
++	printf("hahah rx_port, tx_port..%d,%d\n", fs->rx_port, fs->tx_port);
++	for (i=0; i<nb_rx; i++) {
++		pkt_print(pkts_burst[i]);
++	}
+ 	common_fwd_stream_transmit(fs, pkts_burst, nb_rx);
+ 
+ 	return true;
+diff --git a/app/test-pmd/testpmd.c b/app/test-pmd/testpmd.c
+index 9e4e99e..b1878e6 100644
+--- a/app/test-pmd/testpmd.c
++++ b/app/test-pmd/testpmd.c
+@@ -4555,6 +4555,8 @@ uint8_t port_is_bonding_member(portid_t member_pid)
+ 		rte_exit(EXIT_FAILURE, "Cannot init EAL: %s\n",
+ 			 rte_strerror(rte_errno));
+ 
++	rte_flow_dynf_metadata_register();
++
+ 	/* allocate port structures, and init them */
+ 	init_port();
+ 
+diff --git a/drivers/net/mlx5/linux/mlx5_os.c b/drivers/net/mlx5/linux/mlx5_os.c
+index ae82e1e..ed1399f 100644
+--- a/drivers/net/mlx5/linux/mlx5_os.c
++++ b/drivers/net/mlx5/linux/mlx5_os.c
+@@ -2495,6 +2495,8 @@
+ 			rte_errno = ENOENT;
+ 			ret = -rte_errno;
+ 			goto exit;
++		} else {
++			DRV_LOG(ERR, "hahahahah ns ............... ns %d  np %d", ns, np);
+ 		}
+ 	} else {
+ 		/*
+@@ -2681,6 +2683,7 @@
+ 		/* Restore non-PCI flags cleared by the above call. */
+ 		list[i].eth_dev->data->dev_flags |= restore;
+ 		rte_eth_dev_probing_finish(list[i].eth_dev);
++		DRV_LOG(ERR, "spawn success hahahah  bondinfo %d %p", i, list[i].bond_info);
+ 	}
+ 	if (i != ns) {
+ 		DRV_LOG(ERR,
+diff --git a/drivers/net/mlx5/mlx5_flow_hw.c b/drivers/net/mlx5/mlx5_flow_hw.c
+index da873ae..fa4e028 100644
+--- a/drivers/net/mlx5/mlx5_flow_hw.c
++++ b/drivers/net/mlx5/mlx5_flow_hw.c
+@@ -12053,7 +12053,7 @@ struct mlx5_list_entry *
+ 	proxy_dev = &rte_eth_devices[proxy_port_id];
+ 	proxy_priv = proxy_dev->data->dev_private;
+ 	if (!proxy_priv->dr_ctx) {
+-		DRV_LOG(DEBUG, "Transfer proxy port (port %u) of port %u must be configured "
++		DRV_LOG(ERR, "Transfer proxy port (port %u) of port %u must be configured "
+ 			       "for HWS to create default FDB jump rule. Default rule will "
+ 			       "not be created.",
+ 			       proxy_port_id, port_id);
+diff --git a/drivers/net/mlx5/mlx5_trigger.c b/drivers/net/mlx5/mlx5_trigger.c
+index 5ac25d7..3896594 100644
+--- a/drivers/net/mlx5/mlx5_trigger.c
++++ b/drivers/net/mlx5/mlx5_trigger.c
+@@ -1514,8 +1514,10 @@
+ 	}
+ 	if (config->fdb_def_rule) {
+ 		if ((priv->master || priv->representor) && config->dv_esw_en) {
+-			if (!mlx5_flow_hw_esw_create_default_jump_flow(dev))
++			if (!mlx5_flow_hw_esw_create_default_jump_flow(dev)) {
+ 				priv->fdb_def_rule = 1;
++				DRV_LOG(ERR, "port %u FDB default rule is okokoko", dev->data->port_id);
++			}
+ 			else
+ 				goto error;
+ 		}
+diff --git a/lib/cmdline/cmdline_private.h b/lib/cmdline/cmdline_private.h
+index b64f363..701ef0a 100644
+--- a/lib/cmdline/cmdline_private.h
++++ b/lib/cmdline/cmdline_private.h
+@@ -17,7 +17,7 @@
+ 
+ #include <cmdline.h>
+ 
+-#define RDLINE_BUF_SIZE 512
++#define RDLINE_BUF_SIZE 4096
+ #define RDLINE_PROMPT_SIZE  32
+ #define RDLINE_VT100_BUF_SIZE  8
+ #define RDLINE_HISTORY_BUF_SIZE BUFSIZ

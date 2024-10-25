@@ -1,0 +1,50 @@
+A write memory barrier gives a guarantee that all the STORE operations
+     specified before the barrier will appear to happen before all the STORE
+     operations specified after the barrier with respect to the other
+     components of the system.
+
+     A write barrier is a partial ordering on stores only; it is not required
+     to have any effect on loads.
+
+However, stores are not speculated. This means that ordering -is- provided for load-store control dependencies, as in the following example:         q = READ_ONCE(a);         if (q) {                 WRITE_ONCE(b, 1);         }
+
+蒙奇D小豌豆@微信@微信联系人 9-3 09:51:31
+A read barrier is a data dependency barrier plus a guarantee that all the
+     LOAD operations specified before the barrier will appear to happen before
+     all the LOAD operations specified after the barrier with respect to the
+     other components of the system.
+
+     A read barrier is a partial ordering on loads only; it is not required to
+     have any effect on stores.
+
+Control dependencies pair normally with other types of barriers. That said, please note that neither READ_ONCE() nor WRITE_ONCE() are optional! Without the READ_ONCE(), the compiler might combine the load from 'a' with other loads from 'a'. Without the WRITE_ONCE(), the compiler might combine the store to 'b' with other stores to 'b'. Either can result in highly counterintuitive effects on ordering. Worse yet, if the compiler is able to prove (say) that the value of variable 'a' is always non-zero, it would be well within its rights to optimize the original example by eliminating the "if" statement as follows:
+
+A load-load control dependency requires a full read memory barrier, not simply a data dependency barrier to make it work correctly. Consider the following bit of code:         q = READ_ONCE(a);         if (q) {                 <data dependency barrier> /* BUG: No data dependency!!! */                 p = READ_ONCE(b);         }
+
+RELEASE operations.
+
+     This also acts as a one-way permeable barrier.  It guarantees that all
+     memory operations before the RELEASE operation will appear to happen
+     before the RELEASE operation with respect to the other components of the
+     system. RELEASE operations include UNLOCK operations and
+     smp_store_release() operations.
+
+     Memory operations that occur after a RELEASE operation may appear to
+     happen before it completes.
+
+ACQUIRE operations.
+
+     This acts as a one-way permeable barrier.  It guarantees that all memory
+     operations after the ACQUIRE operation will appear to happen after the
+     ACQUIRE operation with respect to the other components of the system.
+     ACQUIRE operations include LOCK operations and both smp_load_acquire()
+     and smp_cond_load_acquire() operations.
+
+     Memory operations that occur before an ACQUIRE operation may appear to
+     happen after it completes.
+
+q = a;         b = 1; /* BUG: Compiler and CPU can both reorder!!! */ So don't leave out the READ_ONCE(). 
+
+A general memory barrier gives a guarantee that all the LOAD and STORE operations specified before the barrier will appear to happen before all the LOAD and STORE operations specified after the barrier with respect to the other components of the system.
+
+This will not have the desired effect because there is no actual data dependency, but rather a control dependency that the CPU may short-circuit by attempting to predict the outcome in advance, so that other CPUs see the load from b as having happened before the load from a. In such a case what's actually required is:         q = READ_ONCE(a);         if (q) {                 <read barrier>                 p = READ_ONCE(b);         }

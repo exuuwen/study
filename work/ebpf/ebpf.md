@@ -145,6 +145,8 @@ BPF_XADD | BPF_DW | BPF_STX: lock xadd *(u64 *)(dst_reg + off16) += src_reg
 
 attach:
 
+cgroup_bpf_attach_type: to search BPF_CGROUP_RUN_PROG_xxx
+
 1. cgroup_bpf_attach
 
 BPF_CGROUP_RUN_PROG_SOCK_OPS(&sock_ops);
