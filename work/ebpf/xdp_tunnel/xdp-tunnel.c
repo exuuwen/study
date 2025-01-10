@@ -4,7 +4,7 @@
 #include <linux/if_packet.h>
 #include <linux/ip.h>
 #include <linux/types.h>
-#include "bpf_helpers.h"
+#include <bpf/bpf_helpers.h>
 
 #include <stdint.h>
 
@@ -31,7 +31,7 @@
 
 #define GRETAP_FLAGS 0x2000
 
-//clang -O2 -Wall -target bpf -c xdp-tunnel.c -o xdp-tunnel.o 
+//clang -O2 -Wall -g -D__x86_64__ -target bpf -c xdp-tunnel.c -o xdp-tunnel.o 
 //ip link set dev vnet0/veth0 xdp obj xdp-tunnel.o sec progvirt
 //ip link set dev eth2/br0 xdp obj xdp-tunnel.o sec procnic
 //ip link set dev vnet0/br0/eth2/veth0 xdp off

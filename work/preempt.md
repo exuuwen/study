@@ -48,6 +48,51 @@ local_bh_disable ---> preempt_count_add(SOFTIRQ_DISABLE_OFFSET)
 local_bh_enable ---> preempt_count_sub(SOFTIRQ_DISABLE_OFFSET)
 
 
+/**
+ * DEFINE_IDTENTRY_IRQ - Emit code for device interrupt IDT entry points
+ * @func:       Function name of the entry point
+ *
+ * The vector number is pushed by the low level entry stub and handed
+ * to the function as error_code argument which needs to be truncated
+ * to an u8 because the push is sign extending.
+ *
+ * irq_enter/exit_rcu() are invoked before the function body and the
+ * KVM L1D flush request is set. Stack switching to the interrupt stack
+ * has to be done in the function body if necessary.
+ */
+
+/*
+ * common_interrupt() handles all normal device IRQ's (the special SMP
+ * cross-CPU interrupts have their own entry points).
+ */
+DEFINE_IDTENTRY_IRQ(common_interrupt)
+{
+        struct pt_regs *old_regs = set_irq_regs(regs);
+
+        if (unlikely(call_irq_handler(vector, regs)))
+                apic_eoi();
+
+        set_irq_regs(old_regs);
+}
+
+
+#define DEFINE_IDTENTRY_IRQ(func)                                       \
+static void __##func(struct pt_regs *regs, u32 vector);                 \
+                                                                        \
+__visible noinstr void func(struct pt_regs *regs,                       \
+                            unsigned long error_code)                   \
+{                                                                       \
+        irqentry_state_t state = irqentry_enter(regs);                  \
+        u32 vector = (u32)(u8)error_code;                               \
+                                                                        \
+        instrumentation_begin();                                        \
+        run_irq_on_irqstack_cond(__##func, regs, vector);               \
+        instrumentation_end();                                          \
+        irqentry_exit(regs, state);                                     \
+}                                                                       \
+    
+---> translate to
+
 DEFINE_IDTENTRY_IRQ(common_interrupt)
 {
 	irq_enter_rcu();
@@ -56,13 +101,6 @@ DEFINE_IDTENTRY_IRQ(common_interrupt)
 	irqentry_exit();
 }
 
-/*
-do_IRQ 
-{
-	irq_enter();
-	irq_exit();
-}
-*/
 
 irq_enter_rcu 
 {
@@ -72,22 +110,37 @@ irq_enter_rcu
 
 irq_exit_rcu
 {
-	local_irq_disable(); //why
-
 	preempt_count_sub(HARDIRQ_OFFSET);
 
 	if (!in_interrupt() && local_softirq_pending())
 		invoke_softirq();
 }
 
-invoke_softirq ---> __do_softirq
+static void run_ksoftirqd(unsigned int cpu)
+{
+        ksoftirqd_run_begin(); //local_irq_disable
+        if (local_softirq_pending()) {
+                /*
+                 * We can safely run softirq on inline stack, as we are not deep
+                 * in the task stack here.
+                 */
+                handle_softirqs(true);
+                ksoftirqd_run_end();
+                cond_resched();
+                return;
+        }
+        ksoftirqd_run_end();// local_irq_enable
+}
+
+
+invoke_softirq ---> run_ksoftirqd
 {
 	__local_bh_disable_ip(_RET_IP_, SOFTIRQ_OFFSET); ---> preempt_count_add(SOFTIRQ_OFFSET)
 	local_irq_enable();
 
 	xxxxxxx handle_sofirq things
 
-	local_irq_disable(); //why
+	local_irq_disable(); 
 	__local_bh_enable(SOFTIRQ_OFFSET); ----> preempt_count_sub(SOFTIRQ_OFFSET)
 }
 

@@ -476,3 +476,14 @@ convert_ctx_accesses
 array: array map store with prog/map/sock ptr
 hash:  hash map store with prog/map/sock ptr
 
+
+usage:
+
+vmlinux.h
+kernel: compile kernel enable debuginfo
+pahole -J vmlinux
+bpftool btf dump file ./vmlinux format c > vmlinux.h
+
+kernel compile with BTF info
+
+bpftool btf dump file /sys/fs/bvmlinux format c > vmlinux.h

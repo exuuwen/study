@@ -1,0 +1,3 @@
+
+clang -O2 -Wall -g -D__x86_64__ -target bpf -c syscall_tp_kern.c -o syscall_tp_kern.o
+bpftool prog loadall syscall_tp_kern.o /sys/fs/bpf/syscall_tp pinmaps /sys/fs/bpf/syscall_tp type tracepoint autoattach

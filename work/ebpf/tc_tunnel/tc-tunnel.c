@@ -1,13 +1,14 @@
 #include <linux/bpf.h>
 #include <linux/pkt_cls.h>
-#include <iproute2/bpf_elf.h>
 #include <linux/in.h>
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
 #include <linux/ip.h>
 #include <linux/types.h>
+#include <iproute2/bpf_elf.h>
 
-#include "bpf_helpers.h"
+#include <bpf/bpf_helpers.h>
+#include "common.h"
 #include "maps.h"
 
 #ifndef __section
@@ -24,6 +25,15 @@
 # define BPF_FUNC(NAME, ...)              \
    (*NAME)(__VA_ARGS__) = (void *)BPF_FUNC_##NAME
 #endif
+
+#undef bpf_printk
+#define bpf_printk(fmt, ...)                            \
+({                                                      \
+        char ____fmt[] = fmt;                              \
+        bpf_trace_printk(____fmt, sizeof(____fmt),      \
+                         ##__VA_ARGS__);                \
+})
+
 
 __section("ingress_gre")
 int tc_ingress_gre(struct __sk_buff *skb)

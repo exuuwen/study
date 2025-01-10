@@ -1,5 +1,6 @@
 #include <linux/unistd.h>
 #include <linux/bpf.h>
+#include <bpf/bpf.h>
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -10,7 +11,7 @@
 #include "common.h"
 
 /*
-   clang -O2 -Wall -target bpf -c tc-tunnel.c -o tc-tunnel.o
+   clang -O2 -Wall -D__x86_64__ -target bpf -c tc-tunnel.c -o tc-tunnel.o
    gcc -O2 -o main main.c  -lbpf -lelf
    ip link add dev tun type gretap external
    tc qdisc add dev veth0 clsact

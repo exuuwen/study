@@ -1,0 +1,283 @@
+qemu-system-x86_64 -m 4096 --enable-kvm -name test -netdev tap,id="my2",ifname="tap0",script= -device virtio-net-pci,netdev="my2",mac=00:80:37:0E:88:77
+1. tap
+NetClientState --->TAPState
+
+ -netdev tap,id="my2",ifname="tap0",script=
+
+qemu_init-->qemu_create_late_backends--->net_init_clients-->
+net_init_netdev-->net_client_init-->net_client_init1-->
+net_client_init_fun--->net_init_tap
+{
+	TAPState *s = net_init_tap_one--->qemu_new_net_client--->qemu_net_client_setup
+	// one nc just a queue for multiqueue
+	// create a NetClientState (nc)
+	// QTAILQ_INSERT_TAIL(&net_clients, nc, next);
+
+	s->vhost_net = vhost_net_init(&options);// create vhost
+}
+
+
+2. virtio
+
+virtio_net:
+type:     object(TYPE_OBJECT)--->device(TYPE_DEVICE)-----------virtio(TYPE_VIRTIO_DEVICE)------->virtio_net(TYPE_VIRTIO_NET)
+instance:     Object------>DeviceState---------->VirtIODevice---------------------->VirtIONet 
+class:    ObjectClass->DeviceClass---------->VirtioDeviceClass
+
+instance:
+struct VirtIONet {
+    VirtIODevice parent_obj;
+	{
+		DeviceState parent_obj；
+		{
+			Object parent;
+			{
+				ObjectClass *class;
+				GHashTable *properties; //property hash table
+			}
+			....
+		}
+		.....
+	}
+    ....
+}
+
+class:
+struct VirtioDeviceClass {
+    /*< private >*/
+    DeviceClass parent;
+	{
+		ObjectClass parent;
+		....
+	}
+    ....
+}
+
+virtio_net_pci:
+object(TYPE_OBJECT)--->device(TYPE_DEVICE)-->pci_device(TYPE_PCI_DEVICE)--->virtio_pci(TYPE_VIRTIO_PCI)--->virtio_net_pci(TYPE_VIRTIO_NET_PCI)
+instance:    Object---->DeviceState--->PCIDevice------------>VirtIOPCIProxy-------------->VirtIONetPCI 
+class:    ObjectClass-->DeviceClass--->PCIDeviceClass------->VirtIOPCIClass
+
+instance:
+struct VirtIONetPCI {
+    VirtIOPCIProxy parent_obj;
+ 	{
+		PCIDevice pci_dev;
+		{
+			DeviceState qdev;
+			{
+				Object parent;
+				{
+					ObjectClass *class;
+					GHashTable *properties; //property hash table
+				}
+				....
+			}
+			.....
+		}
+		.....
+	}   
+    VirtIONet vdev; //connect with virtio_net
+};
+
+class:
+struct VirtioPCIClass {
+    PCIDeviceClass parent_class;
+	{
+		DeviceClass parent_class;
+		{
+			ObjectClass parent;
+                        {
+                             GHashTable *properties;  //property hash table
+                        }
+			....
+		}
+		.....
+	}
+    ....
+}
+
+property:
+
+struct ObjectProperty
+{
+    char *name;
+    char *type;
+    ObjectPropertyAccessor *get;
+    ObjectPropertyAccessor *set;
+}
+
+struct Property {
+    const char   *name;
+    const PropertyInfo *info;
+    ptrdiff_t    offset;
+}
+
+-device virtio-net-pci,netdev="my2",mac=00:80:37:0E:88:77
+
+1). type register
+
+struct TypeImpl
+{
+    const char *name;
+    size_t class_size;
+    size_t instance_size;
+
+    void (*class_init)(ObjectClass *klass, void *data);
+    void (*instance_init)(Object *obj);
+
+    const char *parent;
+    TypeImpl *parent_type;
+
+    ObjectClass *class;
+}
+
+
+ALL the xxx_TYPE: 
+static TypeImpl *type_register_internal
+init the name,parent,class_size,instance_size,class_init,instance_init
+insert to type_table
+
+
+2). class init
+
+type_initialize
+{
+    //update size for 0 case
+    ti->class_size = type_class_get_size(ti);
+    ti->instance_size = type_object_get_size(ti);
+
+    //set the parent_type and alloc class
+    //object class can get through lookup type_table(virtio-net-pci), TypeImpl->class
+    ti->class = g_malloc0(ti->class_size);
+
+    parent = type_get_parent(ti);
+    if (parent)
+        type_initialize(parent);
+
+    //alloc properties and call class_init
+    ti->class->properties = g_hash_table_new_full
+    if (ti->class_init) {
+        ti->class_init(ti->class, ti->class_data);
+	{
+		//do init private class memeber
+		// set the properties
+		device_class_set_props
+		// in the device_class_init(DEVICE_TYPE) add "realized" peroperty
+                // object_class_property_add_bool(class, "realized", device_get_realized, device_set_realized);
+	}
+    }
+}
+
+device_class_set_props-->qdev_class_add_property-->object_class_property_add
+{
+    // alloc objectproperty and insert to objectclass->properties
+    ObjectProperty *prop;
+    prop = g_malloc0(sizeof(*prop));
+    g_hash_table_insert(klass->properties, prop->name, prop);
+}
+
+3) instance
+qemu_init-->qmp_x_exit_preconfig-->qemu_create_cli_devices-->device_init_func-->
+qdev_device_add-->qdev_device_add_from_qdict
+{
+    // driver is virtio-net-pci
+    driver = qdict_get_try_str(opts, "driver");
+
+    // instance init 
+    dev = qdev_new(driver);
+
+    // set properties: such as netdev(connect to tap)
+    object_set_properties_from_keyval(&dev->parent_obj, dev->opts)
+
+    //realize
+    qdev_realize(DEVICE(dev), bus, errp)
+}
+
+a. instance init
+//lookup type table through name to find the TYPE
+DeviceState *qdev_new(const char *name)-->object_new-->object_new_with_type
+{
+    obj = g_malloc(type->instance_size);
+    object_initialize_with_type(obj, size, type);
+    {
+        obj->class = type->class;
+        // init objectclass property
+        object_class_property_init_all  //init all the properties in objectclass to call property->init()
+        //allocate object property
+        obj->properties = g_hash_table_new_full
+
+        // recurserve instance init
+        object_init_with_type(obj, type)
+        {
+            if (type_has_parent(ti))
+                object_init_with_type(obj, type_get_parent(ti));
+            if (ti->instance_init)
+                ti->instance_init(obj);
+	    // in the virtio_net_pci init will init the dev->vdev which is virtio_net
+            // virtio_net_pci_instance_init-->virtio_instance_init_common(obj, &dev->vdev, sizeof(dev->vdev), TYPE_VIRTIO_NET);
+        }
+    }
+}
+
+b. set_key:value_properties[netdev="my2"  netdev(tap)]
+
+object_set_properties_from_keyval-->object_set_properties_from_qdict-->object_property_set
+{
+
+    prop = object_property_find(obj, name);
+           {
+                ObjectClass *klass = object_get_class(obj);
+                
+                // first lookup objectclass table 
+                prop = object_class_property_find(klass, name);
+                if (prop)
+                    return prop;
+                // then object table 
+                return g_hash_table_lookup(obj->properties, name);
+
+           }
+
+    prop->set(obj, v, name, prop->opaque, errp);
+}
+
+netdev property:
+const PropertyInfo qdev_prop_netdev = {
+    .name  = "str",
+    .description = "ID of a netdev to use as a backend",
+    .get   = get_netdev,
+    .set   = set_netdev,
+};
+
+#define DEFINE_NIC_PROPERTIES(_state, _conf)                            \
+    DEFINE_PROP_MACADDR("mac",   _state, _conf.macaddr),                \
+    DEFINE_PROP_NETDEV("netdev", _state, _conf.peers)
+
+static Property virtio_net_properties[] = {
+	DEFINE_NIC_PROPERTIES(VirtIONet, nic_conf)
+}
+
+c. realized
+
+qdev_realize(DeviceState *dev)
+{
+    object_property_set_bool(OBJECT(dev), "realized", true);-->object_property_set-->
+    device_set_realized-->pci_qdev_realize(DeviceClass->realize(dev))
+    {
+	virtio_pci_realize-->virtio_net_pci_realize
+	{
+		VirtIONetPCI *dev = VIRTIO_NET_PCI(vpci_dev);
+    		DeviceState *vdev = DEVICE(&dev->vdev);
+
+		// id is my2, typename is virtio_net_pci
+		virtio_net_set_netclient_name(&dev->vdev, qdev->id,
+                                  object_get_typename(OBJECT(qdev)));
+		// vdev is VirtIONet
+    		qdev_realize(vdev, BUS(&vpci_dev->bus), errp);
+	}
+    }
+}
+
+
+
+

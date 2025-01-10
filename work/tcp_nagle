@@ -1,0 +1,75 @@
+Nagle: avoid small(less than mtu) packet in air
+
+tp->nonagle
+TCP_NAGLE_CORK: cork the packet, block small packet
+TCP_NAGLE_OFF: off the nagle, always send small packet
+
+TCP_NAGLE_PUSH: A dynamic flag means just push send the packet, the flag will clear by tcp_skb_entail the sendmsg with newskb
+
+The PUSH will over write CORK
+
+
+A sock enable nagle with defaul tp->nonagle = 0; all the packet out should be arcked or block the packet
+
+CORK:
+void __tcp_sock_set_cork(struct sock *sk, bool on)
+{
+        struct tcp_sock *tp = tcp_sk(sk);
+
+        if (on) {
+                tp->nonagle |= TCP_NAGLE_CORK;
+        } else {
+                tp->nonagle &= ~TCP_NAGLE_CORK;
+                if (tp->nonagle & TCP_NAGLE_OFF)
+                        tp->nonagle |= TCP_NAGLE_PUSH;
+                tcp_push_pending_frames(sk); // just push
+        }    
+}
+
+NODELAY:
+void __tcp_sock_set_nodelay(struct sock *sk, bool on)
+{
+        if (on) {
+                tcp_sk(sk)->nonagle |= TCP_NAGLE_OFF|TCP_NAGLE_PUSH;
+                tcp_push_pending_frames(sk);
+        } else {
+                tcp_sk(sk)->nonagle &= ~TCP_NAGLE_OFF;
+        }
+}
+
+
+
+nagle test:
+/* Return false, if packet can be sent now without violation Nagle's rules:
+ * 1. It is full sized. (provided by caller in %partial bool)
+ * 2. Or it contains FIN. (already checked by caller)
+ * 3. Or TCP_CORK is not set, and TCP_NODELAY is set.
+ * 4. Or TCP_CORK is not set, and all sent packets are ACKed.
+ *    With Minshall's modification: all sent small packets are ACKed.
+ */
+static bool tcp_nagle_check(bool partial, const struct tcp_sock *tp,
+                            int nonagle)
+{
+        return partial &&
+                ((nonagle & TCP_NAGLE_CORK) ||
+                 (!nonagle && tp->packets_out && tcp_minshall_check(tp)));
+}
+
+
+static inline bool tcp_nagle_test(const struct tcp_sock *tp, const struct sk_buff *skb,
+                                  unsigned int cur_mss, int nonagle)
+{
+        if (nonagle & TCP_NAGLE_PUSH)
+                return true;
+
+        /* Don't use the nagle rule for urgent data (or for the final FIN). */
+        if (tcp_urg_mode(tp) || (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN))
+                return true;
+
+        if (!tcp_nagle_check(skb->len < cur_mss, tp, nonagle))
+                return true;
+
+        return false;
+}
+
+
