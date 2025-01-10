@@ -1,8 +1,6 @@
 CC=gcc
 
 PWD = $(shell pwd)
-IPTABLES_SRC = $(PWD)/iptables-1.4.21
-INCLUDE = -I$(IPTABLES_SRC)/include
 KERNEL_SRC = /lib/modules/`uname -r`/build
 obj-m = ipt_STATICSRC.o
 
@@ -10,7 +8,7 @@ all: ipt_STATICSRC.ko libipt_STATICSRC.so
 ipt_STATICSRC.ko:  ipt_STATICSRC.c
 	$(MAKE) -C $(KERNEL_SRC) SUBDIRS=$(PWD) modules
 libipt_STATICSRC.so: libipt_STATICSRC.c
-	$(CC)  $(INCLUDE) -fPIC -c libipt_STATICSRC.c
+	$(CC)  -fPIC -c libipt_STATICSRC.c
 	ld -shared -o libipt_STATICSRC.so libipt_STATICSRC.o
 
 clean:

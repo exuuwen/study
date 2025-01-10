@@ -1,1 +1,0 @@
-cmd_/root/ipv4tov6_2.6/openvswitch-2.3.0/datapath/linux/openvswitch.ko := cp /root/ipv4tov6_2.6/openvswitch-2.3.0/datapath/linux/openvswitch.ko.unsigned /root/ipv4tov6_2.6/openvswitch-2.3.0/datapath/linux/openvswitch.ko
