@@ -487,3 +487,10 @@ bpftool btf dump file ./vmlinux format c > vmlinux.h
 kernel compile with BTF info
 
 bpftool btf dump file /sys/fs/bvmlinux format c > vmlinux.h
+
+
+xdp load and attach with bpftool
+
+bpftool prog load xdp.bpf.o /sys/fs/bpf/xdp
+bpftool net attach xdp id 540 dev eth0
+bpftool net detach xdp dev eth0
