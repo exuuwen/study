@@ -11,25 +11,33 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
+
+int set_reuse_addr(int sockfd, int on)
+{
+	int optval = on ? 1 : 0;
+
+	int ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
+  	return ret;		
+}
 
 int set_reuse_port(int sockfd, int on)
 {
 	int optval = on ? 1 : 0;
 
-	int ret = setsockopt(sockfd, SOL_SOCKET, 15, &optval, sizeof optval);
+	int ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof optval);
   	return ret;		
 }
 
+int set_bind_ifindex(int sockfd, int index)
+{
+	int ret = setsockopt(sockfd, SOL_SOCKET, SO_BINDTOIFINDEX, &index, sizeof index);
+  	return ret;		
+}
    
 int main(int argc, char *argv[])
 {
 	struct sockaddr_in server_addr;
-
-	if(argc != 3)
-	{
-		printf("%s server_ip server_port\n", argv[0]);
-		return 0;
-	}
 
 	int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);                                                                        
 	if (sock < 0)                                                                                                 
@@ -40,14 +48,30 @@ int main(int argc, char *argv[])
 
 	memset(&server_addr, 0, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
-	server_addr.sin_addr.s_addr = inet_addr(argv[1]);;
-	server_addr.sin_port = htons(atoi(argv[2]));
+	server_addr.sin_port = htons(2152);
 
-        int err = set_reuse_port(sock, 1);
+        int err = set_reuse_addr(sock, 1);
         if(err < 0)
 	{
 		perror("reuse port");
 		return -1;
+	}
+
+        err = set_reuse_port(sock, 1);
+        if(err < 0)
+	{
+		perror("reuse port");
+		return -1;
+	}
+
+	if (argc == 2) {
+        	int err = set_bind_ifindex(sock, atoi(argv[1]));
+        	if(err < 0)
+		{
+			perror("reuse port");
+			return -1;
+		}
+		printf("bind success to %s\n", argv[1]);
 	}
   
 	err = bind(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) ;  

@@ -11,12 +11,13 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 int set_reuse_addr(int sockfd, int on)
 {
         int optval = on ? 1 : 0;
 
-        int ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR/*15*/, &optval, sizeof optval);
+        int ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof optval);
         return ret;
 }
 
@@ -26,9 +27,9 @@ int main(int argc, char *argv[])
 	struct sockaddr_in server_addr;
 	struct sockaddr_in local_addr;
 
-	if(argc != 3)
+	if(argc != 2)
 	{
-		printf("%s dst_ip dst_port\n", argv[0]);
+		printf("%s dst_ip\n", argv[0]);
 		return 0;
 	}
 
@@ -47,22 +48,10 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-	memset(&local_addr, 0, sizeof(local_addr));
-        local_addr.sin_family = AF_INET;
-        local_addr.sin_addr.s_addr = inet_addr("192.168.130.144");
-        local_addr.sin_port = htons(2153);
-
-	ret = bind(sock, (struct sockaddr*)&local_addr, sizeof(local_addr)) ;
-        if (ret < 0)
-        {
-                perror("bind()");
-                return -1;
-        }
-
 	memset(&server_addr, 0, sizeof(server_addr));
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_addr.s_addr = inet_addr(argv[1]);;
-	server_addr.sin_port = htons(atoi(argv[2]));  
+	server_addr.sin_port = htons(2152);  
 
 	
 	struct sockaddr_in addr;                                                                                       
