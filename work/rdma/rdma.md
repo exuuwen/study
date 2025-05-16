@@ -868,3 +868,52 @@ requester:
 
 Reliable Connected Behavior: For reliable connections (including XRC), the requester has only two possible alternatives when it receives a NAK. It may either retry the same request packet, or it may mark the cur-rent WQE as completed in error and notify its client. Note that not all NAKs can be retried.
 If the requester retries the same request packet, it is not required to begin its retransmission sequence beginning with the PSN indicated in the re-sponder’s NAK; instead, it may begin its retransmission with an earlier re-quest packet. These earlier request packets are treated by the responder as normal duplicate packets causing no ill side effects.    
+
+
+////////////////////////////////////////////////
+
+zijin:
+
+init:
+zijin_eq_init
+
+start:
+alloc_context
+
+pd--> ida just for software
+
+
+
+ib_umem_get: pin mem and get dam addr map
+
+
+
+zijin_cmd_init: cmd buf init
+
+
+
+alloc_uar_page
+
+num_comp_vectors
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+///////
+vfio
+
+pci: bar  config-space  capability    dma-info
+
+
