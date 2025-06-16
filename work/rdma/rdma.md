@@ -637,12 +637,17 @@ rdma link add rxe0 type rxe netdev eth0
 
 
 MAX_RD_ATOMIC: set for rts
+send outstandind read/atomic wqes
 MAX_DEST_RD_ATOMIC: set to rtr
-sender only support MAX_RD_ATOMIC read&atomic ops
+receive outstanding read&atomic requests
 
 IBV_QP_MIN_RNR_TIMER: set for rtr
 IBV_QP_RNR_RETRY  :  set for rts
-recever no buff send NAK_RNR to sender, sender after rnr timer(in the nack) to retry
+recever no buff send NAK_RNR to sender, sender after rnr timer(in the nack shoulld big than IBV_QP_MIN_RNR_TIMER) to retry (IBV_QP_RNR_RETRY times)
+
+IBV_QP_TIMEOUT : set for rts
+IBV_QP_RETRY_CNT : set for rts
+restransmit timeout to retry (IBV_QP_RETRY_CNT) times
 
 
 mw/RXE_IETH_MASK
@@ -870,46 +875,78 @@ Reliable Connected Behavior: For reliable connections (including XRC), the reque
 If the requester retries the same request packet, it is not required to begin its retransmission sequence beginning with the PSN indicated in the re-sponder’s NAK; instead, it may begin its retransmission with an earlier re-quest packet. These earlier request packets are treated by the responder as normal duplicate packets causing no ill side effects.    
 
 
+# show_gids 
+DEV        PORT        INDEX        GID                                        IPv4                  VER        DEV
+---        ----        -----        ---                                        ------------          ---        ---
+mlx5_0        1        0        fe80:0000:0000:0000:0ac0:ebff:fe4b:8f54                        v1        net2
+mlx5_0        1        1        fe80:0000:0000:0000:0ac0:ebff:fe4b:8f54                        v2        net2
+mlx5_0        1        2        0000:0000:0000:0000:0000:ffff:c0a8:0087        192.168.0.135          v1        net2
+mlx5_0        1        3        0000:0000:0000:0000:0000:ffff:c0a8:0087        192.168.0.135          v2
+
 ////////////////////////////////////////////////
 
-zijin:
+uverbs:
 
-init:
+key: uverbs_process_attr
+
+driver:
+
+a. init:
+
+bar mmio:
+dev->reg_base = pci_iomap(pdev, 0, pci_resource_len(pdev, 0));
+
+cmd buf:
+zijin_cmd_init: cmd buf init, alloc a page memeory with dma and buf addr set to hardware through bar mmio
+alloc_cmd_page(dev, cmd);
+iowrite32((u32)(cmd->cmd_dma), &dev->reg_base->log_rsvd_cmdq_addr);
+iowrite32((u32)((u64)(cmd->cmd_dma) >> 32), &dev->reg_base->cmdq_addr_h_63_32);
+
+create_mr:
+zijin_ib_reg_user_mr: get umem, create mtt(zijin_mtt_get ??) & mkey context to hardware through cmd buf
+
+create_cq:
+zijin_ib_create_cq: get umem for buf and db_addr(software update ci notify hardware), create cqc context to hardware through cmd buf
+
+create uar:
+alloc_uar_page: -->ZIJIN_IB_METHOD_UAR_OBJ_ALLOC  get idx in kernel per device
+ba = mmap(NULL, mgr->page_size, PROT_READ | PROT_WRITE, MAP_SHARED, context->cmd_fd,page->page_id * mgr->page_size);
+--->kernel: zijin_ib_mmap: map the vma to the bar iomem in UAR space
+pfn = ((pci_resource_start(dev->pci_dev, 0) + UAR_BASE_OFFSET) >> PAGE_SHIFT) + vma->vm_pgoff;
+io_remap_pfn_range(vma, vma->vm_start, pfn, PAGE_SIZE, vma->vm_page_prot);
+
+create_qp:
+zijin_ib_create_qp: get umem for sq/rq buf, sq/rq db_addr(software update ci notify hardware) and uar index(doorbell index in bar memory), create qpc context to hardware through cmd buf
+
+
 zijin_eq_init
 
-start:
-alloc_context
+b. start:
+open ---> UVERBS_METHOD_GET_CONTEXT  ---> alloc_context:  get caps 
 
 pd--> ida just for software
-
 
 
 ib_umem_get: pin mem and get dam addr map
 
 
 
-zijin_cmd_init: cmd buf init
-
-
-
-alloc_uar_page
-
-num_comp_vectors
 
 
 
 
+async_event:
 
+1.UVERBS_METHOD_ASYNC_EVENT_ALLOC:
+ ASYNC_EVENT uboj--->create fd with uverbs_async_event_fops and associate filp and uobj(event_file)
 
+2. UVERBS_HANDLER(UVERBS_METHOD_ASYNC_EVENT_ALLOC):
+ib_uverbs_init_async_event_file ---> ib_uverbs_event_handler: put event to eventfile list and wakeuup eventfile waithead
 
+3. ib_dispatch_event/dispatch_qp_event-->
+qp->event_handler ---> ib_uverbs_qp_event_handler to call ib_uverbs_event_handler
 
-
-
-
-
-
-
-
+4. userspace poll & read fd  to call uverbs_async_event_fops read (get eventfile list)& poll (wait on the eventfile waithead)
 
 ///////
 vfio
