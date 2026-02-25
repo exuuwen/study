@@ -954,3 +954,43 @@ vfio
 pci: bar  config-space  capability    dma-info
 
 
+erdma:
+
+vrdma dev:  file mmap the bar0
+soc front dev socket commuticate with vrdma dev to get device base info(bar0 bdf)
+host set bar0 cmdq_addr:  send vring tlp(bar addr, data)  to soc
+soc parser tlp call bar handler (cmdq_addr or cmdq_vector)
+cmdq_vector: dma read command from cmdqueue
+
+typedef struct soc_dev_csr_reg {
+        soc_dev_init_seg_t init;
+        union {
+                fpga_ring_regs_t rings[MAX_QP * 2]; 
+                struct {
+                        tx_rx_ring_regs_t cmd_tlp_ring;
+                        tx_rx_ring_regs_t wqe_tlp_rings[SOC_DEV_MAX_QUEUE];
+                        tx_rx_ring_regs_t pkt_rings[SOC_DEV_MAX_QUEUE];
+                        tx_rx_ring_regs_t soc_to_host_cmdq_dma_rw_ring;
+                        tx_rx_ring_regs_t
+                                soc_to_host_dma_rw_rings[SOC_DEV_MAX_QUEUE];
+                };  
+        };  
+        uint64_t irq_merge;
+} soc_dev_csr_reg_t;
+
+
+
+
+review:
+
+
+3. fdev_disc_init should before pci_probe
+
+4. VRDMA_EVT_BACKEND_DEV_DISCOVERED no need the notify
+
+5. qps global, change to per fdev
+
+6. already in the queues no new schduler
+
+4. callback for dev_chan wqe_chan cmd_chan remove
+

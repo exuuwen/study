@@ -1,0 +1,27 @@
+1. root rank get uniqueid 
+ncclGetUniqueId(ncclUniqueId* out)
+a. ncclInit-->bootstrapNetInit: get the bootstrapNetIfName and bootstrapNetIfAddr(UniqueId handle)
+
+b. bootstrapGetUniqueId-->bootstrapCreateRoot: create root listen sock from bootstrapNetIfAddr. Then start bootstrapRoot thread to wait other ranks connnect to. 
+
+2. init the rank
+ncclCommInitRank(ncclComm_t* newcomm, int nranks, ncclUniqueId commId, int myrank)
+--->ncclCommInitRankDev
+a. ncclInit: for non root to get the bootstrapNetIfName and bootstrapNetIfAddr
+
+b. ncclCommInitRankFunc
+
+1). bootstrapInit(struct ncclBootstrapHandle* handle, struct ncclComm* comm)
+Create a ring communication for all rank. communication with root rank with the bootstrapRoot in root rank process
+struct bootstrapState {
+  struct ncclSocket listenSock;    // ring accept from prev
+  struct ncclSocket ringRecvSocket; //ring recv/accept from prev
+  struct ncclSocket ringSendSocket; // ring send/connect to next
+  union ncclSocketAddress* peerCommAddresses; // all rank listensock
+  union ncclSocketAddress* peerProxyAddresses;
+  int cudaDev;
+  int rank;
+  int nranks;
+}
+
+2).

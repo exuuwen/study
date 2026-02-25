@@ -720,3 +720,12 @@ make uninstall
 or
 xargs rm < install_manifest.txt
 
+
+
+
+锐捷交换机密码
+admin/Ruijie@2025@adm
+
+服务器密码
+secure/Wxnb1!2@3#qwer
+root/Wxnb1!2@3#zxcv
